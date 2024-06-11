@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  publish:
+    name: 'publish'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust Version
+        id: rust-version
+        shell: bash
+        run: echo "version=$(cat rust-toolchain.toml | grep channel | awk -F'\"' '{print $2}')" >> $GITHUB_OUTPUT
+
+      - name: Rust Toolchain
+        id: rust-toolchain
+        uses: dtolnay/rust-toolchain@master
+        if: steps.rustup-cache.outputs.cache-hit != 'true'
+        with:
+          toolchain: "${{ steps.rust-version.outputs.version }}"
+          components: cargo-edit
+
+      - name: Set Version
+        run: "cargo set-version ${{ github.ref_name }}"
+
+      - name: Publish
+        run: cargo publish --allow-dirty --frozen --dry-run
+
+      - name: Rust Build
+        run: cargo build --all-features --all-targets
+      - name: Rust Lint - Format
+        run: cargo fmt --all --check
+      - name: Rust Lint - Clippy
+        run: cargo clippy --all-features --all-targets
+      - name: Rust Test
+        run: cargo test --workspace --all-features

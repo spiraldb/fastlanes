@@ -1,0 +1,23 @@
+[package]
+name = "fastlanes"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+num-traits = "0.2.19"
+paste = "1.0.15"
+seq-macro = "0.3.5"
+
+[dev-dependencies]
+arrayref = "0.3.7"
+criterion = "0.5.1"
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = "deny"
+
+[[bench]]
+name = "bitpacking"
+harness = false
