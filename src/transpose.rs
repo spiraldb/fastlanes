@@ -13,14 +13,14 @@ impl<T> Transpose for T where T: FastLanes {
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         seq!(i in 0..1024 {
-            unsafe { *output.get_unchecked_mut(i) = *input.get_unchecked(Self::MASK[i]) };
+            output[i] = input[Self::MASK[i]];
         });
     }
 
     #[inline(never)]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         seq!(i in 0..1024 {
-            unsafe { *output.get_unchecked_mut(i) = *input.get_unchecked(Self::UNMASK[i]) };
+            output[i] = input[Self::UNMASK[i]];
         });
     }
 }
