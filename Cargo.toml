@@ -28,3 +28,7 @@ all = "deny"
 [[bench]]
 name = "bitpacking"
 harness = false
+
+[[bench]]
+name = "transpose"
+harness = false

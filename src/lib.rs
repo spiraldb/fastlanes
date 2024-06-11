@@ -6,9 +6,12 @@ use std::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
-pub use bitpacking::*;
+mod transpose;
 
-pub const ORDER: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
+pub use bitpacking::*;
+pub use transpose::*;
+
+pub const FL_ORDER: [u8; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
 pub trait FastLanes: Sized + Unsigned + PrimInt {
     const T: usize = size_of::<Self>() * 8;
