@@ -3,7 +3,7 @@
 
 use std::mem::size_of;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use fastlanes::{BitPacking, Transpose};
 

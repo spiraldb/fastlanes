@@ -1,5 +1,5 @@
-use seq_macro::seq;
 use crate::{FastLanes, FL_ORDER};
+use seq_macro::seq;
 
 pub trait Transpose: FastLanes {
     const MASK: [usize; 1024] = transpose_mask();
@@ -9,7 +9,10 @@ pub trait Transpose: FastLanes {
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]);
 }
 
-impl<T> Transpose for T where T: FastLanes {
+impl<T> Transpose for T
+where
+    T: FastLanes,
+{
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         seq!(i in 0..1024 {
