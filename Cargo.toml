@@ -1,6 +1,12 @@
 [package]
 name = "fastlanes"
 version = "0.1.0"
+description = "Rust implementation of the FastLanes compression layout"
+license = "MIT"
+homepage = "https://github.com/spiraldb/fastlanes"
+repository = "https://github.com/spiraldb/fastlanes"
+authors = ["SpiralDB <hello@spiraldb.com>"]
+keywords = ["fastlanes", "compression", "codec"]
 edition = "2021"
 
 [dependencies]
