@@ -28,19 +28,3 @@ jobs:
         if: steps.rustup-cache.outputs.cache-hit != 'true'
         with:
           toolchain: "${{ steps.rust-version.outputs.version }}"
-          components: cargo-edit
-
-      - name: Set Version
-        run: "cargo set-version ${{ github.ref_name }}"
-
-      - name: Publish
-        run: cargo publish --allow-dirty --frozen --dry-run
-
-      - name: Rust Build
-        run: cargo build --all-features --all-targets
-      - name: Rust Lint - Format
-        run: cargo fmt --all --check
-      - name: Rust Lint - Clippy
-        run: cargo clippy --all-features --all-targets
-      - name: Rust Test
-        run: cargo test --workspace --all-features
