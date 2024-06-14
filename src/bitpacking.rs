@@ -4,6 +4,7 @@ use num_traits::{One, PrimInt, Unsigned};
 use paste::paste;
 use seq_macro::seq;
 
+use crate::seq_t;
 use crate::FastLanes;
 use crate::{Pred, Satisfied};
 
@@ -20,33 +21,18 @@ where
 pub trait BitPacking: FastLanes {
     /// Packs 1024 elements into W bits each.
     /// The output is given as Self to ensure correct alignment.
-    fn bitpack<const W: usize>(
-        input: &[Self; 1024],
-        output: &mut [Self; 128 * W / size_of::<Self>()],
-    ) where
+    fn bitpack<const W: usize>(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T])
+    where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
     /// Unpacks W-bit elements into 1024 elements.
-    fn bitunpack<const W: usize>(
-        input: &[Self; 128 * W / size_of::<Self>()],
-        output: &mut [Self; 1024],
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
-
-    fn bitunpack_single<const W: usize>(
-        input: &[Self; 128 * W / size_of::<Self>()],
-        index: usize,
-    ) -> Self
+    fn bitunpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
     where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
-}
 
-// Macro for repeating a code block bit_size_of::<T> times.
-macro_rules! seq_type_width {
-    ($ident:ident in u8 $body:tt) => {seq!($ident in 0..8 $body);};
-    ($ident:ident in u16 $body:tt) => {seq!($ident in 0..16 $body);};
-    ($ident:ident in u32 $body:tt) => {seq!($ident in 0..32 $body);};
-    ($ident:ident in u64 $body:tt) => {seq!($ident in 0..64 $body);};
+    fn bitunpack_single<const W: usize>(input: &[Self; 1024 * W / Self::T], index: usize) -> Self
+    where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>;
 }
 
 #[inline]
@@ -64,7 +50,7 @@ macro_rules! impl_bitpacking {
                 #[allow(unused_assignments)] // Inlined loop gives unused assignment on final iteration
                 fn bitpack<const W: usize>(
                     input: &[Self; 1024],
-                    output: &mut [Self; 128 * W / size_of::<Self>()],
+                    output: &mut [Self; 1024 * W / Self::T],
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                     let mask = (1 << W) - 1;
 
@@ -75,7 +61,7 @@ macro_rules! impl_bitpacking {
                         // Loop over each of the rows of the lane.
                         // Inlining this loop means all branches are known at compile time and
                         // the code is auto-vectorized for SIMD execution.
-                        seq_type_width!(row in $T {{
+                        seq_t!(row in $T {{
                             let src = input[Self::LANES * row + i] & mask;
 
                             // Shift the src bits into their position in the tmp output variable.
@@ -101,14 +87,14 @@ macro_rules! impl_bitpacking {
 
                 #[inline(never)]
                 fn bitunpack<const W: usize>(
-                    input: &[Self; 128 * W / size_of::<Self>()],
+                    input: &[Self; 1024 * W / Self::T],
                     output: &mut [Self; 1024],
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                     for i in 0..Self::LANES {
                         let mut src = input[i];
                         let mut tmp: Self;
 
-                        seq_type_width!(row in $T {{
+                        seq_t!(row in $T {{
                             let curr_pos: usize = (row * W) / Self::T;
                             let next_pos = ((row + 1) * W) / Self::T;
 
@@ -139,7 +125,7 @@ macro_rules! impl_bitpacking {
 
                 #[inline(never)]
                 fn bitunpack_single<const W: usize>(
-                    input: &[Self; 128 * W / size_of::<Self>()],
+                    input: &[Self; 1024 * W / Self::T],
                     index: usize,
                 ) -> Self where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                     let lane_index = index % Self::LANES;
