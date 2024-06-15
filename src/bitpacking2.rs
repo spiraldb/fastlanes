@@ -5,14 +5,18 @@
 /// It differs in that it iterates over the elements respecting the transposed ordering.
 /// While this doesn't make a difference for bit-packing, it means this same implementation can
 /// be used to easily generated fused kernels with transposed encodings such as delta.
+///
+/// Essentially this means: BitPack(Delta(Transpose(V))) == Delta+BitPack(Transpose(V))
+///
 use crate::FastLanes;
 use num_traits::{One, PrimInt, Unsigned};
 
+#[macro_export]
 macro_rules! bitpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
         {
-            use crate::{seq_t, FL_ORDER};
+            use $crate::{seq_t, FL_ORDER};
             use paste::paste;
 
             let mask = (1 << $W) - 1;
@@ -55,6 +59,7 @@ macro_rules! bitpack {
     };
 }
 
+#[macro_export]
 macro_rules! bitunpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident, $_2:tt $elem:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident, $_2 $elem:ident ) => ( $($body)* )}
@@ -108,6 +113,7 @@ fn mask<T: PrimInt + Unsigned + One>(width: usize) -> T {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::BitPacking;
 
     #[test]
     fn test_pack() {
@@ -123,6 +129,11 @@ mod test {
                 values[$pos]
             });
         }
+
+        let mut packed_orig: [u16; 960] = [0; 960];
+        BitPacking::bitpack::<15>(&values, &mut packed_orig);
+        println!("{:?}", packed_orig);
+        println!("{:?}", packed);
 
         let mut unpacked: [u16; 1024] = [0; 1024];
         for lane in 0..u16::LANES {

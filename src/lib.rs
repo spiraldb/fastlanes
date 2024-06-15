@@ -34,22 +34,22 @@ pub trait Satisfied {}
 impl Satisfied for Pred<true> {}
 
 // Macro for repeating a code block bit_size_of::<T> times.
+#[macro_export]
 macro_rules! seq_t {
     ($ident:ident in u8 $body:tt) => {seq_macro::seq!($ident in 0..8 $body);};
     ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..16 $body);};
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body);};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body);};
 }
-pub(crate) use seq_t;
 
 // Macro for repeating a code block size_of::<T> times.
+#[macro_export]
 macro_rules! seq_s {
     ($ident:ident in u8 $body:tt) => {seq_macro::seq!($ident in 0..1 $body);};
     ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..2 $body);};
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..4 $body);};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..8 $body);};
 }
-pub(crate) use seq_s;
 
 #[cfg(test)]
 mod test {

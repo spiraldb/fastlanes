@@ -5,7 +5,7 @@ use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use fastlanes::BitPacking;
+use fastlanes::{bitpack, BitPacking, FastLanes};
 
 fn bitpacking(c: &mut Criterion) {
     {
@@ -28,6 +28,20 @@ fn bitpacking(c: &mut Criterion) {
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
             b.iter(|| BitPacking::bitpack::<WIDTH>(&values, &mut packed));
+        });
+
+        group.bench_function("pack 16 -> 3 alternate", |b| {
+            const WIDTH: usize = 3;
+            let values = [3u16; 1024];
+            let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+            b.iter(|| {
+                for lane in 0..u16::LANES {
+                    // Always loop over lanes first. This is what the compiler vectorizes.
+                    bitpack!(u16, WIDTH, packed, lane, |$pos| {
+                        values[$pos]
+                    });
+                }
+            });
         });
     }
 
