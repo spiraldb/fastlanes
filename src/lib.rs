@@ -6,13 +6,14 @@ use std::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
-mod bitpacking2;
 mod delta;
-// mod ffor;
+mod ffor;
+mod macros;
 mod transpose;
 
 pub use bitpacking::*;
 pub use delta::*;
+pub use ffor::*;
 pub use transpose::*;
 
 pub const FL_ORDER: [usize; 8] = [0, 4, 2, 6, 1, 5, 3, 7];

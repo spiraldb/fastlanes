@@ -4,10 +4,10 @@ use seq_macro::seq;
 
 pub trait Delta: FastLanes {
     /// Delta-encode the input array. The input array should already be transposed.
-    fn encode(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]);
+    fn delta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]);
 
     /// Delta-decode the input array. The output array will be in transposed order.
-    fn decode(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]);
+    fn undelta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]);
 }
 
 macro_rules! impl_delta {

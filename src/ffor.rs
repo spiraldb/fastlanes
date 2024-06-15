@@ -1,6 +1,4 @@
-use crate::bitpacking::bitpack;
-use crate::{BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
-use seq_macro::seq;
+use crate::{bitpack, bitunpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 
 pub trait FusedFOR: BitPacking {
     fn ffor<const W: usize>(
@@ -27,8 +25,8 @@ impl FusedFOR for u16 {
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
     {
         for lane in 0..Self::LANES {
-            bitpack!(u16, W, output, lane, |$pos| {
-                input[$pos].wrapping_sub(reference)
+            bitpack!(u16, W, output, lane, |$idx| {
+                input[$idx].wrapping_sub(reference)
             });
         }
     }
@@ -40,14 +38,17 @@ impl FusedFOR for u16 {
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
     {
-        todo!()
+        for lane in 0..Self::LANES {
+            bitunpack!(u16, W, input, lane, |$idx, $elem| {
+                output[$idx] = $elem.wrapping_add(reference)
+            });
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::BitPacking;
     use std::mem::size_of;
 
     #[test]
@@ -60,9 +61,23 @@ mod test {
         let mut packed = [0; 128 * 15 / size_of::<u16>()];
         FusedFOR::ffor::<15>(&values, 10, &mut packed);
 
-        let mut unpacked = [0; 1024];
-        BitPacking::bitunpack::<15>(&packed, &mut unpacked);
+        println!("PACKED: {:?}", packed);
 
-        println!("{:?}", &values.iter().zip(&unpacked).collect::<Vec<_>>());
+        let mut unpacked = [0; 1024];
+        for lane in 0..u16::LANES {
+            bitunpack!(u16, 15, packed, lane, |$idx, $elem| {
+                unpacked[$idx] = $elem;
+            });
+        }
+
+        for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
+            assert_eq!(
+                // Check that the unpacked array is 10 less than the original (modulo 2^15)
+                a.wrapping_sub(10) & ((1 << 15) - 1),
+                *b,
+                "Mismatch at index {}",
+                i
+            );
+        }
     }
 }

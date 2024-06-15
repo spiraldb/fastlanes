@@ -7,9 +7,7 @@
 /// be used to easily generated fused kernels with transposed encodings such as delta.
 ///
 /// Essentially this means: BitPack(Delta(Transpose(V))) == Delta+BitPack(Transpose(V))
-///
 use crate::FastLanes;
-use num_traits::{One, PrimInt, Unsigned};
 
 #[macro_export]
 macro_rules! bitpack {
@@ -64,11 +62,16 @@ macro_rules! bitunpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident, $_2:tt $elem:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident, $_2 $elem:ident ) => ( $($body)* )}
         {
-            use crate::{seq_t, FL_ORDER};
+            use $crate::{seq_t, FL_ORDER};
             use paste::paste;
 
             let mut src = $packed[$lane];
             let mut tmp: $T;
+
+            #[inline]
+            fn mask(width: usize) -> $T {
+                (1 << width) - 1
+            }
 
             paste!(seq_t!(row in $T {
                 // Figure out the packed positions
@@ -82,17 +85,17 @@ macro_rules! bitunpack {
                     // packed input value
                     let remaining_bits = ((row + 1) * $W) % <$T>::T;
                     let current_bits = $W - remaining_bits;
-                    tmp = (src >> shift) & mask::<$T>(current_bits);
+                    tmp = (src >> shift) & mask(current_bits);
 
                     if next_pos < $W {
                         // Load the next packed value
                         src = $packed[<$T>::LANES * next_pos + $lane];
                         // Consume the remaining bits from the next input value.
-                        tmp |= (src & mask::<$T>(remaining_bits)) << current_bits;
+                        tmp |= (src & mask(remaining_bits)) << current_bits;
                     }
                 } else {
                     // Otherwise, just grab W bits from the src value
-                    tmp = (src >> shift) & mask::<$T>($W);
+                    tmp = (src >> shift) & mask($W);
                 }
 
                 // Write out the unpacked value
@@ -103,11 +106,6 @@ macro_rules! bitunpack {
             }));
         }
     };
-}
-
-#[inline]
-fn mask<T: PrimInt + Unsigned + One>(width: usize) -> T {
-    (T::one() << width) - T::one()
 }
 
 #[cfg(test)]
