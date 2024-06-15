@@ -16,7 +16,7 @@ fn bitpacking(c: &mut Criterion) {
             let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
 
             b.iter(|| {
-                BitPacking::<WIDTH>::bitpack(
+                BitPacking::bitpack::<WIDTH>(
                     array_ref![values, 0, 1024],
                     array_mut_ref![packed, 0, 192],
                 );
@@ -27,7 +27,7 @@ fn bitpacking(c: &mut Criterion) {
             const WIDTH: usize = 3;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            b.iter(|| BitPacking::<WIDTH>::bitpack(&values, &mut packed));
+            b.iter(|| BitPacking::bitpack::<WIDTH>(&values, &mut packed));
         });
     }
 
@@ -37,10 +37,10 @@ fn bitpacking(c: &mut Criterion) {
             const WIDTH: usize = 3;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::<WIDTH>::bitpack(&values, &mut packed);
+            BitPacking::bitpack::<WIDTH>(&values, &mut packed);
 
             let mut unpacked = [0u16; 1024];
-            b.iter(|| BitPacking::<WIDTH>::bitunpack(&packed, &mut unpacked));
+            b.iter(|| BitPacking::bitunpack::<WIDTH>(&packed, &mut unpacked));
         });
     }
 
@@ -50,11 +50,11 @@ fn bitpacking(c: &mut Criterion) {
             const WIDTH: usize = 3;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::<WIDTH>::bitpack(&values, &mut packed);
+            BitPacking::bitpack::<WIDTH>(&values, &mut packed);
 
             b.iter(|| {
                 for i in 0..1024 {
-                    black_box::<u16>(BitPacking::<WIDTH>::bitunpack_single(&packed, i));
+                    black_box::<u16>(BitPacking::bitunpack_single::<WIDTH>(&packed, i));
                 }
             });
         });
