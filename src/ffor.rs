@@ -2,27 +2,44 @@ use crate::bitpacking::bitpack;
 use crate::{BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 use seq_macro::seq;
 
-pub trait FusedFOR<const W: usize>: BitPacking<W>
-where
-    BitPackWidth<W>: SupportedBitPackWidth<Self>,
-{
-    fn ffor(input: &[Self; 1024], reference: Self, output: &mut [Self; 1024 * W / Self::T]);
-    fn unffor(input: &[Self; 1024 * W / Self::T], reference: Self, output: &mut [Self; 1024]);
+pub trait FusedFOR: BitPacking {
+    fn ffor<const W: usize>(
+        input: &[Self; 1024],
+        reference: Self,
+        output: &mut [Self; 1024 * W / Self::T],
+    ) where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+
+    fn unffor<const W: usize>(
+        input: &[Self; 1024 * W / Self::T],
+        reference: Self,
+        output: &mut [Self; 1024],
+    ) where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>;
 }
 
-impl<const W: usize> FusedFOR<W> for u16
-where
-    BitPackWidth<W>: SupportedBitPackWidth<Self>,
-{
-    fn ffor(input: &[Self; 1024], reference: Self, output: &mut [Self; 1024 * W / Self::T]) {
+impl FusedFOR for u16 {
+    fn ffor<const W: usize>(
+        input: &[Self; 1024],
+        reference: Self,
+        output: &mut [Self; 1024 * W / Self::T],
+    ) where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+    {
         for lane in 0..Self::LANES {
-            bitpack!(u16, W, input, output, lane, |$src| {
-                $src.wrapping_sub(reference)
+            bitpack!(u16, W, output, lane, |$pos| {
+                input[$pos].wrapping_sub(reference)
             });
         }
     }
 
-    fn unffor(_input: &[Self; 1024 * W / Self::T], _reference: Self, _output: &mut [Self; 1024]) {
+    fn unffor<const W: usize>(
+        input: &[Self; 1024 * W / Self::T],
+        reference: Self,
+        output: &mut [Self; 1024],
+    ) where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+    {
         todo!()
     }
 }
@@ -41,10 +58,10 @@ mod test {
         }
 
         let mut packed = [0; 128 * 15 / size_of::<u16>()];
-        FusedFOR::<15>::ffor(&values, 10, &mut packed);
+        FusedFOR::ffor::<15>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
-        BitPacking::<15>::bitunpack(&packed, &mut unpacked);
+        BitPacking::bitunpack::<15>(&packed, &mut unpacked);
 
         println!("{:?}", &values.iter().zip(&unpacked).collect::<Vec<_>>());
     }

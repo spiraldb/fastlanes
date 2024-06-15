@@ -24,7 +24,7 @@ impl<T: FastLanes> Transpose for T {
 
 /// Return the corresponding index in a transposed FastLanes vector.
 #[inline(always)]
-const fn transpose(idx: usize) -> usize {
+pub const fn transpose(idx: usize) -> usize {
     // Row * 8, ORDER * 8, lane * 16.
     let lane = idx % 16;
     let order = (idx / 16) % 8;

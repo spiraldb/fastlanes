@@ -22,6 +22,7 @@ macro_rules! impl_delta {
 
                         seq_s!(o in $T {
                              seq!(row in 0..8 {
+                                // NOTE(ngates): 128 elems in 8 x 8x16 blocks.
                                 let pos = (FL_ORDER[o] * 16) + (128 * row) + i;
                                 let next = input[pos];
                                 output[pos] = next.wrapping_sub(prev);
