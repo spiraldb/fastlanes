@@ -44,7 +44,7 @@ fn pack_u16_into_u3() {
 To validate the correctness of the generated assembly and ensure it is vectorized, you can use the following command:
 
 ```bash
-RUSTFLAGS='-C target-cpu=native' cargo asm --profile release --bench bitpacking --rust BitPacking
+cargo asm --native --bench bitpacking --rust BitPacking
 ```
 
 Note, it requires `cargo install cargo-show-asm`.
