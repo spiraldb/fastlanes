@@ -6,13 +6,14 @@ use std::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
-mod delta;
+mod bitpacking2;
+// mod delta;
 mod ffor;
 mod macros;
 mod transpose;
 
 pub use bitpacking::*;
-pub use delta::*;
+pub use bitpacking2::*;
 pub use ffor::*;
 pub use transpose::*;
 
@@ -50,17 +51,4 @@ macro_rules! seq_s {
     ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..2 $body);};
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..4 $body);};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..8 $body);};
-}
-
-#[cfg(test)]
-mod test {
-    use crate::FastLanes;
-
-    pub(crate) fn round_robin_values<T: FastLanes>() -> [T; 1024] {
-        let mut values = [T::zero(); 1024];
-        for i in 0..1024 {
-            values[i] = T::from(i % T::max_value().to_usize().unwrap()).unwrap();
-        }
-        values
-    }
 }

@@ -7,7 +7,6 @@
 /// be used to easily generated fused kernels with transposed encodings such as delta.
 ///
 /// Essentially this means: BitPack(Delta(Transpose(V))) == Delta+BitPack(Transpose(V))
-use crate::FastLanes;
 
 #[macro_export]
 macro_rules! bitpack {
@@ -16,6 +15,10 @@ macro_rules! bitpack {
         {
             use $crate::{seq_t, FL_ORDER};
             use paste::paste;
+
+            if $W == 0 {
+                return;
+            }
 
             let mask = (1 << $W) - 1;
 
@@ -28,9 +31,9 @@ macro_rules! bitpack {
             paste!(seq_t!(row in $T {
                 let o = row / 8;
                 let s = row % 8;
-                let src_idx = (FL_ORDER[o] * 16) + (s * 128) + $lane;
+                let idx = (FL_ORDER[o] * 16) + (s * 128) + $lane;
 
-                let src = __kernel__!(src_idx);
+                let src = __kernel__!(idx);
                 let src = src & mask;
 
                 // Shift the src bits into their position in the tmp output variable.
@@ -65,13 +68,25 @@ macro_rules! bitunpack {
             use $crate::{seq_t, FL_ORDER};
             use paste::paste;
 
-            let mut src = $packed[$lane];
-            let mut tmp: $T;
+            if $W == 0 {
+                // Special case for W=0, we just need to write out the packed value
+                paste!(seq_t!(row in $T {
+                    let o = row / 8;
+                    let s = row % 8;
+                    let idx = (FL_ORDER[o] * 16) + (s * 128) + $lane;
+                    let zero: $T = 0;
+                    __kernel__!(idx, zero);
+                }));
+                return;
+            }
 
             #[inline]
             fn mask(width: usize) -> $T {
                 (1 << width) - 1
             }
+
+            let mut src: $T = $packed[$lane];
+            let mut tmp: $T;
 
             paste!(seq_t!(row in $T {
                 // Figure out the packed positions
@@ -110,8 +125,7 @@ macro_rules! bitunpack {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::BitPacking;
+    use crate::{BitPacking, FastLanes};
 
     #[test]
     fn test_pack() {
@@ -130,8 +144,6 @@ mod test {
 
         let mut packed_orig: [u16; 960] = [0; 960];
         BitPacking::bitpack::<15>(&values, &mut packed_orig);
-        println!("{:?}", packed_orig);
-        println!("{:?}", packed);
 
         let mut unpacked: [u16; 1024] = [0; 1024];
         for lane in 0..u16::LANES {

@@ -2,7 +2,6 @@ use std::mem::size_of;
 
 use num_traits::{One, PrimInt, Unsigned};
 use paste::paste;
-use seq_macro::seq;
 
 use crate::seq_t;
 use crate::FastLanes;
@@ -10,10 +9,8 @@ use crate::{Pred, Satisfied};
 
 pub struct BitPackWidth<const W: usize>;
 pub trait SupportedBitPackWidth<T> {}
-impl<const W: usize, T> SupportedBitPackWidth<T> for BitPackWidth<W>
-where
-    Pred<{ W > 0 }>: Satisfied,
-    Pred<{ W < 8 * size_of::<T>() }>: Satisfied,
+impl<const W: usize, T> SupportedBitPackWidth<T> for BitPackWidth<W> where
+    Pred<{ W <= 8 * size_of::<T>() }>: Satisfied
 {
 }
 
@@ -166,6 +163,7 @@ impl_bitpacking!(u64);
 #[cfg(test)]
 mod test {
     use super::*;
+    use seq_macro::seq;
 
     macro_rules! test_round_trip {
         ($T:ty, $W:literal) => {

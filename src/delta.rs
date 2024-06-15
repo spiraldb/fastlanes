@@ -14,12 +14,10 @@ macro_rules! impl_delta {
     ($T:ty) => {
         paste! {
             impl Delta for $T {
-                #[allow(unused_assignments)]
                 #[inline(never)]
-                fn encode(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]) {
+                fn delta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]) {
                     for i in 0..Self::LANES {
                         let mut prev = base[i];
-
                         seq_s!(o in $T {
                              seq!(row in 0..8 {
                                 // NOTE(ngates): 128 elems in 8 x 8x16 blocks.
@@ -34,7 +32,7 @@ macro_rules! impl_delta {
 
                 #[allow(unused_assignments)]
                 #[inline(never)]
-                fn decode(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]) {
+                fn undelta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]) {
                     for i in 0..Self::LANES {
                         let mut prev = base[i];
 
@@ -61,7 +59,6 @@ impl_delta!(u64);
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test::round_robin_values;
     use crate::Transpose;
     use std::fmt::Debug;
 
