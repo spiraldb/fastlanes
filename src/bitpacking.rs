@@ -18,25 +18,24 @@ where
 }
 
 /// BitPack into a compile-time known bit-width.
-pub trait BitPacking: FastLanes {
+pub trait BitPacking<const W: usize>: FastLanes
+where
+    BitPackWidth<W>: SupportedBitPackWidth<Self>,
+{
+    const PACKED: usize = 1024 * W / Self::T;
+
     /// Packs 1024 elements into W bits each.
     /// The output is given as Self to ensure correct alignment.
-    fn bitpack<const W: usize>(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T])
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn bitpack(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T]);
 
     /// Unpacks W-bit elements into 1024 elements.
-    fn bitunpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn bitunpack(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024]);
 
-    fn bitunpack_single<const W: usize>(input: &[Self; 1024 * W / Self::T], index: usize) -> Self
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn bitunpack_single(input: &[Self; 1024 * W / Self::T], index: usize) -> Self;
 }
 
 #[inline]
-pub(crate) fn mask<T: PrimInt + Unsigned + One>(width: usize) -> T {
+fn mask<T: PrimInt + Unsigned + One>(width: usize) -> T {
     (T::one() << width) - T::one()
 }
 
@@ -45,13 +44,10 @@ pub(crate) fn mask<T: PrimInt + Unsigned + One>(width: usize) -> T {
 macro_rules! impl_bitpacking {
     ($T:ty) => {
         paste! {
-            impl BitPacking for $T {
+            impl<const W: usize> BitPacking<W> for $T where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                 #[inline(never)] // Makes it easier to disassemble and validate ASM.
                 #[allow(unused_assignments)] // Inlined loop gives unused assignment on final iteration
-                fn bitpack<const W: usize>(
-                    input: &[Self; 1024],
-                    output: &mut [Self; 1024 * W / Self::T],
-                ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
+                fn bitpack(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T]) {
                     let mask = (1 << W) - 1;
 
                     // First we loop over each lane in the virtual 1024 bit word.
@@ -86,10 +82,7 @@ macro_rules! impl_bitpacking {
                 }
 
                 #[inline(never)]
-                fn bitunpack<const W: usize>(
-                    input: &[Self; 1024 * W / Self::T],
-                    output: &mut [Self; 1024],
-                ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
+                fn bitunpack(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024]) {
                     for i in 0..Self::LANES {
                         let mut src = input[i];
                         let mut tmp: Self;
@@ -124,10 +117,7 @@ macro_rules! impl_bitpacking {
                 }
 
                 #[inline(never)]
-                fn bitunpack_single<const W: usize>(
-                    input: &[Self; 1024 * W / Self::T],
-                    index: usize,
-                ) -> Self where BitPackWidth<W>: SupportedBitPackWidth<Self> {
+                fn bitunpack_single(input: &[Self; 1024 * W / Self::T], index: usize) -> Self {
                     let lane_index = index % Self::LANES;
                     let lane_start_bit = (index / Self::LANES) * W;
 
@@ -178,10 +168,10 @@ mod test {
                     }
 
                     let mut packed = [0; 128 * $W / size_of::<$T>()];
-                    BitPacking::bitpack::<$W>(&values, &mut packed);
+                    BitPacking::<$W>::bitpack(&values, &mut packed);
 
                     let mut unpacked = [0; 1024];
-                    BitPacking::bitunpack::<$W>(&packed, &mut unpacked);
+                    BitPacking::<$W>::bitunpack(&packed, &mut unpacked);
 
                     assert_eq!(&unpacked, &values);
                 }
@@ -194,10 +184,10 @@ mod test {
                     }
 
                     let mut packed = [0; 128 * $W / size_of::<$T>()];
-                    BitPacking::bitpack::<$W>(&values, &mut packed);
+                    BitPacking::<$W>::bitpack(&values, &mut packed);
 
                     for (idx, value) in values.into_iter().enumerate() {
-                        assert_eq!(BitPacking::bitunpack_single::<$W>(&packed, idx), value);
+                        assert_eq!(BitPacking::<$W>::bitunpack_single(&packed, idx), value);
                     }
                 }
             }
