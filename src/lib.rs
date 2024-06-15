@@ -7,10 +7,12 @@ use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
 mod delta;
+mod ffor;
 mod transpose;
 
 pub use bitpacking::*;
 pub use delta::*;
+pub use ffor::*;
 pub use transpose::*;
 
 pub const FL_ORDER: [usize; 8] = [0, 4, 2, 6, 1, 5, 3, 7];

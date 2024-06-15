@@ -39,6 +39,51 @@ fn mask<T: PrimInt + Unsigned + One>(width: usize) -> T {
     (T::one() << width) - T::one()
 }
 
+macro_rules! bitpack {
+    ($T:ty, $W:expr, $input:expr, $output:expr, $lane:expr, | $_:tt $src:ident | $($body:tt)*) => {
+        macro_rules! __kernel__ {( $_ $src:ident ) => ( $($body)* )}
+
+        #[allow(unused_assignments)]
+        {
+            use seq_macro::seq;
+            use crate::seq_t;
+            use paste::paste;
+
+            let mask = (1 << W) - 1;
+            let mut tmp: $T = 0;
+
+            // Loop over each of the rows of the lane.
+            // Inlining this loop means all branches are known at compile time and
+            // the code is auto-vectorized for SIMD execution.
+            paste!(seq_t!(row in $T {{
+                // Load the next input, and apply any fused kernel to it.
+                let src = $input[$T::LANES * row + $lane];
+                let src = __kernel__!(src);
+                let src = src & mask;
+
+                // Shift the src bits into their position in the tmp output variable.
+                if row == 0 {
+                    tmp = src;
+                } else {
+                    tmp |= src << (row * $W) % Self::T;
+                }
+
+                // If the next input value overlaps with the next output, then we
+                // write out the tmp variable and bring forward the remaining bits.
+                let curr_pos: usize = (row * $W) / Self::T;
+                let next_pos: usize = ((row + 1) * $W) / Self::T;
+                if next_pos > curr_pos {
+                    $output[$T::LANES * curr_pos + $lane] = tmp;
+
+                    let remaining_bits: usize = ((row + 1) * $W) % Self::T;
+                    tmp = src >> $W - remaining_bits;
+                }
+            }}));
+        }
+    };
+}
+pub(crate) use bitpack;
+
 // We need to use a macro instead of generic impl since we have to know the bit-width of T ahead
 // of time.
 macro_rules! impl_bitpacking {

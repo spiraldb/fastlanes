@@ -10,20 +10,21 @@ impl<T: FastLanes> Transpose for T {
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         seq!(i in 0..1024 {
-            output[i] = input[mask(i)];
+            output[i] = input[transpose(i)];
         });
     }
 
     #[inline(never)]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         seq!(i in 0..1024 {
-            output[mask(i)] = input[i];
+            output[transpose(i)] = input[i];
         });
     }
 }
 
+/// Return the corresponding index in a transposed FastLanes vector.
 #[inline(always)]
-const fn mask(idx: usize) -> usize {
+const fn transpose(idx: usize) -> usize {
     // Row * 8, ORDER * 8, lane * 16.
     let lane = idx % 16;
     let order = (idx / 16) % 8;
