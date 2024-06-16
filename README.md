@@ -45,7 +45,9 @@ fn pack_u16_into_u3() {
 > [!CAUTION]
 > Rust FastLanes is not binary compatible with original FastLanes
 
-I have taken the decision to
+The BitPacking implementation in this library is reordered vs the original to enable
+fused kernels for transposed encodings (like Delta and RLE) in addition to the linear
+kernels such as FoR.
 
 ## Verifying ASM
 
