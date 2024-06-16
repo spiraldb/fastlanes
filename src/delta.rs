@@ -1,7 +1,8 @@
 #![allow(unused_assignments)]
 use crate::{bitpack, bitunpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
+use paste::paste;
 
-pub trait FusedDelta: BitPacking {
+pub trait Delta: BitPacking {
     fn delta<const W: usize>(
         input: &[Self; 1024],
         base: &[Self; Self::LANES],
@@ -17,46 +18,56 @@ pub trait FusedDelta: BitPacking {
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 }
 
-// While we experiment with the FusedDelta, we will only implement it for u16.
-impl FusedDelta for u16 {
-    #[inline(never)]
-    fn delta<const W: usize>(
-        input: &[Self; 1024],
-        base: &[Self; Self::LANES],
-        output: &mut [Self; 1024 * W / Self::T],
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
-    {
-        for lane in 0..Self::LANES {
-            let mut prev = base[lane];
-            bitpack!(u16, W, output, lane, |$idx| {
-                let next = input[$idx];
-                let out = next.saturating_sub(prev);
-                prev = next;
-                out
-            });
-        }
-    }
+macro_rules! impl_delta {
+    ($T:ty) => {
+        paste! {
+            impl Delta for $T {
+                #[inline(never)]
+                fn delta<const W: usize>(
+                    input: &[Self; 1024],
+                    base: &[Self; Self::LANES],
+                    output: &mut [Self; 1024 * W / Self::T],
+                ) where
+                    BitPackWidth<W>: SupportedBitPackWidth<Self>,
+                {
+                    for lane in 0..Self::LANES {
+                        let mut prev = base[lane];
+                        bitpack!($T, W, output, lane, |$idx| {
+                            let next = input[$idx];
+                            let out = next.saturating_sub(prev);
+                            prev = next;
+                            out
+                        });
+                    }
+                }
 
-    #[inline(never)]
-    fn undelta<const W: usize>(
-        input: &[Self; 1024 * W / Self::T],
-        base: &[Self; Self::LANES],
-        output: &mut [Self; 1024],
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
-    {
-        for lane in 0..Self::LANES {
-            let mut prev = base[lane];
-            bitunpack!(u16, W, input, lane, |$idx, $elem| {
-                println!("{} {}", $idx, $elem);
-                let next = $elem.saturating_add(prev);
-                output[$idx] = next;
-                prev = next;
-            });
+                #[inline(never)]
+                fn undelta<const W: usize>(
+                    input: &[Self; 1024 * W / Self::T],
+                    base: &[Self; Self::LANES],
+                    output: &mut [Self; 1024],
+                ) where
+                    BitPackWidth<W>: SupportedBitPackWidth<Self>,
+                {
+                    for lane in 0..Self::LANES {
+                        let mut prev = base[lane];
+                        bitunpack!($T, W, input, lane, |$idx, $elem| {
+                            println!("{} {}", $idx, $elem);
+                            let next = $elem.saturating_add(prev);
+                            output[$idx] = next;
+                            prev = next;
+                        });
+                    }
+                }
+            }
         }
-    }
+    };
 }
+
+impl_delta!(u8);
+impl_delta!(u16);
+impl_delta!(u32);
+impl_delta!(u64);
 
 #[cfg(test)]
 mod test {
@@ -76,10 +87,10 @@ mod test {
         Transpose::transpose(&values, &mut transposed);
 
         let mut packed = [0; 128 * W / size_of::<u16>()];
-        FusedDelta::delta::<W>(&transposed, &[0; 64], &mut packed);
+        Delta::delta::<W>(&transposed, &[0; 64], &mut packed);
 
         let mut unpacked = [0; 1024];
-        FusedDelta::undelta::<W>(&packed, &[0; 64], &mut unpacked);
+        Delta::undelta::<W>(&packed, &[0; 64], &mut unpacked);
 
         let mut untransposed = [0; 1024];
         Transpose::untranspose(&unpacked, &mut untransposed);

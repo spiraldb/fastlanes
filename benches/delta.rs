@@ -4,7 +4,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::mem::size_of;
 
-use fastlanes::{BitPacking, FusedDelta, Transpose};
+use fastlanes::{BitPacking, Delta, Transpose};
 
 fn delta(c: &mut Criterion) {
     let mut group = c.benchmark_group("delta");
@@ -21,7 +21,7 @@ fn delta(c: &mut Criterion) {
     group.bench_function("delta u16 fused", |b| {
         b.iter(|| {
             let mut packed = [0; 128 * W / size_of::<u16>()];
-            FusedDelta::delta::<W>(&transposed, &[0; 64], &mut packed)
+            Delta::delta::<W>(&transposed, &[0; 64], &mut packed)
         });
     });
 
@@ -29,7 +29,7 @@ fn delta(c: &mut Criterion) {
         b.iter(|| {
             let mut delta = [0; 1024];
             // Using width == 16 does not bit-packing
-            FusedDelta::delta::<16>(&transposed, &[0; 64], &mut delta);
+            Delta::delta::<16>(&transposed, &[0; 64], &mut delta);
 
             let mut packed = [0; 128 * W / size_of::<u16>()];
             BitPacking::bitpack::<W>(&delta, &mut packed);
