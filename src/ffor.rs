@@ -16,6 +16,7 @@ pub trait FusedFOR: BitPacking {
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 }
 
+// While we experiment with the FusedFOR, we will only implement it for u16.
 impl FusedFOR for u16 {
     fn ffor<const W: usize>(
         input: &[Self; 1024],
