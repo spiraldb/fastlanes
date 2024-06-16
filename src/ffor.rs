@@ -1,6 +1,6 @@
-use crate::{bitpack, bitunpack, BitPackWidth, BitPacking2, FastLanes, SupportedBitPackWidth};
+use crate::{bitpack, bitunpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 
-pub trait FusedFOR: BitPacking2 {
+pub trait FusedFOR: BitPacking {
     fn ffor<const W: usize>(
         input: &[Self; 1024],
         reference: Self,
@@ -63,7 +63,7 @@ mod test {
         FusedFOR::ffor::<W>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
-        BitPacking2::bitunpack::<W>(&packed, &mut unpacked);
+        BitPacking::bitunpack::<W>(&packed, &mut unpacked);
 
         for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
             assert_eq!(

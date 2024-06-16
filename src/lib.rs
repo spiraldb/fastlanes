@@ -6,14 +6,12 @@ use std::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
-mod bitpacking2;
 // mod delta;
 mod ffor;
 mod macros;
 mod transpose;
 
 pub use bitpacking::*;
-pub use bitpacking2::*;
 pub use ffor::*;
 pub use transpose::*;
 

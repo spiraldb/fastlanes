@@ -30,9 +30,5 @@ name = "bitpacking"
 harness = false
 
 [[bench]]
-name = "delta"
-harness = false
-
-[[bench]]
 name = "transpose"
 harness = false
