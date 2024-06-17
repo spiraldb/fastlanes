@@ -58,12 +58,12 @@ macro_rules! bitpack {
 
                     // If the next packed position is after our current one, then we have filled
                     // the current output and we can write the packed value.
-                    let curr_pos: usize = (row * $W) / T;
-                    let next_pos: usize = ((row + 1) * $W) / T;
+                    let curr_word: usize = (row * $W) / T;
+                    let next_word: usize = ((row + 1) * $W) / T;
 
                     #[allow(unused_assignments)]
-                    if next_pos > curr_pos {
-                        $packed[<$T>::LANES * curr_pos + $lane] = tmp;
+                    if next_word > curr_word {
+                        $packed[<$T>::LANES * curr_word + $lane] = tmp;
                         let remaining_bits: usize = ((row + 1) * $W) % T;
                         // Keep the remaining bits for the next packed value.
                         tmp = src >> $W - remaining_bits;
@@ -118,21 +118,21 @@ macro_rules! bitunpack {
 
                 paste!(seq_t!(row in $T {
                     // Figure out the packed positions
-                    let curr_pos: usize = (row * $W) / T;
-                    let next_pos = ((row + 1) * $W) / T;
+                    let curr_word: usize = (row * $W) / T;
+                    let next_word = ((row + 1) * $W) / T;
 
                     let shift = (row * $W) % T;
 
-                    if next_pos > curr_pos {
+                    if next_word > curr_word {
                         // Consume some bits from the curr packed input, the remainder are in the next
                         // packed input value
                         let remaining_bits = ((row + 1) * $W) % T;
                         let current_bits = $W - remaining_bits;
                         tmp = (src >> shift) & mask(current_bits);
 
-                        if next_pos < $W {
+                        if next_word < $W {
                             // Load the next packed value
-                            src = $packed[<$T>::LANES * next_pos + $lane];
+                            src = $packed[<$T>::LANES * next_word + $lane];
                             // Consume the remaining bits from the next input value.
                             tmp |= (src & mask(remaining_bits)) << current_bits;
                         }
