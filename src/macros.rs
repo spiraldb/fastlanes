@@ -9,6 +9,29 @@
 /// Essentially this means: BitPack(Delta(Transpose(V))) == Delta+BitPack(Transpose(V))
 
 #[macro_export]
+macro_rules! iterate {
+    ($T:ty, $lane: expr, | $_1:tt $idx:ident | $($body:tt)*) => {
+        macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
+        {
+            use $crate::{seq_t, FL_ORDER};
+            use paste::paste;
+
+            #[inline(always)]
+            fn index(row: usize, lane: usize) -> usize {
+                let o = row / 8;
+                let s = row % 8;
+                (FL_ORDER[o] * 16) + (s * 128) + lane
+            }
+
+            paste!(seq_t!(row in $T {
+                let idx = index(row, $lane);
+                __kernel__!(idx);
+            }));
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! bitpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}

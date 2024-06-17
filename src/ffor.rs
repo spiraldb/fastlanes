@@ -2,14 +2,14 @@ use crate::{bitpack, bitunpack, BitPackWidth, BitPacking, FastLanes, SupportedBi
 use paste::paste;
 
 pub trait FoR: BitPacking {
-    fn ffor<const W: usize>(
+    fn for_bitpack<const W: usize>(
         input: &[Self; 1024],
         reference: Self,
         output: &mut [Self; 1024 * W / Self::T],
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
-    fn unffor<const W: usize>(
+    fn unfor_bitpack<const W: usize>(
         input: &[Self; 1024 * W / Self::T],
         reference: Self,
         output: &mut [Self; 1024],
@@ -21,7 +21,7 @@ macro_rules! impl_for {
     ($T:ty) => {
         paste! {
             impl FoR for $T {
-                fn ffor<const W: usize>(
+                fn for_bitpack<const W: usize>(
                     input: &[Self; 1024],
                     reference: Self,
                     output: &mut [Self; 1024 * W / Self::T],
@@ -35,7 +35,7 @@ macro_rules! impl_for {
                     }
                 }
 
-                fn unffor<const W: usize>(
+                fn unfor_bitpack<const W: usize>(
                     input: &[Self; 1024 * W / Self::T],
                     reference: Self,
                     output: &mut [Self; 1024],
@@ -72,7 +72,7 @@ mod test {
         }
 
         let mut packed = [0; 128 * W / size_of::<u16>()];
-        FoR::ffor::<W>(&values, 10, &mut packed);
+        FoR::for_bitpack::<W>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
         BitPacking::bitunpack::<W>(&packed, &mut unpacked);
