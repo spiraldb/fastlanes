@@ -1,4 +1,4 @@
-/// This module contains an alternative macro-based implementation of bitpacking.
+/// This module contains an alternative macro-based implementation of packing.
 ///
 /// Warning: it is NOT wire compatible with the original FastLanes implementation.
 ///
@@ -32,7 +32,7 @@ macro_rules! iterate {
 }
 
 #[macro_export]
-macro_rules! bitpack {
+macro_rules! pack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
         {
@@ -98,7 +98,7 @@ macro_rules! bitpack {
 }
 
 #[macro_export]
-macro_rules! unbitpack {
+macro_rules! unpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident, $_2:tt $elem:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident, $_2 $elem:ident ) => ( $($body)* )}
         {
@@ -187,18 +187,18 @@ mod test {
         let mut packed: [u16; 960] = [0; 960];
         for lane in 0..u16::LANES {
             // Always loop over lanes first. This is what the compiler vectorizes.
-            bitpack!(u16, 15, packed, lane, |$pos| {
+            pack!(u16, 15, packed, lane, |$pos| {
                 values[$pos]
             });
         }
 
         let mut packed_orig: [u16; 960] = [0; 960];
-        BitPacking::bitpack::<15>(&values, &mut packed_orig);
+        BitPacking::pack::<15>(&values, &mut packed_orig);
 
         let mut unpacked: [u16; 1024] = [0; 1024];
         for lane in 0..u16::LANES {
             // Always loop over lanes first. This is what the compiler vectorizes.
-            unbitpack!(u16, 15, packed, lane, |$idx, $elem| {
+            unpack!(u16, 15, packed, lane, |$idx, $elem| {
                 unpacked[$idx] = $elem;
             });
         }

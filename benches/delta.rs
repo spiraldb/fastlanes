@@ -22,19 +22,19 @@ fn delta(c: &mut Criterion) {
     Delta::delta(&transposed, &[0; 64], &mut deltas);
 
     let mut packed = [0; 128 * W / size_of::<u16>()];
-    BitPacking::bitpack::<W>(&deltas, &mut packed);
+    BitPacking::pack::<W>(&deltas, &mut packed);
 
     group.bench_function("delta u16 fused", |b| {
         b.iter(|| {
             let mut unpacked = [0; 1024];
-            Delta::undelta_bitpack::<W>(&packed, &[0; 64], &mut unpacked)
+            Delta::undelta_pack::<W>(&packed, &[0; 64], &mut unpacked)
         });
     });
 
     group.bench_function("delta u16 unfused", |b| {
         b.iter(|| {
             let mut unpacked = [0; 1024];
-            BitPacking::unbitpack::<W>(&packed, &mut unpacked);
+            BitPacking::unpack::<W>(&packed, &mut unpacked);
             let mut undelta = [0; 1024];
             Delta::undelta(&unpacked, &[0; 64], &mut undelta);
         });

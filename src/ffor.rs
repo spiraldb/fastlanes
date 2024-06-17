@@ -1,15 +1,15 @@
-use crate::{bitpack, unbitpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
+use crate::{pack, unpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 use paste::paste;
 
 pub trait FoR: BitPacking {
-    fn for_bitpack<const W: usize>(
+    fn for_pack<const W: usize>(
         input: &[Self; 1024],
         reference: Self,
         output: &mut [Self; 1024 * W / Self::T],
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
-    fn unfor_bitpack<const W: usize>(
+    fn unfor_pack<const W: usize>(
         input: &[Self; 1024 * W / Self::T],
         reference: Self,
         output: &mut [Self; 1024],
@@ -21,7 +21,7 @@ macro_rules! impl_for {
     ($T:ty) => {
         paste! {
             impl FoR for $T {
-                fn for_bitpack<const W: usize>(
+                fn for_pack<const W: usize>(
                     input: &[Self; 1024],
                     reference: Self,
                     output: &mut [Self; 1024 * W / Self::T],
@@ -29,13 +29,13 @@ macro_rules! impl_for {
                     BitPackWidth<W>: SupportedBitPackWidth<Self>,
                 {
                     for lane in 0..Self::LANES {
-                        bitpack!($T, W, output, lane, |$idx| {
+                        pack!($T, W, output, lane, |$idx| {
                             input[$idx].wrapping_sub(reference)
                         });
                     }
                 }
 
-                fn unfor_bitpack<const W: usize>(
+                fn unfor_pack<const W: usize>(
                     input: &[Self; 1024 * W / Self::T],
                     reference: Self,
                     output: &mut [Self; 1024],
@@ -43,7 +43,7 @@ macro_rules! impl_for {
                     BitPackWidth<W>: SupportedBitPackWidth<Self>,
                 {
                     for lane in 0..Self::LANES {
-                        unbitpack!($T, W, input, lane, |$idx, $elem| {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
                             output[$idx] = $elem.wrapping_add(reference)
                         });
                     }
@@ -72,10 +72,10 @@ mod test {
         }
 
         let mut packed = [0; 128 * W / size_of::<u16>()];
-        FoR::for_bitpack::<W>(&values, 10, &mut packed);
+        FoR::for_pack::<W>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
-        BitPacking::unbitpack::<W>(&packed, &mut unpacked);
+        BitPacking::unpack::<W>(&packed, &mut unpacked);
 
         for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
             assert_eq!(
