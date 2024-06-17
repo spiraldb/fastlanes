@@ -98,7 +98,7 @@ macro_rules! bitpack {
 }
 
 #[macro_export]
-macro_rules! bitunpack {
+macro_rules! unbitpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident, $_2:tt $elem:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident, $_2 $elem:ident ) => ( $($body)* )}
         {
@@ -198,7 +198,7 @@ mod test {
         let mut unpacked: [u16; 1024] = [0; 1024];
         for lane in 0..u16::LANES {
             // Always loop over lanes first. This is what the compiler vectorizes.
-            bitunpack!(u16, 15, packed, lane, |$idx, $elem| {
+            unbitpack!(u16, 15, packed, lane, |$idx, $elem| {
                 unpacked[$idx] = $elem;
             });
         }

@@ -1,6 +1,6 @@
 #![allow(unused_assignments)]
 
-use crate::{bitunpack, iterate, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
+use crate::{iterate, unbitpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 use paste::paste;
 
 pub trait Delta: BitPacking {
@@ -54,7 +54,7 @@ macro_rules! impl_delta {
                 {
                     for lane in 0..Self::LANES {
                         let mut prev = base[lane];
-                        bitunpack!($T, W, input, lane, |$idx, $elem| {
+                        unbitpack!($T, W, input, lane, |$idx, $elem| {
                             let next = $elem.wrapping_add(prev);
                             output[$idx] = next;
                             prev = next;
@@ -100,7 +100,7 @@ mod test {
         assert_eq!(transposed, unpacked);
 
         // Unfused kernel
-        BitPacking::bitunpack::<W>(&packed, &mut unpacked);
+        BitPacking::unbitpack::<W>(&packed, &mut unpacked);
         let mut undelta = [0; 1024];
         Delta::undelta(&unpacked, &[0; 64], &mut undelta);
         assert_eq!(transposed, undelta);

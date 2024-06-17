@@ -1,4 +1,4 @@
-use crate::{bitpack, bitunpack, seq_t, FastLanes, Pred, Satisfied};
+use crate::{bitpack, seq_t, unbitpack, FastLanes, Pred, Satisfied};
 use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
 use num_traits::One;
@@ -22,24 +22,24 @@ pub trait BitPacking: FastLanes {
     unsafe fn unchecked_bitpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks W-bit elements into 1024 elements.
-    fn bitunpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
+    fn unbitpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
     where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
-    unsafe fn unchecked_bitunpack(width: usize, input: &[Self], output: &mut [Self]);
+    unsafe fn unchecked_unbitpack(width: usize, input: &[Self], output: &mut [Self]);
 
-    fn bitunpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
+    fn unbitpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
     where
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
         Self: One,
     {
         // TODO(ngates): implement this function to not unpack the world.
         let mut output = [Self::zero(); 1024];
-        Self::bitunpack::<W>(packed, &mut output);
+        Self::unbitpack::<W>(packed, &mut output);
         output[index]
     }
 
-    unsafe fn unchecked_bitunpack_single(width: usize, input: &[Self], index: usize) -> Self;
+    unsafe fn unchecked_unbitpack_single(width: usize, input: &[Self], index: usize) -> Self;
 }
 
 macro_rules! impl_bitpacking {
@@ -81,18 +81,18 @@ macro_rules! impl_bitpacking {
                 }
 
                 #[inline(never)]
-                fn bitunpack<const W: usize>(
+                fn unbitpack<const W: usize>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [Self; 1024],
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                     for lane in 0..Self::LANES {
-                        bitunpack!($T, W, input, lane, |$idx, $elem| {
+                        unbitpack!($T, W, input, lane, |$idx, $elem| {
                             output[$idx] = $elem
                         });
                     }
                 }
 
-                unsafe fn unchecked_bitunpack(width: usize, input: &[Self], output: &mut [Self]) {
+                unsafe fn unchecked_unbitpack(width: usize, input: &[Self], output: &mut [Self]) {
                     let packed_len = 128 * width / size_of::<Self>();
                     debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
                     debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
@@ -100,12 +100,12 @@ macro_rules! impl_bitpacking {
 
                     seq_t!(W in $T {
                         match width {
-                            #(W => Self::bitunpack::<W>(
+                            #(W => Self::unbitpack::<W>(
                                 array_ref![input, 0, 1024 * W / <$T>::T],
                                 array_mut_ref![output, 0, 1024],
                             ),)*
                             // seq_t has exclusive upper bound
-                            Self::T => Self::bitunpack::<{ Self::T }>(
+                            Self::T => Self::unbitpack::<{ Self::T }>(
                                 array_ref![input, 0, 1024],
                                 array_mut_ref![output, 0, 1024],
                             ),
@@ -114,7 +114,7 @@ macro_rules! impl_bitpacking {
                     })
                 }
 
-                unsafe fn unchecked_bitunpack_single(width: usize, input: &[Self], index: usize) -> Self {
+                unsafe fn unchecked_unbitpack_single(width: usize, input: &[Self], index: usize) -> Self {
                     let packed_len = 128 * width / size_of::<Self>();
                     debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size {}", packed_len);
                     debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
@@ -122,12 +122,12 @@ macro_rules! impl_bitpacking {
 
                     seq_t!(W in $T {
                         match width {
-                            #(W => Self::bitunpack_single::<W>(
+                            #(W => Self::unbitpack_single::<W>(
                                 array_ref![input, 0, 1024 * W / <$T>::T],
                                 index,
                             ),)*
                             // seq_t has exclusive upper bound
-                            Self::T => Self::bitunpack_single::<{ Self::T }>(
+                            Self::T => Self::unbitpack_single::<{ Self::T }>(
                                 array_ref![input, 0, 1024],
                                 index,
                             ),
@@ -159,20 +159,20 @@ mod test {
         let mut packed = [0; 320];
         unsafe { BitPacking::unchecked_bitpack(10, &input, &mut packed) };
         let mut output = [0; 1024];
-        unsafe { BitPacking::unchecked_bitunpack(10, &packed, &mut output) };
+        unsafe { BitPacking::unchecked_unbitpack(10, &packed, &mut output) };
         assert_eq!(input, output);
     }
 
     #[test]
-    fn test_bitunpack_single() {
+    fn test_unbitpack_single() {
         let values = array::from_fn(|i| i as u32);
         let mut packed = [0; 512];
         BitPacking::bitpack::<16>(&values, &mut packed);
 
         for i in 0..1024 {
-            assert_eq!(BitPacking::bitunpack_single::<16>(&packed, i), values[i]);
+            assert_eq!(BitPacking::unbitpack_single::<16>(&packed, i), values[i]);
             assert_eq!(
-                unsafe { BitPacking::unchecked_bitunpack_single(16, &packed, i) },
+                unsafe { BitPacking::unchecked_unbitpack_single(16, &packed, i) },
                 values[i]
             );
         }
@@ -193,7 +193,7 @@ mod test {
         BitPacking::bitpack::<W>(&values, &mut packed);
 
         let mut unpacked = [T::zero(); 1024];
-        BitPacking::bitunpack::<W>(&packed, &mut unpacked);
+        BitPacking::unbitpack::<W>(&packed, &mut unpacked);
 
         assert_eq!(&unpacked, &values);
     }

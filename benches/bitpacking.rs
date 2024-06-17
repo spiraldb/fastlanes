@@ -54,7 +54,7 @@ fn bitpacking(c: &mut Criterion) {
             BitPacking::bitpack::<WIDTH>(&values, &mut packed);
 
             let mut unpacked = [0u16; 1024];
-            b.iter(|| BitPacking::bitunpack::<WIDTH>(&packed, &mut unpacked));
+            b.iter(|| BitPacking::unbitpack::<WIDTH>(&packed, &mut unpacked));
         });
     }
 
@@ -68,7 +68,7 @@ fn bitpacking(c: &mut Criterion) {
 
             b.iter(|| {
                 for i in 0..1024 {
-                    black_box::<u16>(BitPacking::bitunpack_single::<WIDTH>(&packed, i));
+                    black_box::<u16>(BitPacking::unbitpack_single::<WIDTH>(&packed, i));
                 }
             });
         });

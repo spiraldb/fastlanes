@@ -34,7 +34,7 @@ fn delta(c: &mut Criterion) {
     group.bench_function("delta u16 unfused", |b| {
         b.iter(|| {
             let mut unpacked = [0; 1024];
-            BitPacking::bitunpack::<W>(&packed, &mut unpacked);
+            BitPacking::unbitpack::<W>(&packed, &mut unpacked);
             let mut undelta = [0; 1024];
             Delta::undelta(&unpacked, &[0; 64], &mut undelta);
         });

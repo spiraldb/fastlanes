@@ -1,4 +1,4 @@
-use crate::{bitpack, bitunpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
+use crate::{bitpack, unbitpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 use paste::paste;
 
 pub trait FoR: BitPacking {
@@ -43,7 +43,7 @@ macro_rules! impl_for {
                     BitPackWidth<W>: SupportedBitPackWidth<Self>,
                 {
                     for lane in 0..Self::LANES {
-                        bitunpack!($T, W, input, lane, |$idx, $elem| {
+                        unbitpack!($T, W, input, lane, |$idx, $elem| {
                             output[$idx] = $elem.wrapping_add(reference)
                         });
                     }
@@ -75,7 +75,7 @@ mod test {
         FoR::for_bitpack::<W>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
-        BitPacking::bitunpack::<W>(&packed, &mut unpacked);
+        BitPacking::unbitpack::<W>(&packed, &mut unpacked);
 
         for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
             assert_eq!(
