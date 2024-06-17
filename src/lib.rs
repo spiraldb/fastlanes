@@ -1,6 +1,8 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+extern crate core;
+
 use std::mem::size_of;
 
 use num_traits::{PrimInt, Unsigned};

@@ -1,5 +1,6 @@
 use crate::{bitpack, bitunpack, seq_t, FastLanes, Pred, Satisfied};
 use arrayref::{array_mut_ref, array_ref};
+use num_traits::One;
 use paste::paste;
 use std::mem::size_of;
 
@@ -26,6 +27,17 @@ pub trait BitPacking: FastLanes {
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
     unsafe fn unchecked_bitunpack(width: usize, input: &[Self], output: &mut [Self]);
+
+    fn bitunpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
+    where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+        Self: One,
+    {
+        // TODO(ngates): implement this function to not unpack the world.
+        let mut output = [Self::zero(); 1024];
+        Self::bitunpack::<W>(packed, &mut output);
+        output[index]
+    }
 }
 
 macro_rules! impl_bitpacking {
@@ -113,17 +125,30 @@ impl_bitpacking!(u64);
 mod test {
     use super::*;
     use seq_macro::seq;
+    use std::array;
     use std::fmt::Debug;
     use std::mem::size_of;
 
     #[test]
-    fn test_unsafe_bitpack() {
+    fn test_unchecked_bitpack() {
         let input = (0u32..1024).collect::<Vec<_>>();
         let mut packed = [0; 320];
         unsafe { BitPacking::unchecked_bitpack(10, &input, &mut packed) };
         let mut output = [0; 1024];
         unsafe { BitPacking::unchecked_bitunpack(10, &packed, &mut output) };
         assert_eq!(input, output);
+    }
+
+    #[test]
+    fn test_bitunpack_single() {
+        let values = array::from_fn(|i| i as u32);
+        let mut packed = [0; 512];
+        BitPacking::bitpack::<16>(&values, &mut packed);
+
+        for i in 0..1024 {
+            let unpacked = BitPacking::bitunpack_single::<16>(&packed, i);
+            assert_eq!(unpacked, values[i]);
+        }
     }
 
     fn try_round_trip<T: BitPacking + Debug, const W: usize>()
