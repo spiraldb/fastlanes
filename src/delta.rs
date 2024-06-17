@@ -1,16 +1,14 @@
 #![allow(unused_assignments)]
-use crate::{bitpack, bitunpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
+
+use crate::{iterate, unpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 use paste::paste;
 
 pub trait Delta: BitPacking {
-    fn delta<const W: usize>(
-        input: &[Self; 1024],
-        base: &[Self; Self::LANES],
-        output: &mut [Self; 1024 * W / Self::T],
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn delta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]);
 
-    fn undelta<const W: usize>(
+    fn undelta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]);
+
+    fn undelta_pack<const W: usize>(
         input: &[Self; 1024 * W / Self::T],
         base: &[Self; Self::LANES],
         output: &mut [Self; 1024],
@@ -23,26 +21,31 @@ macro_rules! impl_delta {
         paste! {
             impl Delta for $T {
                 #[inline(never)]
-                fn delta<const W: usize>(
-                    input: &[Self; 1024],
-                    base: &[Self; Self::LANES],
-                    output: &mut [Self; 1024 * W / Self::T],
-                ) where
-                    BitPackWidth<W>: SupportedBitPackWidth<Self>,
-                {
+                fn delta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]) {
                     for lane in 0..Self::LANES {
                         let mut prev = base[lane];
-                        bitpack!($T, W, output, lane, |$idx| {
+                        iterate!($T, lane, |$idx| {
                             let next = input[$idx];
-                            let out = next.saturating_sub(prev);
+                            output[$idx] = next.wrapping_sub(prev);
                             prev = next;
-                            out
                         });
                     }
                 }
 
                 #[inline(never)]
-                fn undelta<const W: usize>(
+                fn undelta(input: &[Self; 1024], base: &[Self; Self::LANES], output: &mut [Self; 1024]) {
+                    for lane in 0..Self::LANES {
+                        let mut prev = base[lane];
+                        iterate!($T, lane, |$idx| {
+                            let next = input[$idx].wrapping_add(prev);
+                            output[$idx] = next;
+                            prev = next;
+                        });
+                    }
+                }
+
+                #[inline(never)]
+                fn undelta_pack<const W: usize>(
                     input: &[Self; 1024 * W / Self::T],
                     base: &[Self; Self::LANES],
                     output: &mut [Self; 1024],
@@ -51,8 +54,8 @@ macro_rules! impl_delta {
                 {
                     for lane in 0..Self::LANES {
                         let mut prev = base[lane];
-                        bitunpack!($T, W, input, lane, |$idx, $elem| {
-                            let next = $elem.saturating_add(prev);
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            let next = $elem.wrapping_add(prev);
                             output[$idx] = next;
                             prev = next;
                         });
@@ -85,15 +88,21 @@ mod test {
         let mut transposed = [0; 1024];
         Transpose::transpose(&values, &mut transposed);
 
+        let mut deltas = [0; 1024];
+        Delta::delta(&transposed, &[0; 64], &mut deltas);
+
         let mut packed = [0; 128 * W / size_of::<u16>()];
-        Delta::delta::<W>(&transposed, &[0; 64], &mut packed);
+        BitPacking::pack::<W>(&deltas, &mut packed);
 
+        // Fused kernel
         let mut unpacked = [0; 1024];
-        Delta::undelta::<W>(&packed, &[0; 64], &mut unpacked);
+        Delta::undelta_pack::<W>(&packed, &[0; 64], &mut unpacked);
+        assert_eq!(transposed, unpacked);
 
-        let mut untransposed = [0; 1024];
-        Transpose::untranspose(&unpacked, &mut untransposed);
-
-        assert_eq!(values, untransposed);
+        // Unfused kernel
+        BitPacking::unpack::<W>(&packed, &mut unpacked);
+        let mut undelta = [0; 1024];
+        Delta::undelta(&unpacked, &[0; 64], &mut undelta);
+        assert_eq!(transposed, undelta);
     }
 }

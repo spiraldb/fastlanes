@@ -1,4 +1,4 @@
-/// This module contains an alternative macro-based implementation of bitpacking.
+/// This module contains an alternative macro-based implementation of packing.
 ///
 /// Warning: it is NOT wire compatible with the original FastLanes implementation.
 ///
@@ -9,7 +9,30 @@
 /// Essentially this means: BitPack(Delta(Transpose(V))) == Delta+BitPack(Transpose(V))
 
 #[macro_export]
-macro_rules! bitpack {
+macro_rules! iterate {
+    ($T:ty, $lane: expr, | $_1:tt $idx:ident | $($body:tt)*) => {
+        macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
+        {
+            use $crate::{seq_t, FL_ORDER};
+            use paste::paste;
+
+            #[inline(always)]
+            fn index(row: usize, lane: usize) -> usize {
+                let o = row / 8;
+                let s = row % 8;
+                (FL_ORDER[o] * 16) + (s * 128) + lane
+            }
+
+            paste!(seq_t!(row in $T {
+                let idx = index(row, $lane);
+                __kernel__!(idx);
+            }));
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! pack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
         {
@@ -75,7 +98,7 @@ macro_rules! bitpack {
 }
 
 #[macro_export]
-macro_rules! bitunpack {
+macro_rules! unpack {
     ($T:ty, $W:expr, $packed:expr, $lane:expr, | $_1:tt $idx:ident, $_2:tt $elem:ident | $($body:tt)*) => {
         macro_rules! __kernel__ {( $_1 $idx:ident, $_2 $elem:ident ) => ( $($body)* )}
         {
@@ -164,18 +187,18 @@ mod test {
         let mut packed: [u16; 960] = [0; 960];
         for lane in 0..u16::LANES {
             // Always loop over lanes first. This is what the compiler vectorizes.
-            bitpack!(u16, 15, packed, lane, |$pos| {
+            pack!(u16, 15, packed, lane, |$pos| {
                 values[$pos]
             });
         }
 
         let mut packed_orig: [u16; 960] = [0; 960];
-        BitPacking::bitpack::<15>(&values, &mut packed_orig);
+        BitPacking::pack::<15>(&values, &mut packed_orig);
 
         let mut unpacked: [u16; 1024] = [0; 1024];
         for lane in 0..u16::LANES {
             // Always loop over lanes first. This is what the compiler vectorizes.
-            bitunpack!(u16, 15, packed, lane, |$idx, $elem| {
+            unpack!(u16, 15, packed, lane, |$idx, $elem| {
                 unpacked[$idx] = $elem;
             });
         }
