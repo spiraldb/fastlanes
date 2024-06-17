@@ -61,7 +61,7 @@ impl_for!(u64);
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::mem::size_of;
+    use core::mem::size_of;
 
     #[test]
     fn test_ffor() {

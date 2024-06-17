@@ -1,8 +1,8 @@
 use crate::{bitpack, bitunpack, seq_t, FastLanes, Pred, Satisfied};
 use arrayref::{array_mut_ref, array_ref};
+use core::mem::size_of;
 use num_traits::One;
 use paste::paste;
-use std::mem::size_of;
 
 pub struct BitPackWidth<const W: usize>;
 pub trait SupportedBitPackWidth<T> {}
@@ -38,6 +38,8 @@ pub trait BitPacking: FastLanes {
         Self::bitunpack::<W>(packed, &mut output);
         output[index]
     }
+
+    unsafe fn unchecked_bitunpack_single(width: usize, input: &[Self], index: usize) -> Self;
 }
 
 macro_rules! impl_bitpacking {
@@ -111,6 +113,28 @@ macro_rules! impl_bitpacking {
                         }
                     })
                 }
+
+                unsafe fn unchecked_bitunpack_single(width: usize, input: &[Self], index: usize) -> Self {
+                    let packed_len = 128 * width / size_of::<Self>();
+                    debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                    debug_assert!(index <= 1024, "index must be less than or equal to 1024");
+
+                    seq_t!(W in $T {
+                        match width {
+                            #(W => Self::bitunpack_single::<W>(
+                                array_ref![input, 0, 1024 * W / <$T>::T],
+                                index,
+                            ),)*
+                            // seq_t has exclusive upper bound
+                            Self::T => Self::bitunpack_single::<{ Self::T }>(
+                                array_ref![input, 0, 1024],
+                                index,
+                            ),
+                            _ => unreachable!("Unsupported width: {}", width)
+                        }
+                    })
+                }
             }
         }
     };
@@ -124,14 +148,14 @@ impl_bitpacking!(u64);
 #[cfg(test)]
 mod test {
     use super::*;
+    use core::array;
+    use core::fmt::Debug;
+    use core::mem::size_of;
     use seq_macro::seq;
-    use std::array;
-    use std::fmt::Debug;
-    use std::mem::size_of;
 
     #[test]
     fn test_unchecked_bitpack() {
-        let input = (0u32..1024).collect::<Vec<_>>();
+        let input = array::from_fn(|i| i as u32);
         let mut packed = [0; 320];
         unsafe { BitPacking::unchecked_bitpack(10, &input, &mut packed) };
         let mut output = [0; 1024];
@@ -146,8 +170,11 @@ mod test {
         BitPacking::bitpack::<16>(&values, &mut packed);
 
         for i in 0..1024 {
-            let unpacked = BitPacking::bitunpack_single::<16>(&packed, i);
-            assert_eq!(unpacked, values[i]);
+            assert_eq!(BitPacking::bitunpack_single::<16>(&packed, i), values[i]);
+            assert_eq!(
+                unsafe { BitPacking::unchecked_bitunpack_single(16, &packed, i) },
+                values[i]
+            );
         }
     }
 

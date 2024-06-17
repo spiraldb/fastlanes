@@ -1,10 +1,11 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
+#![no_std]
 
+extern crate alloc;
 extern crate core;
 
-use std::mem::size_of;
-
+use core::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
