@@ -52,7 +52,6 @@ macro_rules! impl_delta {
                     for lane in 0..Self::LANES {
                         let mut prev = base[lane];
                         bitunpack!($T, W, input, lane, |$idx, $elem| {
-                            println!("{} {}", $idx, $elem);
                             let next = $elem.saturating_add(prev);
                             output[$idx] = next;
                             prev = next;
@@ -73,7 +72,7 @@ impl_delta!(u64);
 mod test {
     use super::*;
     use crate::Transpose;
-    use std::mem::size_of;
+    use core::mem::size_of;
 
     #[test]
     fn test_delta() {
