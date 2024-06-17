@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/spiraldb/fastlanes/compare/v0.1.2...v0.1.3) - 2024-06-17
+
+### Other
+- *(deps)* update mozilla-actions/sccache-action action to v0.0.5 ([#28](https://github.com/spiraldb/fastlanes/pull/28))
+- Bitunpack Single ([#27](https://github.com/spiraldb/fastlanes/pull/27))
+- Unchecked bitpack ([#25](https://github.com/spiraldb/fastlanes/pull/25))
+
 ## [0.1.2](https://github.com/spiraldb/fastlanes/compare/v0.1.1...v0.1.2) - 2024-06-16
 
 ### Other
