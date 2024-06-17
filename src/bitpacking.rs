@@ -147,8 +147,7 @@ mod test {
 
         for i in 0..1024 {
             let unpacked = BitPacking::bitunpack_single::<16>(&packed, i);
-            println!("P {} {}", i, unpacked);
-            //assert_eq!(unpacked, values[i]);
+            assert_eq!(unpacked, values[i]);
         }
     }
 
