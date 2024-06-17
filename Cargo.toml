@@ -9,9 +9,6 @@ authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec"]
 edition = "2021"
 
-[profile.release]
-strip = true
-
 [dependencies]
 arrayref = "0.3.7"
 num-traits = "0.2.19"
