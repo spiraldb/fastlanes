@@ -30,6 +30,10 @@ name = "bitpacking"
 harness = false
 
 [[bench]]
+name = "compute"
+harness = false
+
+[[bench]]
 name = "delta"
 harness = false
 
