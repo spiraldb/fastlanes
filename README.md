@@ -67,4 +67,4 @@ RUSTFLAGS='-C target-cpu=native' cargo bench --profile release
 
 ## License
 
-Licensed under the MIT license.
+Licensed under the Apache 2.0 license.
