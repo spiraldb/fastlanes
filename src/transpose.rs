@@ -22,8 +22,10 @@ impl<T: FastLanes> Transpose for T {
     }
 }
 
-/// Return the corresponding index in a transposed FastLanes vector.
+/// Return the corresponding index in a transposed `FastLanes` vector.
+#[allow(clippy::inline_always)]
 #[inline(always)]
+#[must_use]
 pub const fn transpose(idx: usize) -> usize {
     // Row * 8, ORDER * 8, lane * 16.
     let lane = idx % 16;

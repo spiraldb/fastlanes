@@ -19,25 +19,13 @@ seq-macro = "0.3.5"
 arrayref = "0.3.7"
 criterion = "0.5.1"
 
-[workspace.lints.rust]
+[lints.rust]
 warnings = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 
-[workspace.lints.clippy]
+[lints.clippy]
 all = "deny"
-if_then_some_else_none = { level = "deny" }
-mem_forget = { level = "deny" }
-multiple_inherent_impl = { level = "deny" }
-or_fun_call = "deny"
-panic = { level = "deny" }
-panic_in_result_fn = { level = "deny" }
-same_name_method = { level = "deny" }
-self_named_module_files = { level = "deny" }
-tests_outside_test_module = { level = "deny" }
-unreachable = { level = "deny" }
-unwrap_used = { level = "deny" }
-unwrap_in_result = { level = "deny" }
-use_debug = { level = "deny" }
+pedantic = "deny"
 
 [[bench]]
 name = "bitpacking"
