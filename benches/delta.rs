@@ -7,9 +7,9 @@ use std::mem::size_of;
 use fastlanes::{BitPacking, Delta, Transpose};
 
 fn delta(c: &mut Criterion) {
-    let mut group = c.benchmark_group("delta");
-
     const W: usize = 9;
+
+    let mut group = c.benchmark_group("delta");
     let mut values: [u16; 1024] = [0; 1024];
     for i in 0..1024 {
         values[i] = (i / 8) as u16;
@@ -27,7 +27,7 @@ fn delta(c: &mut Criterion) {
     group.bench_function("delta u16 fused", |b| {
         b.iter(|| {
             let mut unpacked = [0; 1024];
-            Delta::undelta_pack::<W>(&packed, &[0; 64], &mut unpacked)
+            Delta::undelta_pack::<W>(&packed, &[0; 64], &mut unpacked);
         });
     });
 

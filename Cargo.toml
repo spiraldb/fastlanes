@@ -24,14 +24,14 @@ warnings = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 
 [lints.clippy]
-all = "deny"
-pedantic = "deny"
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cast_possible_truncation = "allow"
 if_then_some_else_none = "deny"
 mem_forget = "deny"
 multiple_inherent_impl = "deny"
 or_fun_call = "deny"
 panic = "deny"
-panic_in_result_fn = "deny"
 same_name_method = "deny"
 self_named_module_files = "deny"
 tests_outside_test_module = "deny"
