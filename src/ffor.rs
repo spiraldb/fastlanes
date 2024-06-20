@@ -82,8 +82,7 @@ mod test {
                 // Check that the unpacked array is 10 less than the original (modulo 2^15)
                 a.wrapping_sub(10) & ((1 << W) - 1),
                 *b,
-                "Mismatch at index {}",
-                i
+                "Mismatch at index {i}"
             );
         }
     }

@@ -1,6 +1,6 @@
 /// This module contains an alternative macro-based implementation of packing.
 ///
-/// Warning: it is NOT wire compatible with the original FastLanes implementation.
+/// Warning: it is NOT wire compatible with the original `FastLanes` implementation.
 ///
 /// It differs in that it iterates over the elements respecting the transposed ordering.
 /// While this doesn't make a difference for bit-packing, it means this same implementation can
