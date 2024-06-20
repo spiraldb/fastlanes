@@ -25,8 +25,11 @@ unsafe_op_in_unsafe_fn = "deny"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
+# enable pedantic lint group with overrides
 pedantic = { level = "deny", priority = -1 }
 cast_possible_truncation = "allow"
+needless_range_loop = "allow"
+# opt-in to members of the "restrictions" lint group
 if_then_some_else_none = "deny"
 mem_forget = "deny"
 multiple_inherent_impl = "deny"
@@ -35,9 +38,7 @@ panic = "deny"
 same_name_method = "deny"
 self_named_module_files = "deny"
 tests_outside_test_module = "deny"
-unreachable = "deny"
 unwrap_used = "deny"
-unwrap_in_result = "deny"
 use_debug = "deny"
 
 [[bench]]
