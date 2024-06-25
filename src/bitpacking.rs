@@ -1,11 +1,12 @@
-use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
-use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
+
+use arrayref::{array_mut_ref, array_ref};
 use paste::paste;
 
+use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
+
 pub struct BitPackWidth<const W: usize>;
-pub trait SupportedBitPackWidth<T> {
-}
+pub trait SupportedBitPackWidth<T> {}
 impl<const W: usize, T> SupportedBitPackWidth<T> for BitPackWidth<W> where
     Pred<{ W <= 8 * size_of::<T>() }>: Satisfied
 {
@@ -133,40 +134,38 @@ macro_rules! impl_packing {
                 where
                     BitPackWidth<W>: SupportedBitPackWidth<Self>
                 {
-                    // We can think of the packed array as effectively a row-major 2-D array of with
-                    // Self::LANES columns and Self::T rows with W-bit elements.
+                    // We can think of the input array as effectively a row-major 2-D array of with
+                    // Self::LANES columns and Self::T rows.
+                    // Meanwhile, the packed array is (logically) a *column-major* 2-D
+                    // array of 128 columns and 8 rows, each of which has W-bits.
                     // The ordering of the elements in the packed array is transposed to match
-                    // the required layout for delta and other more complex encdoings.
+                    // the required layout for delta and other more complex encodings.
                     //
                     // First step, we need to get the transposed index
-                    let index = {
-                        let row = index / Self::LANES;
-                        let lane = index % Self::LANES;
+                    let row = index / Self::LANES;
+                    let lane = index % Self::LANES;
+                    let transposed_index = {
                         let o = row / 8;
                         let s = row % 8;
                         (FL_ORDER[o] * 16) + (s * 128) + lane
                     };
 
-                    // From the transposed index, we can get the correct W-bit row & lane (column)
-                    let row = index / Self::LANES;
-                    let lane = index % Self::LANES;
-
-                    // we need to find the correct starting bit within the lane
-                    let lane_start_bit = row * W;
+                    // From the transposed index, we can get the correct start bit within the packed array
+                    let start_bit = transposed_index * W;
 
                     // we read one or two T-bit words from the lane, depending on how our target
                     // W-bit value overlaps with the T-bit words
-                    let start_word = lane_start_bit / Self::T;
-                    let end_word_inclusive = (lane_start_bit + W - 1) / Self::T;
+                    let start_word = start_bit / Self::T;
+                    let end_word_inclusive = (start_bit + W - 1) / Self::T;
 
                     // shift and mask the correct bits from the T-bit words
-                    let lo_shift = lane_start_bit % Self::T;
-                    let lo = packed[start_word * Self::LANES + lane] >> lo_shift;
+                    let lo_shift = start_bit % Self::T;
+                    let lo = packed[start_word] >> lo_shift;
 
                     let hi_shift = (Self::T - lo_shift) % Self::T;
-                    let hi = packed[end_word_inclusive * Self::LANES + lane] << hi_shift;
+                    let hi = packed[end_word_inclusive] << hi_shift;
 
-                    let mask: Self = (1 as Self) << W - 1;
+                    let mask: Self = ((1 as Self) << W) - 1;
                     (lo | hi) & mask
                 }
 
@@ -203,11 +202,13 @@ impl_packing!(u64);
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use core::array;
     use core::fmt::Debug;
     use core::mem::size_of;
+
     use seq_macro::seq;
+
+    use super::*;
 
     #[test]
     fn test_unchecked_pack() {
