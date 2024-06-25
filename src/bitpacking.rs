@@ -1,11 +1,11 @@
-use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied};
+use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
 use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
-use num_traits::One;
 use paste::paste;
 
 pub struct BitPackWidth<const W: usize>;
-pub trait SupportedBitPackWidth<T> {}
+pub trait SupportedBitPackWidth<T> {
+}
 impl<const W: usize, T> SupportedBitPackWidth<T> for BitPackWidth<W> where
     Pred<{ W <= 8 * size_of::<T>() }>: Satisfied
 {
@@ -45,14 +45,7 @@ pub trait BitPacking: FastLanes {
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
     fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
     where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
-        Self: One,
-    {
-        // TODO(ngates): implement this function to not unpack the world.
-        let mut output = [Self::zero(); 1024];
-        Self::unpack::<W>(packed, &mut output);
-        output[index]
-    }
+        BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
     /// where `W` is runtime-known instead of compile-time known.
@@ -134,6 +127,47 @@ macro_rules! impl_packing {
                             _ => unreachable!("Unsupported width: {}", width)
                         }
                     })
+                }
+
+                fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
+                where
+                    BitPackWidth<W>: SupportedBitPackWidth<Self>
+                {
+                    // We can think of the packed array as effectively a row-major 2-D array of with
+                    // Self::LANES columns and Self::T rows with W-bit elements.
+                    // The ordering of the elements in the packed array is transposed to match
+                    // the required layout for delta and other more complex encdoings.
+                    //
+                    // First step, we need to get the transposed index
+                    let index = {
+                        let row = index / Self::LANES;
+                        let lane = index % Self::LANES;
+                        let o = row / 8;
+                        let s = row % 8;
+                        (FL_ORDER[o] * 16) + (s * 128) + lane
+                    };
+
+                    // From the transposed index, we can get the correct W-bit row & lane (column)
+                    let row = index / Self::LANES;
+                    let lane = index % Self::LANES;
+
+                    // we need to find the correct starting bit within the lane
+                    let lane_start_bit = row * W;
+
+                    // we read one or two T-bit words from the lane, depending on how our target
+                    // W-bit value overlaps with the T-bit words
+                    let start_word = lane_start_bit / Self::T;
+                    let end_word_inclusive = (lane_start_bit + W - 1) / Self::T;
+
+                    // shift and mask the correct bits from the T-bit words
+                    let lo_shift = lane_start_bit % Self::T;
+                    let lo = packed[start_word * Self::LANES + lane] >> lo_shift;
+
+                    let hi_shift = (Self::T - lo_shift) % Self::T;
+                    let hi = packed[end_word_inclusive * Self::LANES + lane] << hi_shift;
+
+                    let mask: Self = (1 as Self) << W - 1;
+                    (lo | hi) & mask
                 }
 
                 unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self {
