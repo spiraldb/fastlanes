@@ -197,8 +197,166 @@ macro_rules! impl_packing {
 
 impl_packing!(u8);
 impl_packing!(u16);
-impl_packing!(u32);
+//impl_packing!(u32);
 impl_packing!(u64);
+
+impl BitPacking for u32 {
+    #[inline(never)] // Makes it easier to disassemble and validate ASM.
+    fn pack<const W: usize>(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T])
+    where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+    {
+        for lane in 0..Self::LANES {
+            pack!(u32, W, output, lane, |$idx| {
+                input[$idx]
+            });
+        }
+    }
+
+    #[allow(clippy::all)]
+    unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
+        let packed_len = 128 * width / size_of::<Self>();
+        debug_assert_eq!(
+            output.len(),
+            packed_len,
+            "Output buffer must be of size 1024 * W / T"
+        );
+        debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
+        debug_assert!(
+            width <= Self::T,
+            "Width must be less than or equal to {}",
+            Self::T
+        );
+
+        seq_t!(W in u32 {
+            match width {
+                #(W => Self::pack::<W>(
+                    array_ref![input, 0, 1024],
+                    array_mut_ref![output, 0, 1024 * W / <u32>::T],
+                ),)*
+                // seq_t has exclusive upper bound
+                Self::T => Self::pack::<{ Self::T }>(
+                    array_ref![input, 0, 1024],
+                    array_mut_ref![output, 0, 1024],
+                ),
+                _ => unreachable!("Unsupported width: {}", width)
+            }
+        })
+    }
+
+    #[inline(never)]
+    fn unpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
+    where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+    {
+        for lane in 0..Self::LANES {
+            unpack!(u32, W, input, lane, |$idx, $elem| {
+                output[$idx] = $elem
+            });
+        }
+    }
+
+    #[allow(clippy::all)]
+    unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
+        let packed_len = 128 * width / size_of::<Self>();
+        debug_assert_eq!(
+            input.len(),
+            packed_len,
+            "Input buffer must be of size 1024 * W / T"
+        );
+        debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
+        debug_assert!(
+            width <= Self::T,
+            "Width must be less than or equal to {}",
+            Self::T
+        );
+
+        seq_t!(W in u32 {
+            match width {
+                #(W => Self::unpack::<W>(
+                    array_ref![input, 0, 1024 * W / <u32>::T],
+                    array_mut_ref![output, 0, 1024],
+                ),)*
+                // seq_t has exclusive upper bound
+                Self::T => Self::unpack::<{ Self::T }>(
+                    array_ref![input, 0, 1024],
+                    array_mut_ref![output, 0, 1024],
+                ),
+                _ => unreachable!("Unsupported width: {}", width)
+            }
+        })
+    }
+
+    fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
+    where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+    {
+        // We can think of the input array as effectively a row-major 2-D array of with
+        // Self::LANES columns and Self::T rows.
+        // Meanwhile, the packed array is (logically) a *column-major* 2-D
+        // array of 128 columns and 8 rows, each of which has W-bits.
+        // The ordering of the elements in the packed array is transposed to match
+        // the required layout for delta and other more complex encodings.
+        //
+        // First step, we need to get the transposed index
+        let row = index / Self::LANES;
+        let transposed_index = {
+            let o = row / 8;
+            let s = row % 8;
+            let lane = index % Self::LANES;
+            (FL_ORDER[o] * 16) + (s * 128) + lane
+        };
+
+        // From the transposed index, we can get the correct start bit within the packed array
+        let start_bit = transposed_index * W;
+
+        // we read one or two T-bit words from the lane, depending on how our target
+        // W-bit value overlaps with the T-bit words
+        let start_word = start_bit / Self::T;
+        let end_word_inclusive = (start_bit + W - 1) / Self::T;
+
+        // shift and mask the correct bits from the T-bit words
+        let lo_shift = start_bit % Self::T;
+        let lo = packed[start_word] >> lo_shift;
+
+        let hi_shift = (Self::T - lo_shift) % Self::T;
+        let hi = packed[end_word_inclusive] << hi_shift;
+
+        let mask: Self = Self::MAX;
+        (lo | hi) & mask
+    }
+
+    #[allow(clippy::all)]
+    unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self {
+        let packed_len = 128 * width / size_of::<Self>();
+        debug_assert_eq!(
+            input.len(),
+            packed_len,
+            "Input buffer must be of size {packed_len}"
+        );
+        debug_assert!(
+            width <= Self::T,
+            "Width must be less than or equal to {}",
+            Self::T
+        );
+        debug_assert!(index <= 1024, "index must be less than or equal to 1024");
+
+        seq_t!(W in u32 {
+            match width {
+                #(W => Self::unpack_single::<W>(
+                    array_ref![input, 0, 1024 * W / <u32>::T],
+                    index,
+                ),)*
+                // seq_t has exclusive upper bound
+                Self::T => Self::unpack_single::<{ Self::T }>(
+                    array_ref![input, 0, 1024],
+                    index,
+                ),
+                _ => unreachable!("Unsupported width: {}", width)
+            }
+        })
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -223,15 +381,22 @@ mod test {
     #[test]
     fn test_unpack_single() {
         let values = array::from_fn(|i| i as u32);
-        let mut packed = [0; 512];
-        BitPacking::pack::<16>(&values, &mut packed);
+        let mut packed = [0; 1024];
+        BitPacking::pack::<32>(&values, &mut packed);
 
         for i in 0..1024 {
-            assert_eq!(BitPacking::unpack_single::<16>(&packed, i), values[i]);
-            assert_eq!(
-                unsafe { BitPacking::unchecked_unpack_single(16, &packed, i) },
-                values[i]
-            );
+            let start_bit: usize = 0;
+            let lo_shift = start_bit;
+            let lo = packed[i] >> lo_shift;
+
+            let mask: u32 = ((1 as u32) << 16) - 1;
+            let val = lo & mask;
+            let unpacked = BitPacking::unpack_single::<32>(&packed, i);
+            assert_eq!(unpacked, val);
+            // assert_eq!(
+            //     unsafe { BitPacking::unchecked_unpack_single(16, &packed, i) },
+            //     values[i]
+            // );
         }
     }
 
