@@ -152,9 +152,14 @@ macro_rules! impl_packing {
                     // First step, we need to get the lane and row for interpretation #1 above.
                     let lane = index % Self::LANES;
                     let row = {
-                        // This is the inverse of the `index` function from the pack/unpack macros.
-                        let s = index / 128;
-                        let fl_order = (index - s * 128 - lane) / 16;
+                        // This is the inverse of the `index` function from the pack/unpack macros:
+                        //     fn index(row: usize, lane: usize) -> usize {
+                        //         let o = row / 8;
+                        //         let s = row % 8;
+                        //         (FL_ORDER[o] * 16) + (s * 128) + lane
+                        //     }
+                        let s = index / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+                        let fl_order = (index - s * 128 - lane) / 16; // value of FL_ORDER[o]
                         let o = FL_ORDER[fl_order]; // because this transposition is invertible!
                         o * 8 + s
                     };
