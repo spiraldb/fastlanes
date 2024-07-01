@@ -134,24 +134,33 @@ macro_rules! impl_packing {
                 where
                     BitPackWidth<W>: SupportedBitPackWidth<Self>
                 {
-                    // We can think of the input array as effectively a row-major 2-D array of with
-                    // Self::LANES columns and Self::T rows.
-                    // Meanwhile, the packed array is (logically) a *column-major* 2-D
-                    // array of 128 columns and 8 rows, each of which has W-bits.
-                    // The ordering of the elements in the packed array is transposed to match
-                    // the required layout for delta and other more complex encodings.
+                    // Special case for W=0, since there's only one possible value.
+                    if W == 0 {
+                        return 0;
+                    }
+
+                    // We can think of the input array as effectively a row-major, left-to-right
+                    // 2-D array of with `Self::LANES` columns and `Self::T` rows.
                     //
-                    // First step, we need to get the transposed index
-                    let row = index / Self::LANES;
+                    // Meanwhile, we can think of the packed array as either:
+                    //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
+                    //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
+                    //
+                    // Bitpacking involves a transposition of the input array ordering, such that
+                    // decompression can be fused efficiently with encodings like delta and RLE.
+                    //
+                    // First step, we need to get the lane and row for interpretation #1 above.
                     let lane = index % Self::LANES;
-                    let transposed_index = {
-                        let o = row / 8;
-                        let s = row % 8;
-                        (FL_ORDER[o] * 16) + (s * 128) + lane
+                    let row = {
+                        // This is the inverse of the `index` function from the pack/unpack macros.
+                        let s = index / 128;
+                        let fl_order = (index - s * 128 - lane) / 16;
+                        let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+                        o * 8 + s
                     };
 
-                    // From the transposed index, we can get the correct start bit within the packed array
-                    let start_bit = transposed_index * W;
+                    // From the row, we can get the correct start bit within the lane.
+                    let start_bit = row * W;
 
                     // we read one or two T-bit words from the lane, depending on how our target
                     // W-bit value overlaps with the T-bit words
@@ -160,12 +169,12 @@ macro_rules! impl_packing {
 
                     // shift and mask the correct bits from the T-bit words
                     let lo_shift = start_bit % Self::T;
-                    let lo = packed[start_word] >> lo_shift;
+                    let lo = packed[Self::LANES * start_word + lane] >> lo_shift;
 
                     let hi_shift = (Self::T - lo_shift) % Self::T;
-                    let hi = packed[end_word_inclusive] << hi_shift;
+                    let hi = packed[Self::LANES * end_word_inclusive + lane] << hi_shift;
 
-                    let mask: Self = ((1 as Self) << W) - 1;
+                    let mask: Self = if W == Self::T { Self::MAX } else { ((1 as Self) << (W % Self::T)) - 1 };
                     (lo | hi) & mask
                 }
 
@@ -197,171 +206,8 @@ macro_rules! impl_packing {
 
 impl_packing!(u8);
 impl_packing!(u16);
-//impl_packing!(u32);
+impl_packing!(u32);
 impl_packing!(u64);
-
-impl BitPacking for u32 {
-    #[inline(never)] // Makes it easier to disassemble and validate ASM.
-    fn pack<const W: usize>(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T])
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
-    {
-        for lane in 0..Self::LANES {
-            pack!(u32, W, output, lane, |$idx| {
-                input[$idx]
-            });
-        }
-    }
-
-    #[allow(clippy::all)]
-    unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
-        let packed_len = 128 * width / size_of::<Self>();
-        debug_assert_eq!(
-            output.len(),
-            packed_len,
-            "Output buffer must be of size 1024 * W / T"
-        );
-        debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
-        debug_assert!(
-            width <= Self::T,
-            "Width must be less than or equal to {}",
-            Self::T
-        );
-
-        seq_t!(W in u32 {
-            match width {
-                #(W => Self::pack::<W>(
-                    array_ref![input, 0, 1024],
-                    array_mut_ref![output, 0, 1024 * W / <u32>::T],
-                ),)*
-                // seq_t has exclusive upper bound
-                Self::T => Self::pack::<{ Self::T }>(
-                    array_ref![input, 0, 1024],
-                    array_mut_ref![output, 0, 1024],
-                ),
-                _ => unreachable!("Unsupported width: {}", width)
-            }
-        })
-    }
-
-    #[inline(never)]
-    fn unpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
-    {
-        for lane in 0..Self::LANES {
-            unpack!(u32, W, input, lane, |$idx, $elem| {
-                output[$idx] = $elem
-            });
-        }
-    }
-
-    #[allow(clippy::all)]
-    unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
-        let packed_len = 128 * width / size_of::<Self>();
-        debug_assert_eq!(
-            input.len(),
-            packed_len,
-            "Input buffer must be of size 1024 * W / T"
-        );
-        debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
-        debug_assert!(
-            width <= Self::T,
-            "Width must be less than or equal to {}",
-            Self::T
-        );
-
-        seq_t!(W in u32 {
-            match width {
-                #(W => Self::unpack::<W>(
-                    array_ref![input, 0, 1024 * W / <u32>::T],
-                    array_mut_ref![output, 0, 1024],
-                ),)*
-                // seq_t has exclusive upper bound
-                Self::T => Self::unpack::<{ Self::T }>(
-                    array_ref![input, 0, 1024],
-                    array_mut_ref![output, 0, 1024],
-                ),
-                _ => unreachable!("Unsupported width: {}", width)
-            }
-        })
-    }
-
-    fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], unpacked_index: usize) -> Self
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>
-    {
-        // We can think of the input array as effectively a row-major, left-to-right 2-D array of
-        // with `Self::LANES` columns and `Self::T` rows.
-        //
-        // Meanwhile, we can think of the packed array as either:
-        //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
-        //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
-        //
-        // Bitpacking involves a transposition of the input array ordering, such that decompression
-        // can be fused efficiently with data-dependent encodings like delta and RLE.
-        //
-        // First step, we need to get the transposed index. This corresponds to
-        // "packed interpretation #1" above.
-        let lane = unpacked_index % Self::LANES;
-        let row = {
-            // This is the inverse of the `index` function repeated elsewhere in the codebase.
-            let s = unpacked_index / 128;
-            let fl_order = (unpacked_index - s * 128 - lane) / 16;
-            let o = FL_ORDER[fl_order]; // because this transposition is invertible!
-            o * 8 + s
-        };
-
-        // From the row, we can get the correct start bit within the lane.
-        let start_bit = row * W;
-
-        // we read one or two T-bit words from the lane, depending on how our target
-        // W-bit value overlaps with the T-bit words
-        let start_word = start_bit / Self::T;
-        let end_word_inclusive = (start_bit + W - 1) / Self::T;
-
-        // shift and mask the correct bits from the T-bit words
-        let lo_shift = start_bit % Self::T;
-        let lo = packed[Self::LANES * start_word + lane] >> lo_shift;
-
-        let hi_shift = (Self::T - lo_shift) % Self::T;
-        let hi = packed[Self::LANES * end_word_inclusive + lane] << hi_shift;
-
-        let mask: Self = if W == Self::T { Self::MAX } else { ((1 as Self) << (W % Self::T)) - 1 };
-        (lo | hi) & mask
-    }
-
-    #[allow(clippy::all)]
-    unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self {
-        let packed_len = 128 * width / size_of::<Self>();
-        debug_assert_eq!(
-            input.len(),
-            packed_len,
-            "Input buffer must be of size {packed_len}"
-        );
-        debug_assert!(
-            width <= Self::T,
-            "Width must be less than or equal to {}",
-            Self::T
-        );
-        debug_assert!(index <= 1024, "index must be less than or equal to 1024");
-
-        seq_t!(W in u32 {
-            match width {
-                #(W => Self::unpack_single::<W>(
-                    array_ref![input, 0, 1024 * W / <u32>::T],
-                    index,
-                ),)*
-                // seq_t has exclusive upper bound
-                Self::T => Self::unpack_single::<{ Self::T }>(
-                    array_ref![input, 0, 1024],
-                    index,
-                ),
-                _ => unreachable!("Unsupported width: {}", width)
-            }
-        })
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -416,7 +262,7 @@ mod test {
         BitPacking::unpack::<W>(&packed, &mut unpacked);
 
         assert_eq!(&unpacked, &values);
-        
+
         for i in 0..1024 {
             assert_eq!(BitPacking::unpack_single::<W>(&packed, i), values[i]);
             assert_eq!(
