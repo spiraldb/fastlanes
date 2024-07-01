@@ -386,22 +386,15 @@ mod test {
     #[test]
     fn test_unpack_single() {
         let values = array::from_fn(|i| i as u32);
-        let mut packed = [0; 1024];
-        BitPacking::pack::<32>(&values, &mut packed);
+        let mut packed = [0; 512];
+        BitPacking::pack::<16>(&values, &mut packed);
 
         for i in 0..1024 {
-            let start_bit: usize = 0;
-            let lo_shift = start_bit;
-            let lo = packed[i] >> lo_shift;
-
-            let mask: u32 = ((1_u32) << 16) - 1;
-            let val = lo & mask;
-            let unpacked = BitPacking::unpack_single::<32>(&packed, i);
-            assert_eq!(unpacked, val);
-            // assert_eq!(
-            //     unsafe { BitPacking::unchecked_unpack_single(16, &packed, i) },
-            //     values[i]
-            // );
+            assert_eq!(BitPacking::unpack_single::<16>(&packed, i), values[i]);
+            assert_eq!(
+                unsafe { BitPacking::unchecked_unpack_single(16, &packed, i) },
+                values[i]
+            );
         }
     }
 
@@ -423,6 +416,14 @@ mod test {
         BitPacking::unpack::<W>(&packed, &mut unpacked);
 
         assert_eq!(&unpacked, &values);
+        
+        for i in 0..1024 {
+            assert_eq!(BitPacking::unpack_single::<W>(&packed, i), values[i]);
+            assert_eq!(
+                unsafe { BitPacking::unchecked_unpack_single(W, &packed, i) },
+                values[i]
+            );
+        }
     }
 
     macro_rules! impl_try_round_trip {
