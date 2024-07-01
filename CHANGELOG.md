@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/spiraldb/fastlanes/compare/v0.1.5...v0.1.6) - 2024-07-01
+
+### Fixed
+- fixed! except the test is broken
+
+### Other
+- reads better
+- comments
+- fmt
+- passes
+- better
+- wip
+- wip
+- wip
+- wip
+- clippy works now, and is pedantic ([#38](https://github.com/spiraldb/fastlanes/pull/38))
+- aggressive clippy ([#37](https://github.com/spiraldb/fastlanes/pull/37))
+- pin nightly-2024-06-19 ([#36](https://github.com/spiraldb/fastlanes/pull/36))
+- Apache license ([#34](https://github.com/spiraldb/fastlanes/pull/34))
+
 ## [0.1.5](https://github.com/spiraldb/fastlanes/compare/v0.1.4...v0.1.5) - 2024-06-17
 
 ### Other
