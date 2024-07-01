@@ -289,16 +289,17 @@ impl BitPacking for u32 {
 
     fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
     where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+        BitPackWidth<W>: SupportedBitPackWidth<Self>
     {
-        // We can think of the input array as effectively a row-major 2-D array of with
-        // Self::LANES columns and Self::T rows.
-        // Meanwhile, the packed array is (logically) a *column-major* 2-D
-        // array of 128 columns and 8 rows, each of which has W-bits.
+        // We can think of the input array as effectively a row-major, left-to-right 2-D array of
+        // with `Self::LANES` columns and `Self::T` rows.
+        // Meanwhile, the packed array is (logically) a *tiled, column-major* 2-D
+        // array, where each tile has T
         // The ordering of the elements in the packed array is transposed to match
         // the required layout for delta and other more complex encodings.
         //
         // First step, we need to get the transposed index
+
         let row = index / Self::LANES;
         let transposed_index = {
             let o = row / 8;
@@ -322,7 +323,7 @@ impl BitPacking for u32 {
         let hi_shift = (Self::T - lo_shift) % Self::T;
         let hi = packed[end_word_inclusive] << hi_shift;
 
-        let mask: Self = Self::MAX;
+        let mask: Self = if W == Self::T { Self::MAX } else { ((1 as Self) << (W % Self::T)) - 1 };
         (lo | hi) & mask
     }
 
@@ -389,7 +390,7 @@ mod test {
             let lo_shift = start_bit;
             let lo = packed[i] >> lo_shift;
 
-            let mask: u32 = ((1 as u32) << 16) - 1;
+            let mask: u32 = ((1_u32) << 16) - 1;
             let val = lo & mask;
             let unpacked = BitPacking::unpack_single::<32>(&packed, i);
             assert_eq!(unpacked, val);
