@@ -287,29 +287,33 @@ impl BitPacking for u32 {
         })
     }
 
-    fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
+    fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], unpacked_index: usize) -> Self
     where
         BitPackWidth<W>: SupportedBitPackWidth<Self>
     {
         // We can think of the input array as effectively a row-major, left-to-right 2-D array of
         // with `Self::LANES` columns and `Self::T` rows.
-        // Meanwhile, the packed array is (logically) a *tiled, column-major* 2-D
-        // array, where each tile has T
-        // The ordering of the elements in the packed array is transposed to match
-        // the required layout for delta and other more complex encodings.
         //
-        // First step, we need to get the transposed index
-
-        let row = index / Self::LANES;
-        let transposed_index = {
-            let o = row / 8;
-            let s = row % 8;
-            let lane = index % Self::LANES;
-            (FL_ORDER[o] * 16) + (s * 128) + lane
+        // Meanwhile, we can think of the packed array as either:
+        //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
+        //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
+        //
+        // Bitpacking involves a transposition of the input array ordering, such that decompression
+        // can be fused efficiently with data-dependent encodings like delta and RLE.
+        //
+        // First step, we need to get the transposed index. This corresponds to
+        // "packed interpretation #1" above.
+        let lane = unpacked_index % Self::LANES;
+        let row = {
+            // This is the inverse of the `index` function repeated elsewhere in the codebase.
+            let s = unpacked_index / 128;
+            let fl_order = (unpacked_index - s * 128 - lane) / 16;
+            let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+            o * 8 + s
         };
 
-        // From the transposed index, we can get the correct start bit within the packed array
-        let start_bit = transposed_index * W;
+        // From the row, we can get the correct start bit within the lane.
+        let start_bit = row * W;
 
         // we read one or two T-bit words from the lane, depending on how our target
         // W-bit value overlaps with the T-bit words
@@ -318,10 +322,10 @@ impl BitPacking for u32 {
 
         // shift and mask the correct bits from the T-bit words
         let lo_shift = start_bit % Self::T;
-        let lo = packed[start_word] >> lo_shift;
+        let lo = packed[Self::LANES * start_word + lane] >> lo_shift;
 
         let hi_shift = (Self::T - lo_shift) % Self::T;
-        let hi = packed[end_word_inclusive] << hi_shift;
+        let hi = packed[Self::LANES * end_word_inclusive + lane] << hi_shift;
 
         let mask: Self = if W == Self::T { Self::MAX } else { ((1 as Self) << (W % Self::T)) - 1 };
         (lo | hi) & mask
