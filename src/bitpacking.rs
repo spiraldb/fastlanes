@@ -167,17 +167,16 @@ macro_rules! impl_packing {
                     // From the row, we can get the correct start bit within the lane.
                     let start_bit = row * W;
 
-                    // we read one or two T-bit words from the lane, depending on how our target
-                    // W-bit value overlaps with the T-bit words
-                    let start_word = start_bit / Self::T;
-                    let end_word_inclusive = (start_bit + W - 1) / Self::T;
-
-                    // shift and mask the correct bits from the T-bit words
+                    // We need to read one or two T-bit words from the lane, depending on how our
+                    // target W-bit value overlaps with the T-bit words. To avoid a branch, we
+                    // always read two T-bit words, and then shift/mask as needed.
+                    let lo_word = start_bit / Self::T;
                     let lo_shift = start_bit % Self::T;
-                    let lo = packed[Self::LANES * start_word + lane] >> lo_shift;
+                    let lo = packed[Self::LANES * lo_word + lane] >> lo_shift;
 
+                    let hi_word = (start_bit + W - 1) / Self::T;
                     let hi_shift = (Self::T - lo_shift) % Self::T;
-                    let hi = packed[Self::LANES * end_word_inclusive + lane] << hi_shift;
+                    let hi = packed[Self::LANES * hi_word + lane] << hi_shift;
 
                     let mask: Self = if W == Self::T { Self::MAX } else { ((1 as Self) << (W % Self::T)) - 1 };
                     (lo | hi) & mask
