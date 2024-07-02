@@ -130,6 +130,7 @@ macro_rules! impl_packing {
                     })
                 }
 
+                #[inline(never)] // Makes it easier to disassemble and validate ASM.
                 fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
                 where
                     BitPackWidth<W>: SupportedBitPackWidth<Self>
