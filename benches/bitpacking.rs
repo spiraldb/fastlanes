@@ -6,6 +6,7 @@ use std::mem::size_of;
 use arrayref::{array_mut_ref, array_ref};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use fastlanes::BitPacking;
+use seq_macro::seq;
 
 fn pack(c: &mut Criterion) {
     {
@@ -48,14 +49,14 @@ fn pack(c: &mut Criterion) {
         let mut group = c.benchmark_group("unpack-single");
         group.bench_function("unpack single 16 <- 3", |b| {
             const WIDTH: usize = 3;
-            let values = [3u16; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::pack::<WIDTH>(&values, &mut packed);
+            let values = vec![3u16; 1024];
+            let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
+            BitPacking::pack::<WIDTH>(array_ref![values, 0, 1024], array_mut_ref![packed, 0, 192]);
 
             b.iter(|| {
-                for i in 0..1024 {
-                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(&packed, i));
-                }
+                seq!(I in 0..1024 {
+                    black_box::<u16>(BitPacking::unpack_single_const::<WIDTH, I>(array_ref![packed, 0, 192]));
+                });
             });
         });
     }
