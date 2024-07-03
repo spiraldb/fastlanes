@@ -6,7 +6,6 @@ use std::mem::size_of;
 use arrayref::{array_mut_ref, array_ref};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use fastlanes::BitPacking;
-use seq_macro::seq;
 
 fn pack(c: &mut Criterion) {
     {
