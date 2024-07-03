@@ -55,7 +55,10 @@ fn pack(c: &mut Criterion) {
 
             b.iter(|| {
                 for i in 0..1024 {
-                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(array_ref![packed, 0, 192], i));
+                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(
+                        array_ref![packed, 0, 192],
+                        i,
+                    ));
                 }
             });
         });

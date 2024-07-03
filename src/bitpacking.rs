@@ -1,9 +1,8 @@
+use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
+use paste::paste;
 
 use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
-use arrayref::{array_mut_ref, array_ref};
-use paste::paste;
-use seq_macro::seq;
 
 pub struct BitPackWidth<const W: usize>;
 pub trait SupportedBitPackWidth<T> {}
@@ -43,7 +42,11 @@ pub trait BitPacking: FastLanes {
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
-    fn unpack_single<const W: usize>(input: &[Self; 1024 * W / Self::T], index: usize) -> Self {
+    /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
+    fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
+    where
+        BitPackWidth<W>: SupportedBitPackWidth<Self>,
+    {
         // Special case for W=0, since there's only one possible value.
         if W == 0 {
             return Self::zero();
@@ -96,13 +99,13 @@ pub trait BitPacking: FastLanes {
         (lo | hi) & mask
     }
 
-    // Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
-    // where `W` is runtime-known instead of compile-time known.
-    //
-    // # Safety
-    // The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
-    // is the packed width. The output slice must be of exactly length 1024.
-    // These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
+    /// where `W` is runtime-known instead of compile-time known.
+    ///
+    /// # Safety
+    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
+    /// is the packed width. The output slice must be of exactly length 1024.
+    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
 }
 
@@ -177,7 +180,7 @@ macro_rules! impl_packing {
                         }
                     })
                 }
-                
+
                 unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self {
                     let packed_len = 128 * width / size_of::<Self>();
                     debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size {}", packed_len);
@@ -216,7 +219,6 @@ mod test {
     use core::array;
     use core::fmt::Debug;
     use core::mem::size_of;
-
     use seq_macro::seq;
 
     use super::*;
