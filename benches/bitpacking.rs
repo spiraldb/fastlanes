@@ -54,9 +54,9 @@ fn pack(c: &mut Criterion) {
             BitPacking::pack::<WIDTH>(array_ref![values, 0, 1024], array_mut_ref![packed, 0, 192]);
 
             b.iter(|| {
-                seq!(I in 0..1024 {
-                    black_box::<u16>(BitPacking::unpack_single_const::<WIDTH, I>(array_ref![packed, 0, 192]));
-                });
+                for i in 0..1024 {
+                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(array_ref![packed, 0, 192], i));
+                }
             });
         });
     }

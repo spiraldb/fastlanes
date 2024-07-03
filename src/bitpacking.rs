@@ -46,26 +46,19 @@ pub trait BitPacking: FastLanes {
     fn unpack_single<const W: usize>(input: &[Self; 1024 * W / Self::T], index: usize) -> Self {
         seq!(I in 0..1024 {
             match index {
-                #(I => {
-                    Self::unpack_single_const::<W, I>(
-                        array_ref![input, 0, 1024 * W / Self::T],
-                    )
-                })*
-                // seq_t has exclusive upper bound
-                Self::T => Self::unpack_single_const::<{ Self::T }, I>(
-                    array_ref![input, 0, 1024],
-                ),
+                #(I =>
+                    Self::unpack_single_const::<W, I>(input),
+                )*
                 _ => unreachable!("Unsupported index: {}", index)
             }
         })
     }
-    
+
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
     fn unpack_single_const<const W: usize, const INDEX: usize>(
         packed: &[Self; 1024 * W / Self::T],
     ) -> Self
     where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
         Pred<{ INDEX < 1024 }>: Satisfied,
     {
         // Special case for W=0, since there's only one possible value.
@@ -208,25 +201,20 @@ macro_rules! impl_packing {
                     debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
                     debug_assert!(index <= 1024, "index must be less than or equal to 1024");
 
-                    seq!(I in 0..1024 {
-                        match index {
-                            #(I => {
-                                seq_t!(W in $T {
-                                    match width {
-                                        #(W => {
-                                            Self::unpack_single_const::<W, I>(
-                                                array_ref![input, 0, 1024 * W / <$T>::T],
-                                            )
-                                        })*
-                                        // seq_t has exclusive upper bound
-                                        Self::T => Self::unpack_single_const::<{ Self::T }, I>(
-                                            array_ref![input, 0, 1024],
-                                        ),
-                                        _ => unreachable!("Unsupported width: {}", width)
-                                    }
-                                })
-                            })*,
-                            _ => unreachable!("Unsupported index: {}", index)
+                    seq_t!(W in $T {
+                        match width {
+                            #(W => {
+                                Self::unpack_single::<W>(
+                                    array_ref![input, 0, 1024 * W / <$T>::T],
+                                    index
+                                )
+                            })*
+                            // seq_t has exclusive upper bound
+                            Self::T => Self::unpack_single::<{ Self::T }>(
+                                array_ref![input, 0, 1024],
+                                index
+                            ),
+                            _ => unreachable!("Unsupported width: {}", width)
                         }
                     })
                 }
