@@ -44,23 +44,6 @@ pub trait BitPacking: FastLanes {
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     fn unpack_single<const W: usize>(input: &[Self; 1024 * W / Self::T], index: usize) -> Self {
-        seq!(I in 0..1024 {
-            match index {
-                #(I =>
-                    Self::unpack_single_const::<W, I>(input),
-                )*
-                _ => unreachable!("Unsupported index: {}", index)
-            }
-        })
-    }
-
-    /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-    fn unpack_single_const<const W: usize, const INDEX: usize>(
-        packed: &[Self; 1024 * W / Self::T],
-    ) -> Self
-    where
-        Pred<{ INDEX < 1024 }>: Satisfied,
-    {
         // Special case for W=0, since there's only one possible value.
         if W == 0 {
             return Self::zero();
@@ -77,7 +60,7 @@ pub trait BitPacking: FastLanes {
         // decompression can be fused efficiently with encodings like delta and RLE.
         //
         // First step, we need to get the lane and row for interpretation #1 above.
-        let lane = INDEX % Self::LANES;
+        let lane = index % Self::LANES;
         let row = {
             // This is the inverse of the `index` function from the pack/unpack macros:
             //     fn index(row: usize, lane: usize) -> usize {
@@ -85,8 +68,8 @@ pub trait BitPacking: FastLanes {
             //         let s = row % 8;
             //         (FL_ORDER[o] * 16) + (s * 128) + lane
             //     }
-            let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
-            let fl_order = (INDEX - s * 128 - lane) / 16; // value of FL_ORDER[o]
+            let s = index / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+            let fl_order = (index - s * 128 - lane) / 16; // value of FL_ORDER[o]
             let o = FL_ORDER[fl_order]; // because this transposition is invertible!
             o * 8 + s
         };
