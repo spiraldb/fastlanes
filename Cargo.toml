@@ -1,6 +1,6 @@
 [package]
 name = "fastlanes"
-version = "0.1.5"
+version = "0.1.6"
 description = "Rust implementation of the FastLanes compression layout"
 license = "Apache-2.0"
 homepage = "https://github.com/spiraldb/fastlanes"
