@@ -48,13 +48,16 @@ fn pack(c: &mut Criterion) {
         let mut group = c.benchmark_group("unpack-single");
         group.bench_function("unpack single 16 <- 3", |b| {
             const WIDTH: usize = 3;
-            let values = [3u16; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::pack::<WIDTH>(&values, &mut packed);
+            let values = vec![3u16; 1024];
+            let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
+            BitPacking::pack::<WIDTH>(array_ref![values, 0, 1024], array_mut_ref![packed, 0, 192]);
 
             b.iter(|| {
                 for i in 0..1024 {
-                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(&packed, i));
+                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(
+                        array_ref![packed, 0, 192],
+                        i,
+                    ));
                 }
             });
         });

@@ -1,8 +1,8 @@
-use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied};
 use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
-use num_traits::One;
 use paste::paste;
+
+use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
 
 pub struct BitPackWidth<const W: usize>;
 pub trait SupportedBitPackWidth<T> {}
@@ -46,12 +46,57 @@ pub trait BitPacking: FastLanes {
     fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
     where
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
-        Self: One,
     {
-        // TODO(ngates): implement this function to not unpack the world.
-        let mut output = [Self::zero(); 1024];
-        Self::unpack::<W>(packed, &mut output);
-        output[index]
+        // Special case for W=0, since there's only one possible value.
+        if W == 0 {
+            return Self::zero();
+        }
+
+        // We can think of the input array as effectively a row-major, left-to-right
+        // 2-D array of with `Self::LANES` columns and `Self::T` rows.
+        //
+        // Meanwhile, we can think of the packed array as either:
+        //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
+        //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
+        //
+        // Bitpacking involves a transposition of the input array ordering, such that
+        // decompression can be fused efficiently with encodings like delta and RLE.
+        //
+        // First step, we need to get the lane and row for interpretation #1 above.
+        let lane = index % Self::LANES;
+        let row = {
+            // This is the inverse of the `index` function from the pack/unpack macros:
+            //     fn index(row: usize, lane: usize) -> usize {
+            //         let o = row / 8;
+            //         let s = row % 8;
+            //         (FL_ORDER[o] * 16) + (s * 128) + lane
+            //     }
+            let s = index / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+            let fl_order = (index - s * 128 - lane) / 16; // value of FL_ORDER[o]
+            let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+            o * 8 + s
+        };
+
+        // From the row, we can get the correct start bit within the lane.
+        let start_bit = row * W;
+
+        // We need to read one or two T-bit words from the lane, depending on how our
+        // target W-bit value overlaps with the T-bit words. To avoid a branch, we
+        // always read two T-bit words, and then shift/mask as needed.
+        let lo_word = start_bit / Self::T;
+        let lo_shift = start_bit % Self::T;
+        let lo = packed[Self::LANES * lo_word + lane] >> lo_shift;
+
+        let hi_word = (start_bit + W - 1) / Self::T;
+        let hi_shift = (Self::T - lo_shift) % Self::T;
+        let hi = packed[Self::LANES * hi_word + lane] << hi_shift;
+
+        let mask: Self = if W == Self::T {
+            Self::max_value()
+        } else {
+            ((Self::one()) << (W % Self::T)) - Self::one()
+        };
+        (lo | hi) & mask
     }
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
@@ -144,14 +189,16 @@ macro_rules! impl_packing {
 
                     seq_t!(W in $T {
                         match width {
-                            #(W => Self::unpack_single::<W>(
-                                array_ref![input, 0, 1024 * W / <$T>::T],
-                                index,
-                            ),)*
+                            #(W => {
+                                Self::unpack_single::<W>(
+                                    array_ref![input, 0, 1024 * W / <$T>::T],
+                                    index
+                                )
+                            })*
                             // seq_t has exclusive upper bound
                             Self::T => Self::unpack_single::<{ Self::T }>(
                                 array_ref![input, 0, 1024],
-                                index,
+                                index
                             ),
                             _ => unreachable!("Unsupported width: {}", width)
                         }
@@ -169,11 +216,12 @@ impl_packing!(u64);
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use core::array;
     use core::fmt::Debug;
     use core::mem::size_of;
     use seq_macro::seq;
+
+    use super::*;
 
     #[test]
     fn test_unchecked_pack() {
@@ -218,6 +266,14 @@ mod test {
         BitPacking::unpack::<W>(&packed, &mut unpacked);
 
         assert_eq!(&unpacked, &values);
+
+        for i in 0..1024 {
+            assert_eq!(BitPacking::unpack_single::<W>(&packed, i), values[i]);
+            assert_eq!(
+                unsafe { BitPacking::unchecked_unpack_single(W, &packed, i) },
+                values[i]
+            );
+        }
     }
 
     macro_rules! impl_try_round_trip {

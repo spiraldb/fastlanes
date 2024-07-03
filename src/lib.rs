@@ -45,3 +45,16 @@ macro_rules! seq_t {
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body)};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
 }
+
+#[cfg(test)]
+mod test {
+    use crate::FL_ORDER;
+
+    #[test]
+    fn test_ordering_is_own_inverse() {
+        // Check that FL_ORDER "round-trips"; i.e., it is its own inverse permutation.
+        for i in 0..8 {
+            assert_eq!(FL_ORDER[FL_ORDER[i]], i);
+        }
+    }
+}
