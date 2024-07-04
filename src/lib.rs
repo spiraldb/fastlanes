@@ -44,19 +44,6 @@ macro_rules! seq_t {
     ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..16 $body)};
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body)};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
-    ($W:expr, $ident:ident in u8 $body:tt) => {seq_macro::seq!($ident in 0..8 $body)};
-    ($W:expr, $ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..16 $body)};
-    ($W:expr, $ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body)};
-    ($W:expr, $ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
-}
-
-// Macro for repeating a code block T::LANES times.
-#[macro_export]
-macro_rules! seq_lanes {
-    ($ident:ident in u8 $body:tt) => {seq_macro::seq!($ident in 0..128 $body)};
-    ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
-    ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body)};
-    ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..16 $body)};
 }
 
 #[cfg(test)]
