@@ -95,6 +95,7 @@ pub trait BitPacking: FastLanes {
         (lo | hi) & mask
     }
 
+    #[must_use]
     fn packed_lane_and_row<const INDEX: usize>() -> (usize, usize) {
         // We can think of the input array as effectively a row-major, left-to-right
         // 2-D array of with `Self::LANES` columns and `Self::T` rows.
@@ -123,27 +124,28 @@ pub trait BitPacking: FastLanes {
         (lane, row)
     }
 
-    /// Unpacks a single element at the provided LANE and START_BIT from a packed array of 1024 `W` bit elements,
-    /// where `W` is runtime-known instead of compile-time known.
+    /// Unpacks a single element at the provided `START_BIT` of the (runtime-specified) lane from a
+    /// packed array of 1024 `W` bit elements, where `W` is runtime-known (specified via the mask)
+    /// instead of compile-time known. The point of this function is to produce a reusable block of
+    /// code that balances compile-time optimization with code size.
     ///
     /// # Safety
     /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
     /// is the packed width. The output slice must be of exactly length 1024.
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
-    unsafe fn unpack_single_const_helper<const LANE: usize, const START_BIT: usize, const ONE_WORD: bool>(
-        packed: &[Self], mask: Self) -> Self
+    unsafe fn unpack_single_const_helper<const START_BIT: usize, const ONE_WORD: bool>(
+        packed: &[Self], lane: usize, mask: Self) -> Self
     where
-        Pred< { START_BIT < Self::T * Self::T }> : Satisfied,
-        Pred< { LANE < Self::LANES }> : Satisfied
+        Pred< { START_BIT < Self::T * Self::T }> : Satisfied
     {
         let start_word = START_BIT / Self::T;
         let lo_shift = START_BIT % Self::T;
-        let lo = packed[Self::LANES * start_word + LANE] >> lo_shift;
+        let lo = packed[Self::LANES * start_word + lane] >> lo_shift;
         if ONE_WORD {
             lo & mask
         } else {
             let hi_shift = Self::T - lo_shift; // guaranteed that lo_shift > 0 if ONE_WORD == false
-            let hi = packed[Self::LANES * (start_word + 1) + LANE] << hi_shift;
+            let hi = packed[Self::LANES * (start_word + 1) + lane] << hi_shift;
             (lo | hi) & mask
         }
     }
