@@ -24,6 +24,7 @@ pub const FL_ORDER: [usize; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 pub trait FastLanes: Sized + Unsigned + PrimInt {
     const T: usize = size_of::<Self>() * 8;
     const LANES: usize = 1024 / Self::T;
+    const BITS_PER_LANE: usize = Self::T * Self::T;
 }
 
 impl FastLanes for u8 {}
