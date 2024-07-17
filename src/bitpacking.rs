@@ -135,9 +135,7 @@ macro_rules! impl_packing {
                 where
                     BitPackWidth<W>: SupportedBitPackWidth<Self>,
                 {
-                    unpack_single!($T, W, packed, index, |$elem| {
-                        $elem
-                    })
+                    unpack_single!($T, W, packed, index);
                 }
 
                 unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self {

@@ -175,83 +175,79 @@ macro_rules! unpack {
 
 #[macro_export]
 macro_rules! unpack_single {
-    ($T:ty, $W:expr, $packed:expr, $index:expr, | $_1:tt $elem:ident | $($body:tt)*) => {
-        macro_rules! __kernel__ {( $_1 $elem:ident ) => ( $($body)* )}
+    ($T:ty, $W:expr, $packed:expr, $index:expr) => {
+        use $crate::{FastLanes, FL_ORDER, seq_t};
+        use seq_macro::seq;
+        use paste::paste;
+
+        // The number of bits of T.
+        const T: usize = <$T>::T;
+
+        // This calculation of (lane, row) is the inverse of the `index` function from the
+        // pack/unpack macros
+        #[inline(always)]
+        fn lane_and_row<const INDEX: usize>() -> (usize, usize)
+        where Pred< { INDEX < 1024 }> : Satisfied {
+            const lane: usize = INDEX % <$T>::LANES;
+            const row: usize = {
+                let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+                let fl_order = (INDEX - s * 128 - lane) / 16; // value of FL_ORDER[o]
+                let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+                o * 8 + s
+            };
+            (lane, row)
+        }
+
+        fn unpack_single_const<const START_BIT: usize, const ONE_WORD: bool>(
+            packed: &[$T], lane: usize, mask: $T) -> $T
+        where
+            Pred< { START_BIT < T * T }> : Satisfied
         {
-            use $crate::{seq_t, FL_ORDER, FastLanes};
-            use paste::paste;
-
-            // The number of bits of T.
-            const T: usize = <$T>::T;
-
-            // This calculation of (lane, row) is the inverse of the `index` function from the
-            // pack/unpack macros
-            #[inline(always)]
-            const fn lane_and_row<const INDEX: usize>() -> (usize, usize) {
-                const lane: usize = INDEX % <$T>::LANES;
-                const row: usize = {
-                    let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
-                    let fl_order = (INDEX - s * 128 - lane) / 16; // value of FL_ORDER[o]
-                    let o = FL_ORDER[fl_order]; // because this transposition is invertible!
-                    o * 8 + s
-                };
-                (lane, row)
-            }
-
-            fn unpack_single_const_helper<const START_BIT: usize, const ONE_WORD: bool>(
-                packed: &[$T], lane: usize, mask: Self) -> Self
-            where
-                Pred< { START_BIT < T * T }> : Satisfied
-            {
-                let start_word = START_BIT / Self::T;
-                let lo_shift = START_BIT % Self::T;
-                let lo = packed[Self::LANES * start_word + lane] >> lo_shift;
-                if ONE_WORD {
-                    lo & mask
-                } else {
-                    let hi_shift = Self::T - lo_shift; // guaranteed that lo_shift > 0 if ONE_WORD == false
-                    let hi = packed[Self::LANES * (start_word + 1) + lane] << hi_shift;
-                    (lo | hi) & mask
-                }
-            }
-
-            if $W == 0 {
-                // Special case for W=0, we just need to zero the output.
-                // We'll still respect the iteration order in case the kernel has side effects.
-                let zero: $T = 0;
-                __kernel__!(zero);
+            let start_word = START_BIT / T;
+            let lo_shift = START_BIT % T;
+            let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+            if ONE_WORD {
+                lo & mask
             } else {
-                let (lane, row): (usize, usize) = seq!(I in 0..1024 {
-                        match index {
-                            #(I =>
-                                lane_and_row::<I>(),
-                            )*
-                            _ => unreachable!("Unsupported index: {}", index)
-                        }
-                    });
-
-                // Special case for W=T, we can just copy the packed value directly to the output.
-                if $W == T {
-                    let val = $packed[<$T>::LANES * row + lane];
-                    __kernel__!(val);
-                } else {
-                    const mask: usize = (1 << ($W % T)) - 1;
-                    paste!(seq_t!(ROW in $T {
-                        match row {
-                            #(ROW => {
-                                const START_BIT: usize = ROW * $W;
-                                const REMAINING_BITS: usize = T - (START_BIT % T);
-                                const ONE_WORD: bool = REMAINING_BITS <= $W;
-                                let val = unpack_single_const_helper::<START_BIT, ONE_WORD>($packed, lane, mask);
-                                __kernel__!(val);
-                            },)*
-                            _ => unreachable!("Unsupported row: {}", row)
-                        }
-                    }))
-                }
+                let hi_shift = T - lo_shift; // guaranteed that lo_shift > 0 if ONE_WORD == false
+                let hi = packed[<$T>::LANES * (start_word + 1) + lane] << hi_shift;
+                (lo | hi) & mask
             }
         }
-    };
+
+        if $W == 0 {
+            // Special case for W=0, we just need to zero the output.
+            // We'll still respect the iteration order in case the kernel has side effects.
+            return 0 as $T;
+        }
+
+        let (lane, row): (usize, usize) = seq!(I in 0..1024 {
+                match $index {
+                    #(I =>
+                        lane_and_row::<I>(),
+                    )*
+                    _ => unreachable!("Unsupported index: {}", $index)
+                }
+            });
+
+        // Special case for W=T, we can just copy the packed value directly to the output.
+        if $W == T {
+            return $packed[<$T>::LANES * row + lane];
+        }
+
+        const mask: $T = (1 << ($W % T)) - 1;
+        paste!(seq_t!(ROW in $T {
+            match row {
+                #(ROW => {
+                    const START_BIT: usize = ROW * $W;
+                    const REMAINING_BITS: usize = T - (START_BIT % T);
+                    const ONE_WORD: bool = REMAINING_BITS <= $W;
+                    return unpack_single_const::<{START_BIT}, {ONE_WORD}>($packed, lane, mask);
+                },)*
+                _ => unreachable!("Unsupported row: {}", row)
+            }
+        }))
+    }
 }
 
 #[cfg(test)]
