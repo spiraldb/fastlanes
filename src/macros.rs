@@ -183,22 +183,7 @@ macro_rules! unpack_single {
         // The number of bits of T.
         const T: usize = <$T>::T;
 
-        // This calculation of (lane, row) is the inverse of the `index` function from the
-        // pack/unpack macros
-        #[inline(always)]
-        fn lane_and_row<const INDEX: usize>() -> (usize, usize)
-        where Pred< { INDEX < 1024 }> : Satisfied {
-            const lane: usize = INDEX % <$T>::LANES;
-            const row: usize = {
-                let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
-                let fl_order = (INDEX - s * 128 - lane) / 16; // value of FL_ORDER[o]
-                let o = FL_ORDER[fl_order]; // because this transposition is invertible!
-                o * 8 + s
-            };
-            (lane, row)
-        }
-
-        fn unpack_single_const<const START_BIT: usize, const ONE_WORD: bool>(
+        fn unpack_single_helper<const START_BIT: usize, const ONE_WORD: bool>(
             packed: &[$T], lane: usize, mask: $T) -> $T
         where
             Pred< { START_BIT < T * T }> : Satisfied
@@ -221,11 +206,20 @@ macro_rules! unpack_single {
             return 0 as $T;
         }
 
-        let (lane, row): (usize, usize) = seq!(I in 0..1024 {
+        let (lane, row): (usize, usize) = seq!(INDEX in 0..1024 {
                 match $index {
-                    #(I =>
-                        lane_and_row::<I>(),
-                    )*
+                    #(INDEX => {
+                        // This calculation of (lane, row) is the inverse of the `index` function from the
+                        // pack/unpack macros
+                        const lane: usize = INDEX % <$T>::LANES;
+                        const row: usize = {
+                            let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+                            let fl_order = (INDEX - s * 128 - lane) / 16; // value of FL_ORDER[o]
+                            let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+                            o * 8 + s
+                        };
+                        (lane, row)
+                    })*
                     _ => unreachable!("Unsupported index: {}", $index)
                 }
             });
@@ -242,7 +236,7 @@ macro_rules! unpack_single {
                     const START_BIT: usize = ROW * $W;
                     const REMAINING_BITS: usize = T - (START_BIT % T);
                     const ONE_WORD: bool = REMAINING_BITS <= $W;
-                    return unpack_single_const::<{START_BIT}, {ONE_WORD}>($packed, lane, mask);
+                    return unpack_single_helper::<{START_BIT}, {ONE_WORD}>($packed, lane, mask);
                 },)*
                 _ => unreachable!("Unsupported row: {}", row)
             }
