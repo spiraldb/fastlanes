@@ -175,73 +175,47 @@ macro_rules! unpack {
 
 #[macro_export]
 macro_rules! unpack_single {
-    ($T:ty, $W:expr, $packed:expr, $index:expr) => {
-        use $crate::{FastLanes, FL_ORDER, seq_t};
-        use seq_macro::seq;
+    // $W must be constant / compile-time known
+    ($T:ty, $W:expr, $packed:expr, $row:expr, $lane:expr) => {{
+        use $crate::{FastLanes, seq_t};
         use paste::paste;
 
         // The number of bits of T.
         const T: usize = <$T>::T;
 
-        fn unpack_single_helper<const START_BIT: usize, const ONE_WORD: bool>(
-            packed: &[$T], lane: usize, mask: $T) -> $T
-        where
-            Pred< { START_BIT < T * T }> : Satisfied
-        {
-            let start_word = START_BIT / T;
-            let lo_shift = START_BIT % T;
-            let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
-            if ONE_WORD {
-                lo & mask
-            } else {
-                let hi_shift = T - lo_shift; // guaranteed that lo_shift > 0 if ONE_WORD == false
-                let hi = packed[<$T>::LANES * (start_word + 1) + lane] << hi_shift;
-                (lo | hi) & mask
-            }
-        }
-
         if $W == 0 {
             // Special case for W=0, we just need to zero the output.
-            // We'll still respect the iteration order in case the kernel has side effects.
             return 0 as $T;
+        } else if $W == T {
+            return $packed[<$T>::LANES * $row + $lane];
         }
 
-        let (lane, row): (usize, usize) = seq!(INDEX in 0..1024 {
-                match $index {
-                    #(INDEX => {
-                        // This calculation of (lane, row) is the inverse of the `index` function from the
-                        // pack/unpack macros
-                        const lane: usize = INDEX % <$T>::LANES;
-                        const row: usize = {
-                            let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
-                            let fl_order = (INDEX - s * 128 - lane) / 16; // value of FL_ORDER[o]
-                            let o = FL_ORDER[fl_order]; // because this transposition is invertible!
-                            o * 8 + s
-                        };
-                        (lane, row)
-                    })*
-                    _ => unreachable!("Unsupported index: {}", $index)
-                }
-            });
-
-        // Special case for W=T, we can just copy the packed value directly to the output.
-        if $W == T {
-            return $packed[<$T>::LANES * row + lane];
-        }
-
-        const mask: $T = (1 << ($W % T)) - 1;
         paste!(seq_t!(ROW in $T {
-            match row {
+            match $row {
                 #(ROW => {
+                    const MASK: $T = (1 << ($W % T)) - 1;
                     const START_BIT: usize = ROW * $W;
-                    const REMAINING_BITS: usize = T - (START_BIT % T);
-                    const ONE_WORD: bool = REMAINING_BITS <= $W;
-                    return unpack_single_helper::<{START_BIT}, {ONE_WORD}>($packed, lane, mask);
+
+                    const START_WORD: usize = START_BIT / T;
+                     // bits to shift out of lo word
+                    const LO_SHIFT: usize = START_BIT % T;
+                    // remaining bits in the lo word == bits to shift from hi word
+                    const REMAINING_BITS: usize = T - LO_SHIFT;
+
+                    let lo = packed[<$T>::LANES * START_WORD + $lane] >> LO_SHIFT;
+                    return if REMAINING_BITS >= W {
+                        // in this case we will mask out all bits of hi word
+                        lo & MASK
+                    } else {
+                        // guaranteed that lo_shift > 0 and thus remaining_bits < T
+                        let hi = packed[<$T>::LANES * (START_WORD + 1) + $lane] << REMAINING_BITS;
+                        (lo | hi) & MASK
+                    }
                 },)*
                 _ => unreachable!("Unsupported row: {}", row)
             }
         }))
-    }
+    }}
 }
 
 #[cfg(test)]

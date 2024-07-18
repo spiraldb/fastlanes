@@ -1,8 +1,9 @@
 use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
 use paste::paste;
+use seq_macro::seq;
 
-use crate::{pack, seq_t, unpack, unpack_single, FastLanes, Pred, Satisfied};
+use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
 
 pub struct BitPackWidth<const W: usize>;
 pub trait SupportedBitPackWidth<T> {}
@@ -130,33 +131,78 @@ macro_rules! impl_packing {
                 }
 
                 /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-                #[inline(never)]
                 fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
                 where
                     BitPackWidth<W>: SupportedBitPackWidth<Self>,
                 {
-                    unpack_single!($T, W, packed, index);
+                    unsafe {
+                        Self::unchecked_unpack_single(W, packed, index)
+                    }
                 }
 
-                unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self {
+                #[allow(arithmetic_overflow, unused_comparisons)]
+                unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                     let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
                     debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-                    debug_assert!(index <= 1024, "index must be less than or equal to 1024");
+                    debug_assert!(index < 1024, "index must be less than or equal to 1024");
+
+                    let (lane, row): (usize, usize) = seq!(INDEX in 0..1024 {
+                        match index {
+                            #(INDEX => {
+                                // This calculation of (lane, row) is the inverse of the `index` function from the
+                                // pack/unpack macros
+                                const LANE: usize = INDEX % <$T>::LANES;
+                                const ROW: usize = {
+                                    let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+                                    let fl_order = (INDEX - s * 128 - LANE) / 16; // value of FL_ORDER[o]
+                                    let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+                                    o * 8 + s
+                                };
+                                (LANE, ROW)
+                            })*
+                            _ => unreachable!("Unsupported index: {}", index)
+                        }
+                    });
 
                     seq_t!(W in $T {
                         match width {
                             #(W => {
-                                Self::unpack_single::<W>(
-                                    array_ref![input, 0, 1024 * W / <$T>::T],
-                                    index
-                                )
-                            })*
+                                if W == 0 {
+                                    // Special case for W=0, we just need to zero the output.
+                                    return 0 as $T;
+                                }
+                                seq_t!(ROW in $T {
+                                    match row {
+                                        #(ROW => {
+                                            const MASK: $T = (1 << (W % <$T>::T)) - 1;
+                                            const START_BIT: usize = ROW * W;
+
+                                            const START_WORD: usize = START_BIT / <$T>::T;
+                                             // bits to shift out of lo word
+                                            const LO_SHIFT: usize = START_BIT % <$T>::T;
+                                            // remaining bits in the lo word == bits to shift from hi word
+                                            const REMAINING_BITS: usize = <$T>::T - LO_SHIFT;
+
+                                            let lo = packed[<$T>::LANES * START_WORD + lane] >> LO_SHIFT;
+                                            return if REMAINING_BITS >= W {
+                                                // in this case we will mask out all bits of hi word
+                                                lo & MASK
+                                            } else {
+                                                // guaranteed that lo_shift > 0 and thus remaining_bits < T
+                                                let hi = packed[<$T>::LANES * (START_WORD + 1) + lane] << REMAINING_BITS;
+                                                (lo | hi) & MASK
+                                            }
+                                        },)*
+                                        _ => unreachable!("Unsupported row: {}", row)
+                                    }
+                                })
+                            },)*
                             // seq_t has exclusive upper bound
-                            Self::T => Self::unpack_single::<{ Self::T }>(
-                                array_ref![input, 0, 1024],
-                                index
-                            ),
+                            Self::T => {
+                                // Special case for W=T, we can just read the value directly
+                                return packed[<$T>::LANES * row + lane];
+                            },
                             _ => unreachable!("Unsupported width: {}", width)
                         }
                     })
@@ -166,10 +212,10 @@ macro_rules! impl_packing {
     };
 }
 
-//impl_packing!(u8);
-//impl_packing!(u16);
+impl_packing!(u8);
+impl_packing!(u16);
 impl_packing!(u32);
-// impl_packing!(u64);
+impl_packing!(u64);
 
 #[cfg(test)]
 mod test {
