@@ -172,31 +172,22 @@ macro_rules! impl_packing {
                                     // Special case for W=0, we just need to zero the output.
                                     return 0 as $T;
                                 }
-                                seq_t!(ROW in $T {
-                                    match row {
-                                        #(ROW => {
-                                            const MASK: $T = (1 << (W % <$T>::T)) - 1;
-                                            const START_BIT: usize = ROW * W;
 
-                                            const START_WORD: usize = START_BIT / <$T>::T;
-                                             // bits to shift out of lo word
-                                            const LO_SHIFT: usize = START_BIT % <$T>::T;
-                                            // remaining bits in the lo word == bits to shift from hi word
-                                            const REMAINING_BITS: usize = <$T>::T - LO_SHIFT;
+                                const MASK: $T = (1 << (W % <$T>::T)) - 1;
+                                let start_bit = row * W;
+                                let start_word = start_bit / <$T>::T;
+                                let lo_shift = start_bit % <$T>::T;
+                                let remaining_bits = <$T>::T - lo_shift;
 
-                                            let lo = packed[<$T>::LANES * START_WORD + lane] >> LO_SHIFT;
-                                            return if REMAINING_BITS >= W {
-                                                // in this case we will mask out all bits of hi word
-                                                lo & MASK
-                                            } else {
-                                                // guaranteed that lo_shift > 0 and thus remaining_bits < T
-                                                let hi = packed[<$T>::LANES * (START_WORD + 1) + lane] << REMAINING_BITS;
-                                                (lo | hi) & MASK
-                                            }
-                                        },)*
-                                        _ => unreachable!("Unsupported row: {}", row)
-                                    }
-                                })
+                                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                                return if remaining_bits >= W {
+                                    // in this case we will mask out all bits of hi word
+                                    lo & MASK
+                                } else {
+                                    // guaranteed that lo_shift > 0 and thus remaining_bits < T
+                                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                                    (lo | hi) & MASK
+                                }
                             },)*
                             // seq_t has exclusive upper bound
                             Self::T => {
