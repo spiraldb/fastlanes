@@ -135,17 +135,10 @@ macro_rules! impl_packing {
                 where
                     BitPackWidth<W>: SupportedBitPackWidth<Self>,
                 {
-                    unsafe {
-                        Self::unchecked_unpack_single(W, packed, index)
+                    if W == 0 {
+                        // Special case for W=0, we just need to zero the output.
+                        return 0 as $T;
                     }
-                }
-
-                #[allow(arithmetic_overflow, unused_comparisons)]
-                unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
-                    let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
-                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-                    debug_assert!(index < 1024, "index must be less than or equal to 1024");
 
                     let (lane, row): (usize, usize) = seq!(INDEX in 0..1024 {
                         match index {
@@ -165,34 +158,44 @@ macro_rules! impl_packing {
                         }
                     });
 
+                    if W == Self::T {
+                        // Special case for W==T, we can just read the value directly
+                        return packed[<$T>::LANES * row + lane];
+                    }
+
+                    let mask: $T = (1 << (W % <$T>::T)) - 1;
+                    let start_bit = row * W;
+                    let start_word = start_bit / <$T>::T;
+                    let lo_shift = start_bit % <$T>::T;
+                    let remaining_bits = <$T>::T - lo_shift;
+
+                    let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                    return if remaining_bits >= W {
+                        // in this case we will mask out all bits of hi word
+                        lo & mask
+                    } else {
+                        // guaranteed that lo_shift > 0 and thus remaining_bits < T
+                        let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                        (lo | hi) & mask
+                    }
+                }
+
+                unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
+                    let packed_len = 128 * width / size_of::<Self>();
+                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                    debug_assert!(index < 1024, "index must be less than or equal to 1024");
+
+                    const T: usize = <$T>::T;
+
                     seq_t!(W in $T {
                         match width {
                             #(W => {
-                                if W == 0 {
-                                    // Special case for W=0, we just need to zero the output.
-                                    return 0 as $T;
-                                }
-
-                                const MASK: $T = (1 << (W % <$T>::T)) - 1;
-                                let start_bit = row * W;
-                                let start_word = start_bit / <$T>::T;
-                                let lo_shift = start_bit % <$T>::T;
-                                let remaining_bits = <$T>::T - lo_shift;
-
-                                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
-                                return if remaining_bits >= W {
-                                    // in this case we will mask out all bits of hi word
-                                    lo & MASK
-                                } else {
-                                    // guaranteed that lo_shift > 0 and thus remaining_bits < T
-                                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
-                                    (lo | hi) & MASK
-                                }
+                                return <$T>::unpack_single::<W>(array_ref![packed, 0, 1024 * W / T], index);
                             },)*
                             // seq_t has exclusive upper bound
-                            Self::T => {
-                                // Special case for W=T, we can just read the value directly
-                                return packed[<$T>::LANES * row + lane];
+                            T => {
+                                return <$T>::unpack_single::<T>(array_ref![packed, 0, 1024], index);
                             },
                             _ => unreachable!("Unsupported width: {}", width)
                         }
