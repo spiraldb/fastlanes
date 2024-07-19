@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/spiraldb/fastlanes/compare/v0.1.6...v0.1.7) - 2024-07-19
+
+### Other
+- Fast unpack_single ([#43](https://github.com/spiraldb/fastlanes/pull/43))
+
 ## [0.1.6](https://github.com/spiraldb/fastlanes/compare/v0.1.5...v0.1.6) - 2024-07-03
 
 ### Other
