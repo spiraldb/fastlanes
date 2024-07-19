@@ -1,7 +1,7 @@
 use arrayref::{array_mut_ref, array_ref};
+use const_for::const_for;
 use core::mem::size_of;
 use paste::paste;
-use const_for::const_for;
 
 use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
 
@@ -186,7 +186,6 @@ macro_rules! impl_packing {
                     let packed_len = 128 * width / size_of::<Self>();
                     debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
                     debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-                    debug_assert!(index < 1024, "index must be less than or equal to 1024");
 
                     seq_t!(W in $T {
                         match width {
