@@ -140,6 +140,17 @@ macro_rules! impl_packing {
                         return 0 as $T;
                     }
 
+                    // We can think of the input array as effectively a row-major, left-to-right
+                    // 2-D array of with `Self::LANES` columns and `Self::T` rows.
+                    //
+                    // Meanwhile, we can think of the packed array as either:
+                    //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
+                    //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
+                    //
+                    // Bitpacking involves a transposition of the input array ordering, such that
+                    // decompression can be fused efficiently with encodings like delta and RLE.
+                    //
+                    // First step, we need to get the lane and row for interpretation #1 above.
                     assert!(index < 1024, "Index must be less than 1024, got {}", index);
                     let (lane, row): (usize, usize) = {
                         const LANES: [u8; 1024] = lanes_by_index::<$T>();
@@ -195,6 +206,7 @@ macro_rules! impl_packing {
     };
 }
 
+// helper function executed at compile-time to speed up unpack_single at runtime
 const fn lanes_by_index<T: FastLanes>() -> [u8; 1024] {
     let mut lanes = [0u8; 1024];
     const_for!(i in 0..1024 => {
@@ -203,9 +215,16 @@ const fn lanes_by_index<T: FastLanes>() -> [u8; 1024] {
     lanes
 }
 
+// helper function executed at compile-time to speed up unpack_single at runtime
 const fn rows_by_index<T: FastLanes>() -> [u8; 1024] {
     let mut rows = [0u8; 1024];
     const_for!(i in 0..1024 => {
+        // This is the inverse of the `index` function from the pack/unpack macros:
+        //     fn index(row: usize, lane: usize) -> usize {
+        //         let o = row / 8;
+        //         let s = row % 8;
+        //         (FL_ORDER[o] * 16) + (s * 128) + lane
+        //     }
         let lane = i % T::LANES;
         let s = i / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
         let fl_order = (i - s * 128 - lane) / 16; // value of FL_ORDER[o]
