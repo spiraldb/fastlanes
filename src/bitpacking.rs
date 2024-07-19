@@ -1,7 +1,7 @@
 use arrayref::{array_mut_ref, array_ref};
 use core::mem::size_of;
 use paste::paste;
-use seq_macro::seq;
+use const_for::const_for;
 
 use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
 
@@ -140,25 +140,14 @@ macro_rules! impl_packing {
                         return 0 as $T;
                     }
 
-                    let (lane, row): (usize, usize) = seq!(INDEX in 0..1024 {
-                        match index {
-                            #(INDEX => {
-                                // This calculation of (lane, row) is the inverse of the `index` function from the
-                                // pack/unpack macros
-                                const LANE: usize = INDEX % <$T>::LANES;
-                                const ROW: usize = {
-                                    let s = INDEX / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
-                                    let fl_order = (INDEX - s * 128 - LANE) / 16; // value of FL_ORDER[o]
-                                    let o = FL_ORDER[fl_order]; // because this transposition is invertible!
-                                    o * 8 + s
-                                };
-                                (LANE, ROW)
-                            })*
-                            _ => unreachable!("Unsupported index: {}", index)
-                        }
-                    });
+                    assert!(index < 1024, "Index must be less than 1024, got {}", index);
+                    let (lane, row): (usize, usize) = {
+                        const LANES: [u8; 1024] = lanes_by_index::<$T>();
+                        const ROWS: [u8; 1024] = rows_by_index::<$T>();
+                        (LANES[index] as usize, ROWS[index] as usize)
+                    };
 
-                    if W == Self::T {
+                    if W == <$T>::T {
                         // Special case for W==T, we can just read the value directly
                         return packed[<$T>::LANES * row + lane];
                     }
@@ -177,16 +166,16 @@ macro_rules! impl_packing {
                         // guaranteed that lo_shift > 0 and thus remaining_bits < T
                         let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
                         (lo | hi) & mask
-                    }
+                    };
                 }
 
                 unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
+                    const T: usize = <$T>::T;
+
                     let packed_len = 128 * width / size_of::<Self>();
                     debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
                     debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
                     debug_assert!(index < 1024, "index must be less than or equal to 1024");
-
-                    const T: usize = <$T>::T;
 
                     seq_t!(W in $T {
                         match width {
@@ -204,6 +193,26 @@ macro_rules! impl_packing {
             }
         }
     };
+}
+
+const fn lanes_by_index<T: FastLanes>() -> [u8; 1024] {
+    let mut lanes = [0u8; 1024];
+    const_for!(i in 0..1024 => {
+        lanes[i] = (i % T::LANES) as u8;
+    });
+    lanes
+}
+
+const fn rows_by_index<T: FastLanes>() -> [u8; 1024] {
+    let mut rows = [0u8; 1024];
+    const_for!(i in 0..1024 => {
+        let lane = i % T::LANES;
+        let s = i / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+        let fl_order = (i - s * 128 - lane) / 16; // value of FL_ORDER[o]
+        let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+        rows[i] = (o * 8 + s) as u8;
+    });
+    rows
 }
 
 impl_packing!(u8);
