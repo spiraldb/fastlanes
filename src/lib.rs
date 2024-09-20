@@ -58,3 +58,40 @@ mod test {
         }
     }
 }
+
+// run the example code in the README as a test
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
+#[cfg(test)]
+mod tests {
+    use crate::BitPacking;
+
+    #[test]
+    fn pack_u16_into_u3_no_unsafe() {
+        const WIDTH: usize = 3;
+    
+        // Generate some values.
+        let mut values: [u16; 1024] = [0; 1024];
+        for i in 0..1024 {
+            values[i] = (i % (1 << WIDTH)) as u16;
+        }
+    
+        // Pack the values.
+        let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+        BitPacking::pack::<WIDTH>(&values, &mut packed);
+    
+        // Unpack the values.
+        let mut unpacked = [0u16; 1024];
+        BitPacking::unpack::<WIDTH>(&packed, &mut unpacked);
+        assert_eq!(values, unpacked);
+    
+        // Unpack a single value at index 14.
+        // Note that for more than ~10 values, it can be faster to unpack all values and then 
+        // access the desired one.
+        for i in 0..1024 {
+            assert_eq!(BitPacking::unpack_single::<WIDTH>(&packed, i), values[i]);
+        }
+    }
+}
