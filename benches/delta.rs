@@ -1,7 +1,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::mem::size_of;
 
 use fastlanes::{BitPacking, Delta, Transpose};
@@ -10,6 +10,7 @@ fn delta(c: &mut Criterion) {
     const W: usize = 9;
 
     let mut group = c.benchmark_group("delta");
+    group.throughput(Throughput::Bytes(1024 * size_of::<u16>() as u64));
     let mut values: [u16; 1024] = [0; 1024];
     for i in 0..1024 {
         values[i] = (i / 8) as u16;
