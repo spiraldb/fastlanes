@@ -4,7 +4,7 @@
 use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use fastlanes::BitPacking;
 
 fn pack(c: &mut Criterion) {
@@ -64,5 +64,40 @@ fn pack(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, pack);
+fn throughput(c: &mut Criterion) {
+    const WIDTH: usize = 3;
+    const NUM_BATCHES: usize = 1024;
+    const N: usize = 1024 * NUM_BATCHES;
+    const OUTPUT_BATCH_SIZE: usize = 128 * WIDTH / size_of::<u16>();
+
+    let mut group = c
+        .benchmark_group("throughput");
+    group.throughput(Throughput::Bytes(N as u64 * size_of::<u16>() as u64));
+    let mut values = vec![3u16; N];
+    let mut packed = vec![0; NUM_BATCHES * OUTPUT_BATCH_SIZE];
+
+    group.bench_function("compress", |b| {
+        b.iter(|| {
+            for i in 0..NUM_BATCHES {
+                BitPacking::pack::<WIDTH>(
+                    array_ref![values, i * 1024, 1024],
+                    array_mut_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
+                );
+            }
+        });
+    });
+
+    group.bench_function("decompress", |b| {
+        b.iter(|| {
+            for i in 0..NUM_BATCHES {
+                BitPacking::unpack::<WIDTH>(
+                    array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
+                    array_mut_ref![values, i * 1024, 1024],
+                );
+            }
+        });
+    });
+}
+
+criterion_group!(benches, pack, throughput);
 criterion_main!(benches);
