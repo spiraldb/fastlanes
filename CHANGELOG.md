@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9](https://github.com/spiraldb/fastlanes/compare/v0.1.8...v0.1.9) - 2024-10-10
+
+### Other
+
+- add throughput benchmarks ([#51](https://github.com/spiraldb/fastlanes/pull/51))
+- *(deps)* update mozilla-actions/sccache-action action to v0.0.6 ([#49](https://github.com/spiraldb/fastlanes/pull/49))
+
 ## [0.1.8](https://github.com/spiraldb/fastlanes/compare/v0.1.7...v0.1.8) - 2024-09-20
 
 ### Fixed
