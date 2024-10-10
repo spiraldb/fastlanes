@@ -73,8 +73,8 @@ fn throughput(c: &mut Criterion) {
     let mut group = c
         .benchmark_group("throughput");
     group.throughput(Throughput::Bytes(N as u64 * size_of::<u16>() as u64));
-    let mut values = vec![3u16; N];
-    let mut packed = vec![0; NUM_BATCHES * OUTPUT_BATCH_SIZE];
+    let mut values: Vec<u16> = (0..N).map(|i| (i % 8) as u16).collect();
+    let mut packed = vec![0u16; NUM_BATCHES * OUTPUT_BATCH_SIZE];
 
     group.bench_function("compress", |b| {
         b.iter(|| {
