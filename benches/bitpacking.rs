@@ -70,8 +70,7 @@ fn throughput(c: &mut Criterion) {
     const N: usize = 1024 * NUM_BATCHES;
     const OUTPUT_BATCH_SIZE: usize = 128 * WIDTH / size_of::<u16>();
 
-    let mut group = c
-        .benchmark_group("throughput");
+    let mut group = c.benchmark_group("throughput");
     group.throughput(Throughput::Bytes(N as u64 * size_of::<u16>() as u64));
     let mut values: Vec<u16> = (0..N).map(|i| (i % 8) as u16).collect();
     let mut packed = vec![0u16; NUM_BATCHES * OUTPUT_BATCH_SIZE];
