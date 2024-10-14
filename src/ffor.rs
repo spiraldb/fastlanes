@@ -1,7 +1,7 @@
 use crate::{pack, unpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
 use paste::paste;
 
-pub trait FoR: BitPacking {
+pub trait FrameOfReference: BitPacking {
     fn for_pack<const W: usize>(
         input: &[Self; 1024],
         reference: Self,
@@ -20,7 +20,7 @@ pub trait FoR: BitPacking {
 macro_rules! impl_for {
     ($T:ty) => {
         paste! {
-            impl FoR for $T {
+            impl FrameOfReference for $T {
                 fn for_pack<const W: usize>(
                     input: &[Self; 1024],
                     reference: Self,
@@ -72,7 +72,7 @@ mod test {
         }
 
         let mut packed = [0; 128 * W / size_of::<u16>()];
-        FoR::for_pack::<W>(&values, 10, &mut packed);
+        FrameOfReference::for_pack::<W>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
         BitPacking::unpack::<W>(&packed, &mut unpacked);
