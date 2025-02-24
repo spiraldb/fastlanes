@@ -33,6 +33,12 @@ pub trait BitPacking: FastLanes {
     where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
+    fn equnpack<const W: usize>(
+        input: &[Self; 1024 * W / Self::T],
+        output: &mut [u64; 16],
+        eq_value: Self
+    ) where BitPackWidth<W>: SupportedBitPackWidth<Self>;
+
     /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of
     /// compile-time known.
     ///
@@ -158,6 +164,29 @@ macro_rules! impl_packing {
                         });
                     }
                 }
+
+                #[inline(never)]
+                fn equnpack<const W: usize>(
+                    input: &[Self; 1024 * W / Self::T],
+                    output: &mut [u64; 16],
+                    eq_value: Self
+                ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
+                    for lane in 0..Self::LANES {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            // idx % 64
+                            let bool_idx = $idx & 0x000F;
+                            let bool_bit = $idx / 64;
+
+                            // println!("idx {}, bool_idx {}, bool_bit {}", $idx, bool_idx, bool_bit);
+                            // println!("bool_bit {}", bool_bit);
+
+                            let value = $elem == eq_value;
+
+                            output[bool_idx] |= (value as u64) << bool_bit;
+                        });
+                    }
+                }
+
 
                 unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
                     let packed_len = 128 * width / size_of::<Self>();
@@ -291,4 +320,20 @@ mod test {
     seq!(W in 0..=16 { impl_try_round_trip!(u16, W); });
     seq!(W in 0..=32 { impl_try_round_trip!(u32, W); });
     seq!(W in 0..=64 { impl_try_round_trip!(u64, W); });
+
+
+    #[test]
+    fn test_unpack_eq() {
+        let values = array::from_fn(|i| i as u32);
+        println!("values {:?}", values);
+        let mut packed = [0; 512];
+        BitPacking::pack::<16>(&values, &mut packed);
+
+
+        let  mut output = [0u64; 1024/64];
+        BitPacking::unpack_eq::<16>(&packed, &mut output, 4);
+        for b in output.iter(){
+            println!("{:016b}", b)
+        }
+    }
 }
