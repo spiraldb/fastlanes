@@ -77,7 +77,9 @@ pub trait BitPackingCompare: BitPacking {
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
         [(); 1024 / Self::T]:,
     {
-        let new_output = unsafe { &mut *std::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>() };
+        let new_output = unsafe {
+            &mut *std::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>()
+        };
         Self::unpack_cmp_impl(input, new_output, comparison, eq_value);
     }
 }
