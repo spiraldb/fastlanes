@@ -131,7 +131,7 @@ macro_rules! unpack {
                     __kernel__!(idx, src);
                 }));
             } else {
-                #[inline]
+                #[inline(always)]
                 fn mask(width: usize) -> $T {
                     if width == T { <$T>::MAX } else { (1 << (width % T)) - 1 }
                 }

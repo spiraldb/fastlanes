@@ -18,6 +18,7 @@ seq-macro = "0.3.5"
 [dev-dependencies]
 arrayref = "0.3.7"
 criterion = "0.5.1"
+divan = "0.1.17"
 
 [lints.rust]
 warnings = "deny"
@@ -43,6 +44,10 @@ use_debug = "deny"
 
 [[bench]]
 name = "bitpacking"
+harness = false
+
+[[bench]]
+name = "bitpacking_cmp"
 harness = false
 
 [[bench]]
