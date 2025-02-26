@@ -18,6 +18,7 @@ pub mod test;
 mod transpose;
 
 pub use bitpacking::*;
+pub use bitpacking_cmp::*;
 pub use delta::*;
 pub use ffor::*;
 pub use transpose::*;
