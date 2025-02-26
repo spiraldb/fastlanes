@@ -44,8 +44,7 @@ pub trait BitPackingCompare: BitPacking {
         output: &mut [u64; 16],
         comparison: F,
         value: Self,
-    ) where
-        [(); 1024 / Self::T]:;
+    );
 }
 
 macro_rules! impl_packing_compare {
