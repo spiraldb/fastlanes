@@ -36,11 +36,11 @@ fn pack(c: &mut Criterion) {
         let mut group = c.benchmark_group("unpack");
         group.bench_function("unpack 16 <- 3 stack", |b| {
             const WIDTH: usize = 3;
-            let values = [3u64; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<u64>()];
+            let values = [3u16; 1024];
+            let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
             BitPacking::pack::<WIDTH>(&values, &mut packed);
 
-            let mut unpacked = [0u64; 1024];
+            let mut unpacked = [0u16; 1024];
             b.iter(|| BitPacking::unpack::<WIDTH>(&packed, &mut unpacked));
         });
     }
