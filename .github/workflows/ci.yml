@@ -43,15 +43,7 @@ jobs:
         env:
           RUSTFLAGS: "-C target-cpu=native"
         run: |
-          cargo codspeed build --features test-harness \
-            --exclude bench-vortex \
-            --exclude vortex-datafusion \
-            --exclude vortex-tui \
-            --exclude vortex-fuzz \
-            --exclude pyvortex \
-            --exclude xtask \
-            --workspace \
-            --profile bench
+          cargo codspeed build --profile bench
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@v3
