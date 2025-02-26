@@ -24,19 +24,25 @@ fn pack_u16_into_u3() {
     }
 
     // Pack the values.
-    let values = [3u16; 1024];
     let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-    BitPacking::bitpack::<WIDTH>(&values, &mut packed);
+    // prefer using the safe pack/unpack functions unless you have a specific reason to use the unchecked versions
+    // e.g. `BitPacking::pack::<WIDTH>(&values, &mut packed);`
+    // unfortunately the safe versions don't work in doctests since they depend on the unstable generic_const_exprs feature
+    // see a version of this example without unsafe in `src/lib.rs`
+    unsafe { BitPacking::unchecked_pack(WIDTH, &values, &mut packed); }
 
     // Unpack the values.
     let mut unpacked = [0u16; 1024];
-    BitPacking::bitunpack::<WIDTH>(&packed, &mut unpacked);
+    // e.g., `BitPacking::unpack::<WIDTH>(&packed, &mut unpacked);`
+    unsafe { BitPacking::unchecked_unpack(WIDTH, &packed, &mut unpacked); }
     assert_eq!(values, unpacked);
 
-    // Unpack a single value at index 14.
-    // Note that for more than ~10 values, it can be faster to unpack all values and then 
+    // Note that for more than ~10 values, it is typically faster to unpack all values and then 
     // access the desired one.
-    assert_eq!(BitPacking::bitunpack_single::<WIDTH>(&packed, 14), 14);
+    for i in 0..1024 {
+        // e.g., `BitPacking::unpack_single::<WIDTH>(&packed, i)`
+        assert_eq!(unsafe { BitPacking::unchecked_unpack_single(WIDTH, &packed, i) }, values[i]);
+    }
 }
 ```
 
