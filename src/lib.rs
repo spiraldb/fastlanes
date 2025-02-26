@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
-// #![no_std]
+#![no_std]
 
 extern crate alloc;
 extern crate core;
@@ -9,6 +9,7 @@ use core::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
+mod bitpacking_cmp;
 mod delta;
 mod ffor;
 mod macros;
