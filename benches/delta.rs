@@ -2,7 +2,7 @@
 #![feature(generic_const_exprs)]
 
 use arrayref::{array_mut_ref, array_ref};
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::mem::size_of;
 
 use fastlanes::{BitPacking, Delta, Transpose};

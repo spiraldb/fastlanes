@@ -1,6 +1,6 @@
 #![allow(unused_assignments)]
 
-use crate::{iterate, unpack, BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth};
+use crate::{BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth, iterate, unpack};
 use paste::paste;
 
 pub trait Delta: BitPacking {
