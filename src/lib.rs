@@ -46,9 +46,14 @@ macro_rules! seq_t {
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
 }
 
+// run the example code in the README as a test
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
 #[cfg(test)]
-mod test {
-    use crate::FL_ORDER;
+mod tests {
+    use crate::{BitPacking, FL_ORDER};
 
     #[test]
     fn test_ordering_is_own_inverse() {
@@ -57,16 +62,6 @@ mod test {
             assert_eq!(FL_ORDER[FL_ORDER[i]], i);
         }
     }
-}
-
-// run the example code in the README as a test
-#[doc = include_str!("../README.md")]
-#[cfg(doctest)]
-pub struct ReadmeDoctests;
-
-#[cfg(test)]
-mod tests {
-    use crate::BitPacking;
 
     #[test]
     fn pack_u16_into_u3_no_unsafe() {
