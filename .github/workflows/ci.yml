@@ -43,7 +43,7 @@ jobs:
         env:
           RUSTFLAGS: "-C target-cpu=native"
         run: |
-          cargo codspeed build --profile bench
+          cargo codspeed build --profile bench --features test-harness
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@v3
