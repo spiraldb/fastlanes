@@ -105,6 +105,30 @@ fn packed_compare(c: &mut Criterion) {
     }
 
     {
+        let mut group = c.benchmark_group("unpack_eq_fused_unchecked");
+        group.bench_function("32 <- 3 fused unchecked comp", |b| {
+            type BitPackingT = u32;
+            const WIDTH: usize = 3;
+            let values = [4; 1024];
+            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
+            BitPackingT::pack::<WIDTH>(&values, &mut packed);
+
+            let mut unpacked = [0u64; 16];
+            b.iter(|| {
+                black_box(unsafe {
+                    BitPackingT::unchecked_unpack_cmp(
+                        WIDTH,
+                        packed.as_slice(),
+                        &mut unpacked,
+                        |a, b| a == b,
+                        1,
+                    )
+                });
+            });
+        });
+    }
+
+    {
         let mut group = c.benchmark_group("unpack_eq_collect");
         group.bench_function("32 cmp", |b| {
             type BitPackingT = u32;
