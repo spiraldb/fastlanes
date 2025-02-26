@@ -79,9 +79,9 @@ fn pack(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("unpack_eq_fused");
         group.bench_function("16 <- 3 stack", |b| {
-            type BitPackingT = u64;
+            type BitPackingT = u32;
             const WIDTH: usize = 3;
-            let values = [4u64; 1024];
+            let values = [4; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
             BitPackingT::pack::<WIDTH>(&values, &mut packed);
 

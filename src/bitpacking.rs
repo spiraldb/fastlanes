@@ -244,18 +244,17 @@ macro_rules! impl_packing_compare {
         paste! {
             impl BitPackingCompare for $T {
                #[inline(always)]
-                fn unpack_cmp_impl<const W: usize> bool>(
+                fn unpack_cmp_impl<const W: usize, F: Fn(Self, Self) -> bool>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [Self; 1024 / Self::T],
-                    // _f: F,
+                    f: F,
                     other: Self,
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                     for lane in (0..Self::LANES){
                         unpack!($T, W, input, lane, |$idx, $elem| {
                             let bool_idx = $idx / Self::T;
                             let bool_bit = $idx % Self::T;
-                            // let value = f($elem, other);
-                            let value = $elem == other;
+                            let value = f($elem, other);
                             output[bool_idx] |= (AsPrimitive::<Self>::as_(value)) << bool_bit;
                         });
                     }
@@ -360,7 +359,7 @@ mod test {
         T::pack::<W>(&values, &mut packed);
 
         let mut output = [0u64; 16];
-        T::unpack_cmp::<W, _>(&packed, &mut output, PartialEq::eq, 4);
+        T::unpack_cmp::<W, _>(&packed, &mut output, |a, b| a == b, 4);
 
         let mut unpacked = [0; 1024];
         T::unpack::<W>(&packed, &mut unpacked);
