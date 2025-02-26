@@ -2,6 +2,7 @@
 #![feature(generic_const_exprs)]
 
 use divan::Bencher;
+use fastlanes::test::collect_bool_cmp;
 use fastlanes::{BitPacking, BitPackingCompare};
 use std::hint::black_box;
 

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 #[inline(never)]
 #[must_use]
-pub fn collect_bool_cmp(unpacked: [u32; 1024], cmp: u32) -> Vec<u64> {
+pub fn collect_bool_cmp<T: PartialEq>(unpacked: [T; 1024], cmp: T) -> Vec<u64> {
     collect_bool(unpacked.len(), |idx| unpacked[idx] == cmp)
 }
 

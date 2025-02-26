@@ -10,6 +10,7 @@ pub trait BitPackingCompare: BitPacking {
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
+    #[inline(never)]
     fn unpack_cmp<const W: usize, F: Fn(Self, Self) -> bool>(
         input: &[Self; 1024 * W / Self::T],
         output: &mut [u64; 16],
