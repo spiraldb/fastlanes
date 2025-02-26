@@ -1,5 +1,6 @@
 use crate::FastLanes;
 use crate::{BitPackWidth, BitPacking, SupportedBitPackWidth};
+use core::ptr;
 
 pub trait BitPackingCompare: BitPacking {
     fn unpack_cmp_impl<const W: usize, F: Fn(Self, Self) -> bool>(
@@ -25,10 +26,8 @@ pub trait BitPackingCompare: BitPacking {
             16 * u64::BITS as usize,
             1024 / Self::T * size_of::<Self>() * 8_usize
         );
-        let new_output = unsafe {
-            // &mut *core::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>()
-            &mut *(output as *mut [u64; 16] as *mut [Self; 1024 / Self::T])
-        };
+        let new_output =
+            unsafe { &mut *(ptr::from_mut::<[u64; 16]>(output)).cast::<[Self; 1024 / Self::T]>() };
         Self::unpack_cmp_impl(input, new_output, comparison, value);
     }
 
