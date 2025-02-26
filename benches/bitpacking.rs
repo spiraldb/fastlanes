@@ -69,14 +69,15 @@ fn packed_compare(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("unpack_eq");
         group.bench_function("32 <- 3 unpack", |b| {
+            type BitPackingT = u32;
             const WIDTH: usize = 3;
-            let values = [4u32; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<u32>()];
-            BitPacking::pack::<WIDTH>(&values, &mut packed);
+            let values = [4; 1024];
+            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
+            BitPackingT::pack::<WIDTH>(&values, &mut packed);
 
-            let mut unpacked = [0u32; 1024];
+            let mut unpacked = [0; 1024];
             b.iter(|| {
-                BitPacking::unpack::<WIDTH>(&packed, &mut unpacked);
+                BitPackingT::unpack::<WIDTH>(&packed, &mut unpacked);
                 black_box(());
             });
         });
@@ -85,7 +86,7 @@ fn packed_compare(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("unpack_eq_fused");
         group.bench_function("32 <- 3 fused comp", |b| {
-            type BitPackingT = u64;
+            type BitPackingT = u32;
             const WIDTH: usize = 3;
             let values = [4; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
@@ -106,7 +107,7 @@ fn packed_compare(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("unpack_eq_collect");
         group.bench_function("32 cmp", |b| {
-            type BitPackingT = u64;
+            type BitPackingT = u32;
             const WIDTH: usize = 3;
             let values = [4; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
@@ -122,7 +123,7 @@ fn packed_compare(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("unpack_eq_unpack_collect");
         group.bench_function("32 <- 3 unpack then cmp", |b| {
-            type BitPackingT = u64;
+            type BitPackingT = u32;
             const WIDTH: usize = 3;
             let values = [4; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
