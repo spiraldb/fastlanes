@@ -93,8 +93,12 @@ fn packed_compare(c: &mut Criterion) {
 
             let mut unpacked = [0u64; 16];
             b.iter(|| {
-                BitPackingT::unpack_cmp::<WIDTH, _>(&packed, &mut unpacked, |a, b| a == b, 1);
-                black_box(());
+                black_box(BitPackingT::unpack_cmp::<WIDTH, _>(
+                    &packed,
+                    &mut unpacked,
+                    |a, b| a == b,
+                    1,
+                ));
             });
         });
     }

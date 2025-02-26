@@ -21,7 +21,10 @@ pub trait BitPackingCompare: BitPacking {
         [(); 1024 / Self::T]:,
     {
         // The number of bits in the output == number of bits in the new_output.
-        assert_eq!(16 * u64::BITS as usize, 1024 / Self::T * u32::BITS as usize);
+        assert_eq!(
+            16 * u64::BITS as usize,
+            1024 / Self::T * size_of::<Self>() * 8 as usize
+        );
         let new_output = unsafe {
             &mut *core::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>()
         };
