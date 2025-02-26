@@ -19,12 +19,8 @@ fn bitpacking_cmp_u64_w3_fused(bencher: Bencher) {
 
     let mut unpacked = [0u64; 16];
     bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            1,
-        ))
+        T::unpack_cmp::<W, _>(&packed, &mut unpacked, |a, b| a == b, 1);
+        black_box(());
     });
 }
 
@@ -54,12 +50,8 @@ fn bitpacking_cmp_u64_w15_fused(bencher: Bencher) {
 
     let mut unpacked = [0u64; 16];
     bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            1,
-        ))
+        T::unpack_cmp::<W, _>(&packed, &mut unpacked, |a, b| a == b, 1);
+        black_box(());
     });
 }
 
@@ -89,12 +81,8 @@ fn bitpacking_cmp_u32_w3_fused(bencher: Bencher) {
 
     let mut unpacked = [0u64; 16];
     bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            1,
-        ))
+        T::unpack_cmp::<W, _>(&packed, &mut unpacked, |a, b| a == b, 1);
+        black_box(());
     });
 }
 
@@ -114,16 +102,18 @@ fn bitpacking_cmp_u32_w3_seq(bencher: Bencher) {
     });
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[inline(never)]
 pub fn collect_bool_cmp<T: PartialEq>(unpacked: [T; 1024], cmp: T) -> Vec<u64> {
     collect_bool(unpacked.len(), |idx| unpacked[idx] == cmp)
 }
 
 #[inline]
+#[must_use]
 pub fn ceil(value: usize, divisor: usize) -> usize {
     // Rewrite as `value.div_ceil(&divisor)` after
     // https://github.com/rust-lang/rust/issues/88581 is merged.
-    value / divisor + (0 != value % divisor) as usize
+    value / divisor + usize::from(0 != value % divisor)
 }
 
 #[inline]
@@ -136,22 +126,22 @@ pub fn collect_bool<F: FnMut(usize) -> bool>(len: usize, mut f: F) -> Vec<u64> {
         let mut packed = 0;
         for bit_idx in 0..64 {
             let i = bit_idx + chunk * 64;
-            packed |= (f(i) as u64) << bit_idx;
+            packed |= u64::from(f(i)) << bit_idx;
         }
 
         // SAFETY: Already allocated sufficient capacity
-        buffer.push(packed)
+        buffer.push(packed);
     }
 
     if remainder != 0 {
         let mut packed = 0;
         for bit_idx in 0..remainder {
             let i = bit_idx + chunks * 64;
-            packed |= (f(i) as u64) << bit_idx;
+            packed |= u64::from(f(i)) << bit_idx;
         }
 
         // SAFETY: Already allocated sufficient capacity
-        buffer.push(packed)
+        buffer.push(packed);
     }
 
     buffer.truncate(ceil(len, 8));
