@@ -111,7 +111,6 @@ pub trait BitPacking: FastLanes {
 }
 
 pub trait BitPackingCompare: BitPacking {
-    #[inline(always)]
     fn unpack_cmp_impl<const W: usize, F: Fn(&Self, &Self) -> bool>(
         input: &[Self; 1024 * W / Self::T],
         output: &mut [Self; 1024 / Self::T],
@@ -131,7 +130,7 @@ pub trait BitPackingCompare: BitPacking {
     {
         let new_output =
             unsafe { std::mem::transmute::<&mut [u64; 16], &mut [Self; 1024 / Self::T]>(output) };
-        Self::unpack_cmp_impl(input, new_output, F, eq_value)
+        Self::unpack_cmp_impl(input, new_output, comparison, eq_value)
     }
 }
 
@@ -244,7 +243,7 @@ macro_rules! impl_packing_compare {
     ($T:ty) => {
         paste! {
             impl BitPackingCompare for $T {
-               #[inline(never)]
+               #[inline(always)]
                 fn unpack_cmp_impl<const W: usize, F: Fn(&Self, &Self) -> bool>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [Self; 1024 / Self::T],
@@ -356,15 +355,11 @@ mod test {
 
         let values = array::from_fn(|i| i as T % 32);
 
-        println!("values {:?}", values);
         let mut packed = [0; (128 * W) / size_of::<T>()];
         T::pack::<W>(&values, &mut packed);
 
         let mut output = [0u64; 16];
-        T::unpack_eq::<W>(&packed, &mut output, 4);
-        for b in output.iter() {
-            println!("{:032b}", b)
-        }
+        T::unpack_cmp::<W, _>(&packed, &mut output, PartialEq::eq, 4);
 
         let mut unpacked = [0; 1024];
         T::unpack::<W>(&packed, &mut unpacked);
