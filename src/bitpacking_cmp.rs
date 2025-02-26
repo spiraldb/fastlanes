@@ -15,10 +15,10 @@ pub trait BitPackingCompare: BitPacking {
         input: &[Self; 1024 * W / Self::T],
         output: &mut [u64; 16],
         comparison: F,
-        eq_value: Self,
+        value: Self,
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
-        [(); 1024 / Self::T]:,
+        [(); 1024 / Self::T]:, // [(); 1024 * W / Self::T]:,
     {
         // The number of bits in the output == number of bits in the new_output.
         assert_eq!(
@@ -26,10 +26,20 @@ pub trait BitPackingCompare: BitPacking {
             1024 / Self::T * size_of::<Self>() * 8 as usize
         );
         let new_output = unsafe {
-            &mut *core::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>()
+            // &mut *core::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>()
+            core::mem::transmute::<&mut [u64; 16], &mut [Self; 1024 / Self::T]>(output)
         };
-        Self::unpack_cmp_impl(input, new_output, comparison, eq_value);
+        Self::unpack_cmp_impl(input, new_output, comparison, value);
     }
+
+    unsafe fn unchecked_unpack_cmp<F: Fn(Self, Self) -> bool>(
+        width: usize,
+        input: &[Self],
+        output: &mut [u64; 16],
+        comparison: F,
+        value: Self,
+    ) where
+        [(); 1024 / Self::T]:;
 }
 
 macro_rules! impl_packing_compare {
@@ -53,6 +63,30 @@ macro_rules! impl_packing_compare {
                     }
                 }
 
+               unsafe fn unchecked_unpack_cmp<F: Fn(Self, Self) -> bool>(
+                    width: usize,
+                    input: &[Self],
+                    output: &mut [u64; 16],
+                    comparison: F,
+                    value: Self,
+               )
+               {
+                   let packed_len = 128 * width / size_of::<Self>();
+                   debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                   debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                   $crate::seq_t!(W in $T {
+                        match width {
+                            #(W => Self::unpack_cmp::<W, F>(
+                                arrayref::array_ref![input, 0, 1024 * W / <$T>::T],
+                                output,
+                                comparison,
+                                value
+                            ),)*
+                            _ => unreachable!("Unsupported width: {}", width)
+                        }
+                    })
+                }
             }
         }
     };
@@ -80,14 +114,28 @@ mod tests {
         let mut packed = [0; (128 * W) / size_of::<T>()];
         T::pack::<W>(&values, &mut packed);
 
-        let mut output = [0u64; 16];
-        T::unpack_cmp::<W, _>(&packed, &mut output, |a, b| a == b, 4);
+        let cmp = {
+            let mut output = [0u64; 16];
+            T::unpack_cmp::<W, _>(&packed, &mut output, |a, b| a == b, 4);
+            output
+        };
 
-        let mut unpacked = [0; 1024];
-        T::unpack::<W>(&packed, &mut unpacked);
-        let bools = collect_bool(unpacked.len(), |idx| unpacked[idx] == 4);
+        let cmp_unchecked = {
+            let mut output = [0u64; 16];
+            unsafe {
+                T::unchecked_unpack_cmp::<_>(W, &packed, &mut output, |a, b| a == b, 4);
+            }
+            output
+        };
 
-        assert_eq!(output.as_slice(), bools.as_slice());
+        let bools = {
+            let mut unpacked = [0; 1024];
+            T::unpack::<W>(&packed, &mut unpacked);
+            collect_bool(unpacked.len(), |idx| unpacked[idx] == 4)
+        };
+
+        assert_eq!(cmp.as_slice(), bools.as_slice());
+        assert_eq!(cmp_unchecked.as_slice(), bools.as_slice());
     }
 
     #[inline]
