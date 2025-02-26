@@ -18,7 +18,8 @@ seq-macro = "0.3.5"
 
 [dev-dependencies]
 arrayref = "0.3.7"
-criterion = "0.5.1"
+criterion = { package = "codspeed-criterion-compat", version = "2.8" }
+divan = { package = "codspeed-divan-compat", version = "2.8" }
 
 [lints.rust]
 warnings = "deny"
