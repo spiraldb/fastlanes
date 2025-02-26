@@ -5,7 +5,7 @@ use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use fastlanes::BitPacking;
+use fastlanes::{BitPacking, BitPackingCompare};
 
 fn pack(c: &mut Criterion) {
     {
@@ -79,13 +79,21 @@ fn pack(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("unpack_eq_fused");
         group.bench_function("16 <- 3 stack", |b| {
-            const WIDTH: usize = 20;
+            type BitPackingT = u64;
+            const WIDTH: usize = 3;
             let values = [4u64; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<u32>()];
-            BitPacking::pack::<WIDTH>(&values, &mut packed);
+            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
+            BitPackingT::pack::<WIDTH>(&values, &mut packed);
 
             let mut unpacked = [0u64; 16];
-            b.iter(|| black_box(BitPacking::unpack_eq::<WIDTH>(&packed, &mut unpacked, 1)));
+            b.iter(|| {
+                black_box(BitPackingT::unpack_cmp::<WIDTH, _>(
+                    &packed,
+                    &mut unpacked,
+                    |a, b| a == b,
+                    1,
+                ))
+            });
         });
     }
 

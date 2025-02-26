@@ -111,7 +111,7 @@ pub trait BitPacking: FastLanes {
 }
 
 pub trait BitPackingCompare: BitPacking {
-    fn unpack_cmp_impl<const W: usize, F: Fn(&Self, &Self) -> bool>(
+    fn unpack_cmp_impl<const W: usize, F: Fn(Self, Self) -> bool>(
         input: &[Self; 1024 * W / Self::T],
         output: &mut [Self; 1024 / Self::T],
         f: F,
@@ -119,7 +119,7 @@ pub trait BitPackingCompare: BitPacking {
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
-    fn unpack_cmp<const W: usize, F: Fn(&Self, &Self) -> bool>(
+    fn unpack_cmp<const W: usize, F: Fn(Self, Self) -> bool>(
         input: &[Self; 1024 * W / Self::T],
         output: &mut [u64; 16],
         comparison: F,
@@ -244,17 +244,18 @@ macro_rules! impl_packing_compare {
         paste! {
             impl BitPackingCompare for $T {
                #[inline(always)]
-                fn unpack_cmp_impl<const W: usize, F: Fn(&Self, &Self) -> bool>(
+                fn unpack_cmp_impl<const W: usize> bool>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [Self; 1024 / Self::T],
-                    f: F,
+                    // _f: F,
                     other: Self,
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                     for lane in (0..Self::LANES){
                         unpack!($T, W, input, lane, |$idx, $elem| {
                             let bool_idx = $idx / Self::T;
                             let bool_bit = $idx % Self::T;
-                            let value = f(&$elem, &other);
+                            // let value = f($elem, other);
+                            let value = $elem == other;
                             output[bool_idx] |= (AsPrimitive::<Self>::as_(value)) << bool_bit;
                         });
                     }
@@ -365,14 +366,14 @@ mod test {
         T::unpack::<W>(&packed, &mut unpacked);
         let bools = collect_bool(unpacked.len(), |idx| unpacked[idx] == 4);
 
-        assert_eq!(output.as_slice(), bools.as_slice())
+        assert_eq!(output.as_slice(), bools.as_slice());
     }
 
     #[inline]
     pub fn ceil(value: usize, divisor: usize) -> usize {
         // Rewrite as `value.div_ceil(&divisor)` after
         // https://github.com/rust-lang/rust/issues/88581 is merged.
-        value / divisor + (0 != value % divisor) as usize
+        value / divisor + usize::from(0 != value % divisor)
     }
 
     #[inline]
@@ -385,22 +386,22 @@ mod test {
             let mut packed = 0;
             for bit_idx in 0..64 {
                 let i = bit_idx + chunk * 64;
-                packed |= (f(i) as u64) << bit_idx;
+                packed |= u64::from(f(i)) << bit_idx;
             }
 
             // SAFETY: Already allocated sufficient capacity
-            buffer.push(packed)
+            buffer.push(packed);
         }
 
         if remainder != 0 {
             let mut packed = 0;
             for bit_idx in 0..remainder {
                 let i = bit_idx + chunks * 64;
-                packed |= (f(i) as u64) << bit_idx;
+                packed |= u64::from(f(i)) << bit_idx;
             }
 
             // SAFETY: Already allocated sufficient capacity
-            buffer.push(packed)
+            buffer.push(packed);
         }
 
         buffer.truncate(ceil(len, 8));
