@@ -67,9 +67,9 @@ fn pack(c: &mut Criterion) {
 
 fn packed_compare(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group("unpack_eq_unpack");
-        group.bench_function("16 <- 3 stack", |b| {
-            const WIDTH: usize = 20;
+        let mut group = c.benchmark_group("unpack_eq");
+        group.bench_function("32 <- 3 unpack", |b| {
+            const WIDTH: usize = 3;
             let values = [4u32; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u32>()];
             BitPacking::pack::<WIDTH>(&values, &mut packed);
@@ -84,7 +84,7 @@ fn packed_compare(c: &mut Criterion) {
 
     {
         let mut group = c.benchmark_group("unpack_eq_fused");
-        group.bench_function("16 <- 3 stack", |b| {
+        group.bench_function("32 <- 3 fused comp", |b| {
             type BitPackingT = u32;
             const WIDTH: usize = 3;
             let values = [4; 1024];
@@ -101,8 +101,8 @@ fn packed_compare(c: &mut Criterion) {
 
     {
         let mut group = c.benchmark_group("unpack_eq_collect");
-        group.bench_function("16 <- 3 stack", |b| {
-            const WIDTH: usize = 20;
+        group.bench_function("32 cmp", |b| {
+            const WIDTH: usize = 3;
             let values = [4u32; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u32>()];
             BitPacking::pack::<WIDTH>(&values, &mut packed);
@@ -116,8 +116,8 @@ fn packed_compare(c: &mut Criterion) {
 
     {
         let mut group = c.benchmark_group("unpack_eq_unpack_collect");
-        group.bench_function("16 <- 3 stack", |b| {
-            const WIDTH: usize = 20;
+        group.bench_function("32 <- 3 unpack then cmp", |b| {
+            const WIDTH: usize = 3;
             let values = [4u32; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u32>()];
             BitPacking::pack::<WIDTH>(&values, &mut packed);
