@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 
 #[inline(never)]
 #[must_use]
-pub fn collect_bool_cmp<T: PartialEq + Copy>(unpacked: [T; 1024], cmp: T) -> Vec<u64> {
-    collect_bool(unpacked.len(), |idx| unpacked[idx] == cmp)
+pub fn collect_bool_cmp<T: PartialEq + Copy>(unpacked: &[T; 1024], cmp: &T) -> Vec<u64> {
+    collect_bool(unpacked.len(), |idx| unpacked[idx] == *cmp)
 }
 
 #[inline]

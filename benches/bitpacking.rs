@@ -110,7 +110,7 @@ fn packed_compare(c: &mut Criterion) {
             let mut unpacked = [0u32; 1024];
             BitPacking::unpack::<WIDTH>(&packed, &mut unpacked);
             black_box(());
-            b.iter(|| black_box(collect_bool_cmp(unpacked, 1)));
+            b.iter(|| black_box(collect_bool_cmp(&unpacked, &1)));
         });
     }
 
@@ -125,7 +125,7 @@ fn packed_compare(c: &mut Criterion) {
             let mut unpacked = [0u32; 1024];
             b.iter(|| {
                 BitPacking::unpack::<WIDTH>(&packed, &mut unpacked);
-                black_box(collect_bool_cmp(unpacked, 1));
+                black_box(collect_bool_cmp(&unpacked, &1));
             });
         });
     }

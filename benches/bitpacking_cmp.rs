@@ -37,7 +37,7 @@ fn bitpacking_cmp_u64_w3_seq(bencher: Bencher) {
 
     bencher.bench_local(|| {
         T::unpack::<W>(&packed, &mut unpacked);
-        criterion::black_box(collect_bool_cmp(unpacked, 1));
+        criterion::black_box(collect_bool_cmp(&unpacked, &1));
     });
 }
 
@@ -68,7 +68,7 @@ fn bitpacking_cmp_u64_w15_seq(bencher: Bencher) {
 
     bencher.bench_local(|| {
         T::unpack::<W>(&packed, &mut unpacked);
-        criterion::black_box(collect_bool_cmp(unpacked, 1));
+        criterion::black_box(collect_bool_cmp(&unpacked, &1));
     });
 }
 
@@ -99,6 +99,6 @@ fn bitpacking_cmp_u32_w3_seq(bencher: Bencher) {
 
     bencher.bench_local(|| {
         T::unpack::<W>(&packed, &mut unpacked);
-        criterion::black_box(collect_bool_cmp(unpacked, 1));
+        criterion::black_box(collect_bool_cmp(&unpacked, &1));
     });
 }
