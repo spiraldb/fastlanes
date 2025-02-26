@@ -13,6 +13,8 @@ mod bitpacking_cmp;
 mod delta;
 mod ffor;
 mod macros;
+#[cfg(feature = "test-harness")]
+pub mod test;
 mod transpose;
 
 pub use bitpacking::*;
