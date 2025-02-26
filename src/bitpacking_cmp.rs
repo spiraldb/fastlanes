@@ -23,15 +23,21 @@ pub trait BitPackingCompare: BitPacking {
         // The number of bits in the output == number of bits in the new_output.
         assert_eq!(
             16 * u64::BITS as usize,
-            1024 / Self::T * size_of::<Self>() * 8 as usize
+            1024 / Self::T * size_of::<Self>() * 8_usize
         );
         let new_output = unsafe {
             // &mut *core::ptr::from_mut::<[u64; 16]>(output).cast::<[Self; 1024 / Self::T]>()
-            core::mem::transmute::<&mut [u64; 16], &mut [Self; 1024 / Self::T]>(output)
+            &mut *(output as *mut [u64; 16] as *mut [Self; 1024 / Self::T])
         };
         Self::unpack_cmp_impl(input, new_output, comparison, value);
     }
 
+    /// A fused unpack (see `BitPacking::unpack`) compare and pack into bit bools.
+    ///
+    /// # Safety
+    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
+    /// is the packed width. The output slice must be of exactly length `[u64; 16]` (`1024` bits).
+    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack_cmp<F: Fn(Self, Self) -> bool>(
         width: usize,
         input: &[Self],
