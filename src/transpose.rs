@@ -1,4 +1,4 @@
-use crate::{FastLanes, FL_ORDER};
+use crate::{FL_ORDER, FastLanes};
 use seq_macro::seq;
 
 pub trait Transpose: FastLanes {

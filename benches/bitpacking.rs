@@ -4,7 +4,7 @@
 use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use fastlanes::BitPacking;
 
 fn pack(c: &mut Criterion) {

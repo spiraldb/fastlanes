@@ -3,7 +3,7 @@ use const_for::const_for;
 use core::mem::size_of;
 use paste::paste;
 
-use crate::{pack, seq_t, unpack, FastLanes, Pred, Satisfied, FL_ORDER};
+use crate::{FL_ORDER, FastLanes, Pred, Satisfied, pack, seq_t, unpack};
 
 pub struct BitPackWidth<const W: usize>;
 pub trait SupportedBitPackWidth<T> {}
