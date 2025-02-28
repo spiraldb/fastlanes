@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
-#![no_std]
+// #![no_std]
 
 extern crate alloc;
 extern crate core;

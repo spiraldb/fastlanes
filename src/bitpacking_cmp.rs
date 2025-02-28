@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
 use crate::FastLanes;
 use crate::{BitPackWidth, BitPacking, SupportedBitPackWidth};
 use core::ptr;
@@ -57,14 +59,21 @@ macro_rules! impl_packing_compare {
                     f: F,
                     other: Self,
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
-                    for lane in (0..Self::LANES){
-                        $crate::unpack!($T, W, input, lane, |$idx, $elem| {
-                            let bool_idx = $idx / Self::T;
-                            let bool_bit = $idx % Self::T;
-                            let value = f($elem, other);
-                            output[bool_idx] |= (num_traits::AsPrimitive::<Self>::as_(value)) << bool_bit;
-                        });
-                    }
+                   let mut offset = 0;
+                   for lane in (0..Self::LANES) {
+                       let mut acc: $T = 0;
+                       $crate::unpack!($T, W, input, lane, |$idx, $elem| {
+                           let comparison = f($elem, other);
+                           // Cast from booleans back into Self::T
+                           let comparison = (num_traits::AsPrimitive::<Self>::as_(comparison));
+                           acc |= (comparison << lane);
+                       });
+                       println!("acc: {}", acc);
+                       println!("out: {}", (offset / 8) * $crate::FL_ORDER[offset % 8]);
+
+                       output[(offset / 8) * $crate::FL_ORDER[offset % 8]] = acc;
+                       offset += 1;
+                   }
                 }
 
                unsafe fn unchecked_unpack_cmp<F: Fn(Self, Self) -> bool>(
@@ -98,6 +107,8 @@ macro_rules! impl_packing_compare {
 
 // TODO(joe): fix this.
 // Do not impl this for u8/u16 as its currently slower.
+impl_packing_compare!(u8);
+impl_packing_compare!(u16);
 impl_packing_compare!(u32);
 impl_packing_compare!(u64);
 
@@ -111,35 +122,26 @@ mod tests {
     #[test]
     fn test_unpack_eq() {
         type T = u32;
-        const W: usize = 3;
+        const W: usize = 10;
 
-        let values = array::from_fn(|i| i as T % 32);
+        let values = array::from_fn(|i| i as T % (1 << W));
 
         let mut packed = [0; (128 * W) / size_of::<T>()];
         T::pack::<W>(&values, &mut packed);
 
-        let cmp = {
-            let mut output = [0u64; 16];
-            T::unpack_cmp::<W, _>(&packed, &mut output, |a, b| a == b, 4);
-            output
-        };
+        // Check equality against every value of the vector
+        for v in 0..1024 {
+            let cmp = {
+                let mut output = [0u64; 16];
+                T::unpack_cmp::<W, _>(&packed, &mut output, |a, b| a == b, v);
+                output
+            };
 
-        let cmp_unchecked = {
-            let mut output = [0u64; 16];
-            unsafe {
-                T::unchecked_unpack_cmp::<_>(W, &packed, &mut output, |a, b| a == b, 4);
-            }
-            output
-        };
+            let expected = values.iter().map(|&x| x == v).collect::<Vec<_>>();
+            let expected_bits = collect_bool(1024, |idx| expected[idx]);
 
-        let bools = {
-            let mut unpacked = [0; 1024];
-            T::unpack::<W>(&packed, &mut unpacked);
-            collect_bool(unpacked.len(), |idx| unpacked[idx] == 4)
-        };
-
-        assert_eq!(cmp.as_slice(), bools.as_slice());
-        assert_eq!(cmp_unchecked.as_slice(), bools.as_slice());
+            assert_eq!(cmp.as_slice(), expected_bits.as_slice(), "Failed == {}", v);
+        }
     }
 
     #[inline]
