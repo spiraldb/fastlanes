@@ -2,8 +2,8 @@
 #![feature(generic_const_exprs)]
 
 use divan::Bencher;
-use fastlanes::test::collect_bool_cmp;
-use fastlanes::{BitPacking, BitPackingCompare};
+use fastlanes::test::{ collect_bool_cmp};
+use fastlanes::{collect_bits, BitPacking, BitPackingCompare};
 use std::hint::black_box;
 
 fn main() {
@@ -18,7 +18,7 @@ fn bitpacking_cmp_u64_w3_fused(bencher: Bencher) {
     let mut packed = [0; 128 * W / size_of::<T>()];
     T::pack::<W>(&values, &mut packed);
 
-    let mut unpacked = [0u64; 16];
+    let mut unpacked = [false; 1024];
     bencher.bench_local(|| {
         black_box(T::unpack_cmp::<W, _>(
             &packed,
@@ -26,6 +26,7 @@ fn bitpacking_cmp_u64_w3_fused(bencher: Bencher) {
             |a, b| a == b,
             black_box(1),
         ));
+        black_box(collect_bits(&unpacked));
     });
 }
 
@@ -53,7 +54,7 @@ fn bitpacking_cmp_u64_w15_fused(bencher: Bencher) {
     let mut packed = [0; 128 * W / size_of::<T>()];
     T::pack::<W>(&values, &mut packed);
 
-    let mut unpacked = [0u64; 16];
+    let mut unpacked = [false; 1024];
     bencher.bench_local(|| {
         black_box(T::unpack_cmp::<W, _>(
             &packed,
@@ -61,6 +62,7 @@ fn bitpacking_cmp_u64_w15_fused(bencher: Bencher) {
             |a, b| a == b,
             black_box(1),
         ));
+        black_box(collect_bits(&unpacked));
     });
 }
 
@@ -93,7 +95,7 @@ fn bitpacking_cmp_u32_w3_fused(bencher: Bencher) {
     let mut packed = [0; 128 * W / size_of::<T>()];
     T::pack::<W>(&values, &mut packed);
 
-    let mut unpacked = [0u64; 16];
+    let mut unpacked = [false; 1024];
     bencher.bench_local(|| {
         black_box(T::unpack_cmp::<W, _>(
             &packed,
@@ -101,6 +103,7 @@ fn bitpacking_cmp_u32_w3_fused(bencher: Bencher) {
             |a, b| a == b,
             black_box(1),
         ));
+        black_box(collect_bits(&unpacked));
     });
 }
 
@@ -134,7 +137,7 @@ fn bitpacking_cmp_u16_w3_fused(bencher: Bencher) {
     let mut packed = [0; 128 * W / size_of::<T>()];
     T::pack::<W>(&values, &mut packed);
 
-    let mut unpacked = [0u64; 16];
+    let mut unpacked = [false; 1024];
     bencher.bench_local(|| {
         black_box(T::unpack_cmp::<W, _>(
             &packed,
@@ -142,6 +145,7 @@ fn bitpacking_cmp_u16_w3_fused(bencher: Bencher) {
             |a, b| a == b,
             black_box(1),
         ));
+        black_box(collect_bits(&unpacked));
     });
 }
 
