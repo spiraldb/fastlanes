@@ -4,7 +4,7 @@
 // TODO(joe): remove this once codspeed supports const generics.
 
 use divan::Bencher;
-use fastlanes::{BitPacking, BitPackingCompare};
+use fastlanes::{BitPacking, BitPackingCompare, FastLanesComparable};
 use num_traits::FromPrimitive;
 
 fn main() {
@@ -12,21 +12,25 @@ fn main() {
 }
 
 #[divan::bench(types=[u16, u32, u64])]
-fn bitpacking_cmp_fused<T: BitPacking + BitPackingCompare + FromPrimitive + Copy>(bencher: Bencher)
+fn bitpacking_cmp_fused<T>(bencher: Bencher)
 where
     [(); 128 * 3 / size_of::<T>()]:,
+    T: BitPacking + FastLanesComparable<Bitpacked = T> + FromPrimitive + Copy,
+    T::Bitpacked: BitPacking + BitPackingCompare + Copy,
 {
     const W: usize = 3;
     let value = T::from_usize(1).expect("");
     let values = [T::from_usize(2).expect(""); 1024];
     let mut packed = [T::zero(); 128 * 3 / size_of::<T>()];
 
-    unsafe { T::unchecked_pack(W, &values, &mut packed) };
+    unsafe { BitPacking::unchecked_pack(W, &values, &mut packed) };
 
     let mut unpacked = [false; 1024];
 
     bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack_cmp(W, &packed, &mut unpacked, |a, b| a == b, value) };
+        unsafe {
+            BitPackingCompare::unchecked_unpack_cmp(W, &packed, &mut unpacked, |a, b| a == b, value)
+        };
     });
 }
 
