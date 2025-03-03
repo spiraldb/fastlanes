@@ -16,10 +16,9 @@ fn pack(c: &mut Criterion) {
             let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
 
             b.iter(|| {
-                BitPacking::pack::<WIDTH>(
-                    array_ref![values, 0, 1024],
-                    array_mut_ref![packed, 0, 192],
-                );
+                BitPacking::pack::<WIDTH>(array_ref![values, 0, 1024], array_mut_ref![
+                    packed, 0, 192
+                ]);
             });
         });
 
@@ -78,10 +77,11 @@ fn throughput(c: &mut Criterion) {
     group.bench_function("compress", |b| {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
-                BitPacking::pack::<WIDTH>(
-                    array_ref![values, i * 1024, 1024],
-                    array_mut_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
-                );
+                BitPacking::pack::<WIDTH>(array_ref![values, i * 1024, 1024], array_mut_ref![
+                    packed,
+                    i * OUTPUT_BATCH_SIZE,
+                    OUTPUT_BATCH_SIZE
+                ]);
             }
         });
     });
