@@ -75,6 +75,7 @@ macro_rules! impl_packing_compare {
                     }
                 }
 
+                #[inline(never)]
                 unsafe fn unchecked_unpack_cmp<V, F>(
                      width: usize,
                      input: &[Self],

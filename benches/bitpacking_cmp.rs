@@ -13,9 +13,9 @@ mod bench {
     use num_traits::FromPrimitive;
     use std::hint::black_box;
 
-    const BENCH_W: [usize; 6] = [2, 3, 5, 7, 15, 31];
+    const BENCH_W: [usize; 4] = [2, 3, 5, 7];
 
-    #[divan::bench(types=[u32, u64], consts = BENCH_W)]
+    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
     fn bitpacking_cmp_fused<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FastLanesComparable<Bitpacked = T> + FromPrimitive + Copy,
@@ -44,7 +44,7 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u32, u64], consts = BENCH_W)]
+    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
     fn bitpacking_cmp_seq<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
@@ -66,7 +66,7 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u32, u64], consts = BENCH_W)]
+    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
     fn bitpacking_cmp_unpack<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
