@@ -107,12 +107,6 @@ pub fn collect_bits_dumb(buffer: &[bool; 1024]) -> [u64; 16] {
 pub fn collect_bits(bools: &[bool; 1024]) -> [u64; 16] {
     let mut result = [0u64; 16];
 
-    // Convert bool array to bytes (0 or 1) for better SIMD processing
-    // let mut bytes = [0u8; 1024];
-    // for i in 0..1024 {
-    //     bytes[i] = bools[i] as u8;
-    // }
-
     // Process in larger chunks
     for chunk in 0..16 {
         let chunk_base = chunk * 64;
