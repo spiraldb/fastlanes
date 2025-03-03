@@ -124,7 +124,7 @@ mod tests {
 
             let expected = values.iter().map(|&x| x == v).collect::<Vec<_>>();
 
-            assert_eq!(cmp.as_slice(), expected.as_slice(), "Failed == {}", v);
+            assert_eq!(cmp.as_slice(), expected.as_slice(), "Failed == {v}");
         }
     }
 }

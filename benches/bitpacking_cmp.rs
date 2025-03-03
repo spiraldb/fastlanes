@@ -17,11 +17,11 @@ fn bitpacking_cmp_fused<T: BitPacking + BitPackingCompare + FromPrimitive + Copy
 ) where
     [(); 128 * W / size_of::<T>()]:,
 {
-    let value = T::from_usize(1).unwrap();
-    let values = [T::from_usize(2).unwrap(); 1024];
+    let value = T::from_usize(1).expect("");
+    let values = [T::from_usize(2).expect(""); 1024];
     let mut packed = [T::zero(); 128 * W / size_of::<T>()];
 
-    unsafe { T::unchecked_pack(W, &values.as_slice(), &mut packed.as_mut_slice()) };
+    unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
     let mut unpacked = [false; 1024];
 
@@ -35,16 +35,16 @@ fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy, const W: usize>(benc
 where
     [(); 128 * W / size_of::<T>()]:,
 {
-    let value = T::from_usize(1).unwrap();
-    let values = [T::from_usize(2).unwrap(); 1024];
+    let value = T::from_usize(1).expect("");
+    let values = [T::from_usize(2).expect(""); 1024];
     let mut packed = [T::zero(); 128 * W / size_of::<T>()];
 
-    unsafe { T::unchecked_pack(W, &values.as_slice(), &mut packed.as_mut_slice()) };
+    unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
     let mut unpacked = [T::zero(); 1024];
 
     bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack(W, &packed.as_slice(), &mut unpacked.as_mut_slice()) };
+        unsafe { T::unchecked_unpack(W, &packed, &mut unpacked) };
         collect_bool_cmp(&unpacked, &value)
     });
 }
@@ -54,15 +54,15 @@ fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy, const W: usize>(b
 where
     [(); 128 * W / size_of::<T>()]:,
 {
-    let values = [T::from_usize(2).unwrap(); 1024];
+    let values = [T::from_usize(2).expect(""); 1024];
     let mut packed = [T::zero(); 128 * W / size_of::<T>()];
 
-    unsafe { T::unchecked_pack(W, &values.as_slice(), &mut packed.as_mut_slice()) };
+    unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
     let mut unpacked = [T::zero(); 1024];
 
     bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack(W, &packed.as_slice(), &mut unpacked.as_mut_slice()) };
+        unsafe { T::unchecked_unpack(W, &packed, &mut unpacked) };
     });
 }
 
