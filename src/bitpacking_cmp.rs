@@ -10,6 +10,10 @@ pub trait BitPackingCompare: FastLanesComparable {
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
+    /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
+    /// This will compare using the comparison function all the packed values with a constant
+    /// value, the values are of type `Self::Bitpacked`, whereas the comparison is on the type `Self`,
+    /// this allows for comparison between signed values which are bitpacked as unsigned ones.
     fn unpack_cmp<const W: usize, F: Fn(Self, Self) -> bool>(
         input: &[Self::Bitpacked; 1024 * W / Self::Bitpacked::T],
         output: &mut [bool; 1024],
@@ -27,7 +31,7 @@ pub trait BitPackingCompare: FastLanesComparable {
         Self::unpack_cmp_impl(input, output, comparison, value);
     }
 
-    /// A fused unpack (see `BitPacking::unpack`) compare and pack into bit bools.
+    /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
     ///
     /// # Safety
     /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
