@@ -60,6 +60,7 @@ macro_rules! impl_fastlanes_comparable {
             type Bitpacked = $bitpacked_type;
 
             #[inline]
+            #[allow(clippy::useless_transmute)]
             fn as_unpacked(inner: Self::Bitpacked) -> Self {
                 unsafe { core::mem::transmute(inner) }
             }
