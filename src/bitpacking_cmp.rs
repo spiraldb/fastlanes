@@ -52,13 +52,13 @@ macro_rules! impl_packing_compare {
             impl BitPackingCompare for $T {
                #[inline(always)]
                 fn unpack_cmp_impl<const W: usize, F: Fn(Self, Self) -> bool>(
-                    input: &[Self::Bitpacked; 1024 * W / Self::T],
+                    input: &[Self::Bitpacked; 1024 * W / Self::Bitpacked::T],
                     output: &mut [bool; 1024],
                     f: F,
                     other: Self,
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
-                   for lane in (0..Self::LANES) {
-                       $crate::unpack!($T, W, input, lane, |$idx, $elem| {
+                   for lane in (0..Self::Bitpacked::LANES) {
+                       $crate::unpack!($T::Bitpacked, W, input, lane, |$idx, $elem| {
                            let value = Self::as_unpacked($elem);
                            output[$idx] = f(value, other);
                        });
@@ -73,9 +73,9 @@ macro_rules! impl_packing_compare {
                     value: Self,
                )
                {
-                   let packed_len = 128 * width / size_of::<Self>();
+                   let packed_len = 128 * width / size_of::<Self::Bitpacked>();
                    debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
-                   debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                   debug_assert!(width <= Self::Bitpacked::T, "Width must be less than or equal to {}", Self::Bitpacked::T);
 
                    $crate::seq_t!(W in $T {
                         match width {

@@ -14,7 +14,7 @@ mod bench {
 
     const BENCH_W: [usize; 4] = [2, 3, 5, 7];
 
-    #[divan::bench(types=[u16, u32, u64], consts = BENCH_W)]
+    #[divan::bench(types=[i64, u16, u32, u64], consts = BENCH_W)]
     fn bitpacking_cmp_fused<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + BitPackingCompare + FromPrimitive + Copy,
@@ -42,14 +42,16 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u16, u32, u64], consts = BENCH_W)]
-    fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy, const W: usize>(bencher: Bencher)
+    #[divan::bench(types=[i64, u16, u32, u64], consts = BENCH_W)]
+    fn bitpacking_cmp_seq<T, const W: usize>(bencher: Bencher)
     where
+        T: BitPacking + BitPackingCompare + FromPrimitive + Copy,
+        T::Bitpacked: BitPacking + BitPackingCompare + FromPrimitive + Copy,
         [(); 128 * W / size_of::<T>()]:,
     {
         let value = T::from_usize(1).expect("");
-        let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+        let values = [T::Bitpacked::from_usize(2).expect(""); 1024];
+        let mut packed = [T::Bitpacked::zero(); 128 * W / size_of::<T>()];
 
         unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
@@ -61,13 +63,15 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u16, u32, u64], consts = BENCH_W)]
-    fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy, const W: usize>(bencher: Bencher)
+    #[divan::bench(types=[i64, u16, u32, u64], consts = BENCH_W)]
+    fn bitpacking_cmp_unpack<T, const W: usize>(bencher: Bencher)
     where
+        T: BitPacking + BitPackingCompare + FromPrimitive + Copy,
+        T::Bitpacked: BitPacking + BitPackingCompare + FromPrimitive + Copy,
         [(); 128 * W / size_of::<T>()]:,
     {
-        let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+        let values = [T::Bitpacked::from_usize(2).expect(""); 1024];
+        let mut packed = [T::Bitpacked::zero(); 128 * W / size_of::<T>()];
 
         unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
