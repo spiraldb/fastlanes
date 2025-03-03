@@ -2,165 +2,67 @@
 #![feature(generic_const_exprs)]
 
 use divan::Bencher;
-use fastlanes::test::{ collect_bool_cmp};
-use fastlanes::{ BitPacking, BitPackingCompare};
-use std::hint::black_box;
+use fastlanes::test::collect_bool_cmp;
+use fastlanes::{BitPacking, BitPackingCompare};
+use num_traits::FromPrimitive;
 
 fn main() {
     divan::main();
 }
 
-#[divan::bench]
-fn bitpacking_cmp_u64_w3_fused(bencher: Bencher) {
-    const W: usize = 3;
-    type T = u64;
-    let values = [2; 1024];
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
+const BENCH_W: [usize; 4] = [2, 3, 5, 7];
+
+#[divan::bench(types=[u16, u32, u64], consts = BENCH_W)]
+fn bitpacking_cmp_fused<T: BitPacking + BitPackingCompare + FromPrimitive + Copy, const W: usize>(
+    bencher: Bencher,
+) where
+    [(); 128 * W / size_of::<T>()]:,
+{
+    let value = T::from_usize(1).unwrap();
+    let values = [T::from_usize(2).unwrap(); 1024];
+    let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+
+    unsafe { T::unchecked_pack(W, &values.as_slice(), &mut packed.as_mut_slice()) };
 
     let mut unpacked = [false; 1024];
+
     bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            black_box(1),
-        ));
-        // black_box(collect_bits(&unpacked));
+        unsafe { T::unchecked_unpack_cmp(W, &packed, &mut unpacked, |a, b| a == b, value) };
     });
 }
 
-#[divan::bench]
-fn bitpacking_cmp_u64_w3_seq(bencher: Bencher) {
-    const W: usize = 3;
-    type T = u64;
-    let values = [2; 1024];
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
+#[divan::bench(types=[u16, u32, u64], consts = BENCH_W)]
+fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy, const W: usize>(bencher: Bencher)
+where
+    [(); 128 * W / size_of::<T>()]:,
+{
+    let value = T::from_usize(1).unwrap();
+    let values = [T::from_usize(2).unwrap(); 1024];
+    let mut packed = [T::zero(); 128 * W / size_of::<T>()];
 
-    let mut unpacked = [0; 1024];
+    unsafe { T::unchecked_pack(W, &values.as_slice(), &mut packed.as_mut_slice()) };
+
+    let mut unpacked = [T::zero(); 1024];
 
     bencher.bench_local(|| {
-        T::unpack::<W>(&packed, &mut unpacked);
-        black_box(collect_bool_cmp(&unpacked, &1));
+        unsafe { T::unchecked_unpack(W, &packed.as_slice(), &mut unpacked.as_mut_slice()) };
+        collect_bool_cmp(&unpacked, &value)
     });
 }
 
-#[divan::bench]
-fn bitpacking_cmp_u64_w15_fused(bencher: Bencher) {
-    const W: usize = 15;
-    type T = u64;
-    let values = [2; 1024];
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
+#[divan::bench(types=[u16, u32, u64], consts = BENCH_W)]
+fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy, const W: usize>(bencher: Bencher)
+where
+    [(); 128 * W / size_of::<T>()]:,
+{
+    let values = [T::from_usize(2).unwrap(); 1024];
+    let mut packed = [T::zero(); 128 * W / size_of::<T>()];
 
-    let mut unpacked = [false; 1024];
-    bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            black_box(1),
-        ));
-        // black_box(collect_bits(&unpacked));
-    });
-}
+    unsafe { T::unchecked_pack(W, &values.as_slice(), &mut packed.as_mut_slice()) };
 
-#[divan::bench]
-fn bitpacking_cmp_u64_w15_seq(bencher: Bencher) {
-    const W: usize = 15;
-    type T = u64;
-    let values = [2; 1024];
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
-
-    let mut unpacked = [0; 1024];
+    let mut unpacked = [T::zero(); 1024];
 
     bencher.bench_local(|| {
-        T::unpack::<W>(&packed, &mut unpacked);
-        black_box(collect_bool_cmp(&unpacked, &1));
-    });
-}
-
-#[divan::bench]
-fn bitpacking_cmp_u32_w3_fused(bencher: Bencher) {
-    const W: usize = 3;
-    type T = u32;
-
-    let mut values = [0; 1024];
-    for i in 0..1024 {
-        values[i] = (i / 8) as u32;
-    }
-
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
-
-    let mut unpacked = [false; 1024];
-    bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            black_box(1),
-        ));
-        // black_box(collect_bits(&unpacked));
-    });
-}
-
-#[divan::bench]
-fn bitpacking_cmp_u32_w3_seq(bencher: Bencher) {
-    const W: usize = 3;
-    type T = u32;
-    let values = [2; 1024];
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
-
-    let mut unpacked = [0; 1024];
-
-    bencher.bench_local(|| {
-        T::unpack::<W>(&packed, &mut unpacked);
-        black_box(collect_bool_cmp(&unpacked, &1));
-    });
-}
-
-
-#[divan::bench]
-fn bitpacking_cmp_u16_w3_fused(bencher: Bencher) {
-    const W: usize = 3;
-    type T = u16;
-
-    let mut values = [0; 1024];
-    for i in 0..1024 {
-        values[i] = (i / 8) as T;
-    }
-
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
-
-    let mut unpacked = [false; 1024];
-    bencher.bench_local(|| {
-        black_box(T::unpack_cmp::<W, _>(
-            &packed,
-            &mut unpacked,
-            |a, b| a == b,
-            black_box(1),
-        ));
-        // black_box(collect_bits(&unpacked));
-    });
-}
-
-#[divan::bench]
-fn bitpacking_cmp_u16_w3_seq(bencher: Bencher) {
-    const W: usize = 3;
-    type T = u16;
-    let values = [2; 1024];
-    let mut packed = [0; 128 * W / size_of::<T>()];
-    T::pack::<W>(&values, &mut packed);
-
-    let mut unpacked = [0; 1024];
-
-    bencher.bench_local(|| {
-        T::unpack::<W>(&packed, &mut unpacked);
-        black_box(collect_bool_cmp(&unpacked, &1));
+        unsafe { T::unchecked_unpack(W, &packed.as_slice(), &mut unpacked.as_mut_slice()) };
     });
 }
