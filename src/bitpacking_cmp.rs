@@ -2,16 +2,6 @@ use crate::{BitPackWidth, SupportedBitPackWidth};
 use crate::{FastLanes, FastLanesComparable};
 
 pub trait BitPackingCompare: FastLanes {
-    fn unpack_cmp_impl<const W: usize, V, F>(
-        input: &[Self; 1024 * W / Self::T],
-        output: &mut [bool; 1024],
-        f: F,
-        eq_value: V,
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>,
-        V: FastLanesComparable<Bitpacked = Self>,
-        F: Fn(V, V) -> bool;
-
     /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
     /// This will compare using the comparison function all the packed values with a constant value,
     /// the values are of type `Self`, whereas the comparison is on the type `V` (where `V::Bitpacked` = `Self`).
@@ -25,15 +15,7 @@ pub trait BitPackingCompare: FastLanes {
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
         V: FastLanesComparable<Bitpacked = Self>,
         F: Fn(V, V) -> bool,
-        [(); 1024 / Self::T]:,
-    {
-        // The number of bits in the output == number of bits in the new_output.
-        assert_eq!(
-            16 * u64::BITS as usize,
-            1024 / Self::T * size_of::<Self>() * 8_usize
-        );
-        Self::unpack_cmp_impl(input, output, comparison, value);
-    }
+        [(); 1024 / Self::T]:;
 
     /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
     ///
@@ -56,8 +38,8 @@ macro_rules! impl_packing_compare {
     ($T:ty) => {
         paste::paste! {
             impl BitPackingCompare for $T {
-                // #[inline(always)]
-                fn unpack_cmp_impl<const W: usize, V, F>(
+                 // #[inline(never)]
+                fn unpack_cmp<const W: usize, V, F>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [bool; 1024],
                     f: F,
@@ -75,7 +57,7 @@ macro_rules! impl_packing_compare {
                     }
                 }
 
-                #[inline(never)]
+                // #[inline(never)]
                 unsafe fn unchecked_unpack_cmp<V, F>(
                      width: usize,
                      input: &[Self],
