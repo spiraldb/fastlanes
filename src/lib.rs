@@ -1,6 +1,5 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
-// #![no_std]
 
 extern crate alloc;
 extern crate core;
@@ -13,8 +12,6 @@ mod bitpacking_cmp;
 mod delta;
 mod ffor;
 mod macros;
-#[cfg(feature = "test-harness")]
-pub mod test;
 mod transpose;
 
 pub use bitpacking::*;

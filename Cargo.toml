@@ -9,9 +9,6 @@ authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec"]
 edition = "2021"
 
-[features]
-test-harness = []
-
 [dependencies]
 arrayref = "0.3.7"
 const_for = "0.1.4"
@@ -49,12 +46,10 @@ use_debug = "deny"
 [[bench]]
 name = "bitpacking"
 harness = false
-required-features = ["test-harness"]
 
 [[bench]]
 name = "bitpacking_cmp"
 harness = false
-required-features = ["test-harness"]
 
 [[bench]]
 name = "delta"

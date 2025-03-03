@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
 use crate::FastLanes;
 use crate::{BitPackWidth, BitPacking, SupportedBitPackWidth};
 
