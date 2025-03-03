@@ -5,8 +5,7 @@ use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use fastlanes::test::collect_bool_cmp;
-use fastlanes::{BitPacking, BitPackingCompare};
+use fastlanes::BitPacking;
 
 fn pack(c: &mut Criterion) {
     {
@@ -65,103 +64,6 @@ fn pack(c: &mut Criterion) {
     }
 }
 
-fn packed_compare(c: &mut Criterion) {
-    {
-        let mut group = c.benchmark_group("unpack_eq");
-        group.bench_function("32 <- 3 unpack", |b| {
-            type BitPackingT = u32;
-            const WIDTH: usize = 3;
-            let values = [4; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
-            BitPackingT::pack::<WIDTH>(&values, &mut packed);
-
-            let mut unpacked = [0; 1024];
-            b.iter(|| {
-                BitPackingT::unpack::<WIDTH>(&packed, &mut unpacked);
-                black_box(());
-            });
-        });
-    }
-
-    {
-        let mut group = c.benchmark_group("unpack_eq_fused");
-        group.bench_function("32 <- 3 fused comp", |b| {
-            type BitPackingT = u32;
-            const WIDTH: usize = 3;
-            let values = [4; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
-            BitPackingT::pack::<WIDTH>(&values, &mut packed);
-
-            let mut unpacked = [0u64; 16];
-            b.iter(|| {
-                black_box(BitPackingT::unpack_cmp::<WIDTH, _>(
-                    &packed,
-                    &mut unpacked,
-                    |a, b| a == b,
-                    1,
-                ));
-            });
-        });
-    }
-
-    {
-        let mut group = c.benchmark_group("unpack_eq_fused_unchecked");
-        group.bench_function("32 <- 3 fused unchecked comp", |b| {
-            type BitPackingT = u32;
-            const WIDTH: usize = 3;
-            let values = [4; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
-            BitPackingT::pack::<WIDTH>(&values, &mut packed);
-
-            let mut unpacked = [0u64; 16];
-            b.iter(|| {
-                black_box(unsafe {
-                    BitPackingT::unchecked_unpack_cmp(
-                        WIDTH,
-                        packed.as_slice(),
-                        &mut unpacked,
-                        |a, b| a == b,
-                        1,
-                    )
-                });
-            });
-        });
-    }
-
-    {
-        let mut group = c.benchmark_group("unpack_eq_collect");
-        group.bench_function("32 cmp", |b| {
-            type BitPackingT = u32;
-            const WIDTH: usize = 3;
-            let values = [4; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
-            BitPackingT::pack::<WIDTH>(&values, &mut packed);
-
-            let mut unpacked = [0; 1024];
-            BitPackingT::unpack::<WIDTH>(&packed, &mut unpacked);
-            black_box(());
-            b.iter(|| black_box(collect_bool_cmp(&unpacked, &1)));
-        });
-    }
-
-    {
-        let mut group = c.benchmark_group("unpack_eq_unpack_collect");
-        group.bench_function("32 <- 3 unpack then cmp", |b| {
-            type BitPackingT = u32;
-            const WIDTH: usize = 3;
-            let values = [4; 1024];
-            let mut packed = [0; 128 * WIDTH / size_of::<BitPackingT>()];
-            BitPackingT::pack::<WIDTH>(&values, &mut packed);
-
-            let mut unpacked = [0; 1024];
-            b.iter(|| {
-                BitPackingT::unpack::<WIDTH>(&packed, &mut unpacked);
-                black_box(collect_bool_cmp(&unpacked, &1));
-            });
-        });
-    }
-}
-
 fn throughput(c: &mut Criterion) {
     const WIDTH: usize = 3;
     const NUM_BATCHES: usize = 1024;
@@ -196,5 +98,5 @@ fn throughput(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, pack, packed_compare, throughput);
+criterion_group!(benches, pack, throughput);
 criterion_main!(benches);
