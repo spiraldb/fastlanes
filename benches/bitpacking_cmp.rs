@@ -89,7 +89,7 @@ mod bench {
         cmp: &T,
         output: &mut [u64; 16],
     ) {
-        collect_bool(|idx| unpacked[idx] == *cmp, output)
+        collect_bool(|idx| unpacked[idx] == *cmp, output);
     }
 
     #[inline]

@@ -29,7 +29,13 @@ where
 
     bencher.bench_local(|| {
         unsafe {
-            BitPackingCompare::unchecked_unpack_cmp(W, &packed, &mut unpacked, |a, b| a == b, value)
+            BitPackingCompare::unchecked_unpack_cmp(
+                W,
+                &packed,
+                &mut unpacked,
+                |a, b| a == b,
+                value,
+            );
         };
     });
 }
