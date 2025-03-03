@@ -25,8 +25,6 @@ pub trait BitPackingCompare: BitPacking {
             16 * u64::BITS as usize,
             1024 / Self::T * size_of::<Self>() * 8_usize
         );
-        //let new_output =
-        //            unsafe { &mut *(ptr::from_mut::<[u64; 16]>(output)).cast::<[Self; 1024 / Self::T]>() };
         Self::unpack_cmp_impl(input, output, comparison, value);
     }
 
