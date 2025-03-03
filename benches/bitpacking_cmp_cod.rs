@@ -75,16 +75,8 @@ pub fn collect_bool_cmp<T: PartialEq + Copy>(unpacked: &[T; 1024], cmp: &T) -> V
 }
 
 #[inline]
-#[must_use]
-pub fn ceil(value: usize, divisor: usize) -> usize {
-    // Rewrite as `value.div_ceil(&divisor)` after
-    // https://github.com/rust-lang/rust/issues/88581 is merged.
-    value / divisor + usize::from(0 != value % divisor)
-}
-
-#[inline]
 pub fn collect_bool<F: FnMut(usize) -> bool>(len: usize, mut f: F) -> Vec<u64> {
-    let mut buffer = Vec::with_capacity(ceil(len, 64) * 8);
+    let mut buffer = Vec::with_capacity(len.div_ceil(64) * 8);
 
     let chunks = len / 64;
     let remainder = len % 64;
@@ -110,6 +102,6 @@ pub fn collect_bool<F: FnMut(usize) -> bool>(len: usize, mut f: F) -> Vec<u64> {
         buffer.push(packed);
     }
 
-    buffer.truncate(ceil(len, 8));
+    buffer.truncate(len.div_ceil(8));
     buffer
 }

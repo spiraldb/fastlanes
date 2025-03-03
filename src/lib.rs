@@ -1,5 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
+#![no_std]
 
 extern crate alloc;
 extern crate core;
@@ -46,6 +47,37 @@ macro_rules! seq_t {
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body)};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
 }
+
+pub trait FastLanesComparable: Copy {
+    type Bitpacked: FastLanes;
+
+    fn as_unpacked(inner: Self::Bitpacked) -> Self;
+}
+
+macro_rules! impl_fastlanes_comparable {
+    ($value_type:ty, $bitpacked_type:ty) => {
+        impl FastLanesComparable for $value_type {
+            type Bitpacked = $bitpacked_type;
+
+            #[inline]
+            fn as_unpacked(inner: Self::Bitpacked) -> Self {
+                unsafe { core::mem::transmute(inner) }
+            }
+        }
+    };
+}
+
+impl_fastlanes_comparable!(u8, u8);
+impl_fastlanes_comparable!(i8, u8);
+
+impl_fastlanes_comparable!(u16, u16);
+impl_fastlanes_comparable!(i16, u16);
+
+impl_fastlanes_comparable!(u32, u32);
+impl_fastlanes_comparable!(i32, u32);
+
+impl_fastlanes_comparable!(u64, u64);
+impl_fastlanes_comparable!(i64, u64);
 
 // run the example code in the README as a test
 #[doc = include_str!("../README.md")]

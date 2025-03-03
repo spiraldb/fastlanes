@@ -1,29 +1,28 @@
-use crate::FastLanes;
-use crate::{BitPackWidth, BitPacking, SupportedBitPackWidth};
+use crate::{BitPackWidth, SupportedBitPackWidth};
+use crate::{FastLanes, FastLanesComparable};
 
-pub trait BitPackingCompare: BitPacking {
+pub trait BitPackingCompare: FastLanesComparable {
     fn unpack_cmp_impl<const W: usize, F: Fn(Self, Self) -> bool>(
-        input: &[Self; 1024 * W / Self::T],
+        input: &[Self::Bitpacked; 1024 * W / Self::Bitpacked::T],
         output: &mut [bool; 1024],
         f: F,
         eq_value: Self,
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>;
 
-    #[inline(never)]
     fn unpack_cmp<const W: usize, F: Fn(Self, Self) -> bool>(
-        input: &[Self; 1024 * W / Self::T],
+        input: &[Self::Bitpacked; 1024 * W / Self::Bitpacked::T],
         output: &mut [bool; 1024],
         comparison: F,
         value: Self,
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
-        [(); 1024 / Self::T]:,
+        [(); 1024 / Self::Bitpacked::T]:,
     {
         // The number of bits in the output == number of bits in the new_output.
         assert_eq!(
             16 * u64::BITS as usize,
-            1024 / Self::T * size_of::<Self>() * 8_usize
+            1024 / Self::Bitpacked::T * size_of::<Self>() * 8_usize
         );
         Self::unpack_cmp_impl(input, output, comparison, value);
     }
@@ -36,7 +35,7 @@ pub trait BitPackingCompare: BitPacking {
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack_cmp<F: Fn(Self, Self) -> bool>(
         width: usize,
-        input: &[Self],
+        input: &[Self::Bitpacked],
         output: &mut [bool; 1024],
         comparison: F,
         value: Self,
@@ -49,21 +48,22 @@ macro_rules! impl_packing_compare {
             impl BitPackingCompare for $T {
                #[inline(always)]
                 fn unpack_cmp_impl<const W: usize, F: Fn(Self, Self) -> bool>(
-                    input: &[Self; 1024 * W / Self::T],
+                    input: &[Self::Bitpacked; 1024 * W / Self::T],
                     output: &mut [bool; 1024],
                     f: F,
                     other: Self,
                 ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
                    for lane in (0..Self::LANES) {
                        $crate::unpack!($T, W, input, lane, |$idx, $elem| {
-                           output[$idx] = f($elem, other);
+                           let value = Self::as_unpacked($elem);
+                           output[$idx] = f(value, other);
                        });
                    }
                 }
 
                unsafe fn unchecked_unpack_cmp<F: Fn(Self, Self) -> bool>(
                     width: usize,
-                    input: &[Self],
+                    input: &[Self::Bitpacked],
                     output: &mut [bool; 1024],
                     comparison: F,
                     value: Self,
