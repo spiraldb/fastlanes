@@ -56,7 +56,7 @@ macro_rules! impl_packing_compare {
     ($T:ty) => {
         paste::paste! {
             impl BitPackingCompare for $T {
-                #[inline(always)]
+                // #[inline(always)]
                 fn unpack_cmp_impl<const W: usize, V, F>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [bool; 1024],
