@@ -13,9 +13,9 @@ pub trait BitPackingCompare: FastLanes {
         F: Fn(V, V) -> bool;
 
     /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
-    /// This will compare using the comparison function all the packed values with a constant
-    /// value, the values are of type `Self::Bitpacked`, whereas the comparison is on the type `Self`,
-    /// this allows for comparison between signed values which are bitpacked as unsigned ones.
+    /// This will compare using the comparison function all the packed values with a constant value,
+    /// the values are of type `Self`, whereas the comparison is on the type `V` (where V::Bitpacked = Self).
+    /// This allows for comparison between signed values which are bitpacked as unsigned ones.
     fn unpack_cmp<const W: usize, V, F>(
         input: &[Self; 1024 * W / Self::T],
         output: &mut [bool; 1024],
