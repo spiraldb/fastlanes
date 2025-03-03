@@ -20,7 +20,7 @@ pub trait BitPackingCompare: BitPacking {
         value: Self,
     ) where
         BitPackWidth<W>: SupportedBitPackWidth<Self>,
-        [(); 1024 / Self::T]:, // [(); 1024 * W / Self::T]:,
+        [(); 1024 / Self::T]:,
     {
         // The number of bits in the output == number of bits in the new_output.
         assert_eq!(
@@ -28,7 +28,7 @@ pub trait BitPackingCompare: BitPacking {
             1024 / Self::T * size_of::<Self>() * 8_usize
         );
         //let new_output =
-//            unsafe { &mut *(ptr::from_mut::<[u64; 16]>(output)).cast::<[Self; 1024 / Self::T]>() };
+        //            unsafe { &mut *(ptr::from_mut::<[u64; 16]>(output)).cast::<[Self; 1024 / Self::T]>() };
         Self::unpack_cmp_impl(input, output, comparison, value);
     }
 
@@ -94,77 +94,6 @@ macro_rules! impl_packing_compare {
     };
 }
 
-#[inline]
-pub fn collect_bits_dumb(buffer: &[bool; 1024]) -> [u64; 16] {
-    let mut packed = [0; 16];
-    for (i, &bit) in buffer.iter().enumerate() {
-        packed[i / 64] |= (bit as u64) << (i % 64);
-    }
-    packed
-}
-
-#[inline]
-pub fn collect_bits(bools: &[bool; 1024]) -> [u64; 16] {
-    let mut result = [0u64; 16];
-
-    // Process in larger chunks
-    for chunk in 0..16 {
-        let chunk_base = chunk * 64;
-        let mut value = 0u64;
-
-        for i in 0..64 {
-            value |= (bools[chunk_base + i] as u64) << i;
-        }
-
-        result[chunk] = value;
-    }
-
-    result
-}
-
-#[inline]
-pub fn collect_bits_v2(bools: &[bool; 1024]) -> [u64; 16] {
-    let mut result = [0u64; 16];
-
-    for u32_idx in 0..32 {
-        let mut u32_val: u32 = 0;
-        let base_idx = u32_idx * 32;
-
-        // Process a 32-bit chunk - good SIMD target
-        for bit_idx in 0..32 {
-            u32_val |= (bools[base_idx + bit_idx] as u32) << bit_idx;
-        }
-
-        // Place the 32-bit value into the appropriate 64-bit slot
-        let u64_idx = u32_idx / 2;
-        let shift = (u32_idx % 2) * 32;
-        result[u64_idx] |= (u32_val as u64) << shift;
-    }
-
-    result
-}
-
-#[inline]
-pub fn collect_bits_v3(bools: &[bool; 1024]) -> [u64; 16] {
-    let mut result = [0u64; 16];
-
-    // Process the entire array in one pass with linear indexing
-    // This pattern is more likely to be recognized for SIMD optimization
-    for i in 0..1024 {
-        let chunk_idx = i / 64;
-        let bit_pos = i % 64;
-
-        // Use a branchless operation that's more SIMD-friendly
-        // Convert bool to u64 (0 or 1) and shift to position
-        let bit_value = bools[i] as u64;
-        result[chunk_idx] |= bit_value << bit_pos;
-    }
-
-    result
-}
-
-// TODO(joe): fix this.
-// Do not impl this for u8/u16 as its currently slower.
 impl_packing_compare!(u8);
 impl_packing_compare!(u16);
 impl_packing_compare!(u32);
@@ -199,44 +128,5 @@ mod tests {
 
             assert_eq!(cmp.as_slice(), expected.as_slice(), "Failed == {}", v);
         }
-    }
-
-    #[inline]
-    pub fn ceil(value: usize, divisor: usize) -> usize {
-        // Rewrite as `value.div_ceil(&divisor)` after
-        // https://github.com/rust-lang/rust/issues/88581 is merged.
-        value / divisor + usize::from(0 != value % divisor)
-    }
-
-    #[inline]
-    pub fn collect_bool<F: FnMut(usize) -> bool>(len: usize, mut f: F) -> Vec<u64> {
-        let mut buffer = Vec::with_capacity(ceil(len, 64) * 8);
-
-        let chunks = len / 64;
-        let remainder = len % 64;
-        for chunk in 0..chunks {
-            let mut packed = 0;
-            for bit_idx in 0..64 {
-                let i = bit_idx + chunk * 64;
-                packed |= u64::from(f(i)) << bit_idx;
-            }
-
-            // SAFETY: Already allocated sufficient capacity
-            buffer.push(packed);
-        }
-
-        if remainder != 0 {
-            let mut packed = 0;
-            for bit_idx in 0..remainder {
-                let i = bit_idx + chunks * 64;
-                packed |= u64::from(f(i)) << bit_idx;
-            }
-
-            // SAFETY: Already allocated sufficient capacity
-            buffer.push(packed);
-        }
-
-        buffer.truncate(ceil(len, 8));
-        buffer
     }
 }

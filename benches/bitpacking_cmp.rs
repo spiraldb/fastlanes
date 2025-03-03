@@ -1,9 +1,10 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
+#![recursion_limit = "10000"]
 
 use divan::Bencher;
 use fastlanes::test::collect_bool_cmp;
-use fastlanes::{BitPacking, BitPackingCompare};
+use fastlanes::{collect_byte_to_bit_16, collect_byte_to_bit_4, BitPacking, BitPackingCompare};
 use num_traits::FromPrimitive;
 
 fn main() {
