@@ -57,10 +57,11 @@ fn throughput(c: &mut Criterion) {
     group.bench_function("compress", |b| {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
-                BitPacking::pack::<WIDTH>(
-                    array_ref![values, i * 1024, 1024],
-                    array_mut_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
-                );
+                BitPacking::pack::<WIDTH>(array_ref![values, i * 1024, 1024], array_mut_ref![
+                    packed,
+                    i * OUTPUT_BATCH_SIZE,
+                    OUTPUT_BATCH_SIZE
+                ]);
             }
         });
     });
