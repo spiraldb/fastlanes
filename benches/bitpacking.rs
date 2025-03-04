@@ -16,7 +16,7 @@ fn pack(c: &mut Criterion) {
             let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
 
             b.iter(|| {
-                BitPacking::pack::<WIDTH>(array_ref![values, 0, 1024], array_mut_ref![
+                BitPacking::pack::<WIDTH>(black_box(array_ref![values, 0, 1024]), array_mut_ref![
                     packed, 0, 192
                 ]);
             });
@@ -26,7 +26,7 @@ fn pack(c: &mut Criterion) {
             const WIDTH: usize = 3;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            b.iter(|| BitPacking::pack::<WIDTH>(&values, &mut packed));
+            b.iter(|| BitPacking::pack::<WIDTH>(black_box(&values), &mut packed));
         });
     }
 
@@ -39,7 +39,26 @@ fn pack(c: &mut Criterion) {
             BitPacking::pack::<WIDTH>(&values, &mut packed);
 
             let mut unpacked = [0u16; 1024];
-            b.iter(|| BitPacking::unpack::<WIDTH>(&packed, &mut unpacked));
+            b.iter(|| {
+                BitPacking::unpack::<WIDTH>(&black_box(packed), &mut unpacked);
+                let _ = black_box(unpacked);
+            });
+        });
+    }
+
+    {
+        let mut group = c.benchmark_group("unpack");
+        group.bench_function("unchecked unpack 16 <- 3 stack", |b| {
+            const WIDTH: usize = 3;
+            let values = [3u16; 1024];
+            let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+            BitPacking::pack::<WIDTH>(&values, &mut packed);
+
+            let mut unpacked = [0u16; 1024];
+            b.iter(|| {
+                unsafe { BitPacking::unchecked_unpack(WIDTH, &black_box(packed), &mut unpacked) };
+                let _ = black_box(unpacked);
+            });
         });
     }
 
@@ -54,7 +73,7 @@ fn pack(c: &mut Criterion) {
             b.iter(|| {
                 for i in 0..1024 {
                     black_box::<u16>(BitPacking::unpack_single::<WIDTH>(
-                        array_ref![packed, 0, 192],
+                        black_box(array_ref![packed, 0, 192]),
                         i,
                     ));
                 }
@@ -77,11 +96,10 @@ fn throughput(c: &mut Criterion) {
     group.bench_function("compress", |b| {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
-                BitPacking::pack::<WIDTH>(array_ref![values, i * 1024, 1024], array_mut_ref![
-                    packed,
-                    i * OUTPUT_BATCH_SIZE,
-                    OUTPUT_BATCH_SIZE
-                ]);
+                BitPacking::pack::<WIDTH>(
+                    black_box(array_ref![values, i * 1024, 1024]),
+                    array_mut_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
+                );
             }
         });
     });
@@ -90,7 +108,7 @@ fn throughput(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
                 BitPacking::unpack::<WIDTH>(
-                    array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
+                    black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     array_mut_ref![values, i * 1024, 1024],
                 );
             }
