@@ -62,6 +62,7 @@ macro_rules! impl_packing {
     ($T:ty) => {
         paste! {
             impl BitPacking for $T {
+                #[inline(never)]
                 fn pack<const W: usize>(
                     input: &[Self; 1024],
                     output: &mut [Self; 1024 * W / Self::T],
@@ -95,6 +96,7 @@ macro_rules! impl_packing {
                     })
                 }
 
+                #[inline(never)]
                 fn unpack<const W: usize>(
                     input: &[Self; 1024 * W / Self::T],
                     output: &mut [Self; 1024],
