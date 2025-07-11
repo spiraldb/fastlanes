@@ -3,8 +3,7 @@ use const_for::const_for;
 use core::mem::size_of;
 use paste::paste;
 
-use crate::{pack, seq_t, unpack, FastLanes, FL_ORDER, supported_bit_width};
-
+use crate::{pack, seq_t, supported_bit_width, unpack, FastLanes, FL_ORDER};
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {

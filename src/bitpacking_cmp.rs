@@ -1,4 +1,4 @@
-use crate::{FastLanes, FastLanesComparable, supported_bit_width};
+use crate::{supported_bit_width, FastLanes, FastLanesComparable};
 
 pub trait BitPackingCompare: FastLanes {
     /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.

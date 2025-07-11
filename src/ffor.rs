@@ -1,4 +1,4 @@
-use crate::{pack, unpack, BitPacking, FastLanes, supported_bit_width};
+use crate::{pack, supported_bit_width, unpack, BitPacking, FastLanes};
 use paste::paste;
 
 pub trait FoR: BitPacking {

@@ -1,12 +1,20 @@
 #![allow(unused_assignments)]
 
-use crate::{iterate, unpack, BitPacking, FastLanes, supported_bit_width};
+use crate::{iterate, supported_bit_width, unpack, BitPacking, FastLanes};
 use paste::paste;
 
 pub trait Delta: BitPacking {
-    fn delta<const LANES: usize>(input: &[Self; 1024], base: &[Self; LANES], output: &mut [Self; 1024]);
+    fn delta<const LANES: usize>(
+        input: &[Self; 1024],
+        base: &[Self; LANES],
+        output: &mut [Self; 1024],
+    );
 
-    fn undelta<const LANES: usize>(input: &[Self; 1024], base: &[Self; LANES], output: &mut [Self; 1024]);
+    fn undelta<const LANES: usize>(
+        input: &[Self; 1024],
+        base: &[Self; LANES],
+        output: &mut [Self; 1024],
+    );
 
     fn undelta_pack<const LANES: usize, const W: usize, const B: usize>(
         input: &[Self; B],
