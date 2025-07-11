@@ -7,7 +7,7 @@ homepage = "https://github.com/spiraldb/fastlanes"
 repository = "https://github.com/spiraldb/fastlanes"
 authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec"]
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 arrayref = "0.3.7"

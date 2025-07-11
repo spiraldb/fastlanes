@@ -3,22 +3,14 @@ use const_for::const_for;
 use core::mem::size_of;
 use paste::paste;
 
-use crate::{FL_ORDER, FastLanes, Pred, Satisfied, pack, seq_t, unpack};
+use crate::{pack, seq_t, unpack, FastLanes, FL_ORDER, supported_bit_width};
 
-pub struct BitPackWidth<const W: usize>;
-pub trait SupportedBitPackWidth<T> {}
-impl<const W: usize, T> SupportedBitPackWidth<T> for BitPackWidth<W> where
-    Pred<{ W <= 8 * size_of::<T>() }>: Satisfied
-{
-}
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {
     /// Packs 1024 elements into W bits each.
     /// The output is given as Self to ensure correct alignment.
-    fn pack<const W: usize>(input: &[Self; 1024], output: &mut [Self; 1024 * W / Self::T])
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn pack<const W: usize, const B: usize>(input: &[Self; 1024], output: &mut [Self; B]);
 
     /// Packs 1024 elements into `W` bits each, where `W` is runtime-known instead of
     /// compile-time known.
@@ -30,9 +22,7 @@ pub trait BitPacking: FastLanes {
     unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks 1024 elements from `W` bits each.
-    fn unpack<const W: usize>(input: &[Self; 1024 * W / Self::T], output: &mut [Self; 1024])
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn unpack<const W: usize, const B: usize>(input: &[Self; B], output: &mut [Self; 1024]);
 
     /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of
     /// compile-time known.
@@ -44,9 +34,7 @@ pub trait BitPacking: FastLanes {
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-    fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self;
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
     /// where `W` is runtime-known instead of compile-time known.
@@ -63,10 +51,16 @@ macro_rules! impl_packing {
         paste! {
             impl BitPacking for $T {
                 #[inline(never)]
-                fn pack<const W: usize>(
+                fn pack<const W: usize, const B: usize>(
                     input: &[Self; 1024],
-                    output: &mut [Self; 1024 * W / Self::T],
-                ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
+                    output: &mut [Self; B],
+                ) {
+                    const {
+                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                        assert!(B == 1024 * W / Self::T);
+                    }
+
+
                     for lane in 0..Self::LANES {
                         pack!($T, W, output, lane, |$idx| {
                             input[$idx]
@@ -82,25 +76,39 @@ macro_rules! impl_packing {
 
                     seq_t!(W in $T {
                         match width {
-                            #(W => Self::pack::<W>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024 * W / <$T>::T],
-                            ),)*
+                            #(W => {
+                                const B: usize = 1024 * W / <$T>::T;
+                                Self::pack::<W, B>(
+                                    array_ref![input, 0, 1024],
+                                    array_mut_ref![output, 0, B],
+                                )
+                            },)*
                             // seq_t has exclusive upper bound
-                            Self::T => Self::pack::<{ Self::T }>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
-                            ),
+                            Self::T => {
+                                // How large is the target buffer size?
+                                const W: usize = <$T>::T;
+                                const B: usize = 1024;
+                                Self::pack::<W, B>(
+                                    array_ref![input, 0, 1024],
+                                    array_mut_ref![output, 0, 1024],
+                                )
+                            },
                             _ => unreachable!("Unsupported width: {}", width)
                         }
                     })
                 }
 
                 #[inline(never)]
-                fn unpack<const W: usize>(
-                    input: &[Self; 1024 * W / Self::T],
+                fn unpack<const W: usize, const B: usize>(
+                    input: &[Self; B],
                     output: &mut [Self; 1024],
-                ) where BitPackWidth<W>: SupportedBitPackWidth<Self> {
+                ) {
+                    const {
+                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                        assert!(B == 1024 * W / Self::T);
+                    }
+
+
                     for lane in 0..Self::LANES {
                         unpack!($T, W, input, lane, |$idx, $elem| {
                             output[$idx] = $elem
@@ -116,25 +124,35 @@ macro_rules! impl_packing {
 
                     seq_t!(W in $T {
                         match width {
-                            #(W => Self::unpack::<W>(
-                                array_ref![input, 0, 1024 * W / <$T>::T],
-                                array_mut_ref![output, 0, 1024],
-                            ),)*
+                            #(W => {
+                                const B: usize = 1024 * W / <$T>::T;
+                                Self::unpack::<W, B>(
+                                    array_ref![input, 0, B],
+                                    array_mut_ref![output, 0, 1024],
+                                )
+                            },)*
                             // seq_t has exclusive upper bound
-                            Self::T => Self::unpack::<{ Self::T }>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
-                            ),
+                            Self::T => {
+                                const W: usize = <$T>::T;
+                                const B: usize = 1024;
+                                Self::unpack::<W, B>(
+                                    array_ref![input, 0, 1024],
+                                    array_mut_ref![output, 0, 1024],
+                                )
+                            },
                             _ => unreachable!("Unsupported width: {}", width)
                         }
                     })
                 }
 
                 /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-                fn unpack_single<const W: usize>(packed: &[Self; 1024 * W / Self::T], index: usize) -> Self
-                where
-                    BitPackWidth<W>: SupportedBitPackWidth<Self>,
+                fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self
                 {
+                    const {
+                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                        assert!(B == 1024 * W / Self::T);
+                    }
+
                     if W == 0 {
                         // Special case for W=0, we just need to zero the output.
                         return 0 as $T;
@@ -190,11 +208,14 @@ macro_rules! impl_packing {
                     seq_t!(W in $T {
                         match width {
                             #(W => {
-                                return <$T>::unpack_single::<W>(array_ref![packed, 0, 1024 * W / T], index);
+                                const B: usize = 1024 * W / T;
+                                return <$T>::unpack_single::<W, B>(array_ref![packed, 0, B], index);
                             },)*
                             // seq_t has exclusive upper bound
                             T => {
-                                return <$T>::unpack_single::<T>(array_ref![packed, 0, 1024], index);
+                                const W: usize = T;
+                                const B: usize = 1024;
+                                return <$T>::unpack_single::<W, B>(array_ref![packed, 0, 1024], index);
                             },
                             _ => unreachable!("Unsupported width: {}", width)
                         }
@@ -242,7 +263,6 @@ impl_packing!(u64);
 mod test {
     use core::array;
     use core::fmt::Debug;
-    use core::mem::size_of;
     use seq_macro::seq;
 
     use super::*;
@@ -261,10 +281,10 @@ mod test {
     fn test_unpack_single() {
         let values = array::from_fn(|i| i as u32);
         let mut packed = [0; 512];
-        BitPacking::pack::<16>(&values, &mut packed);
+        BitPacking::pack::<16, 512>(&values, &mut packed);
 
         for i in 0..1024 {
-            assert_eq!(BitPacking::unpack_single::<16>(&packed, i), values[i]);
+            assert_eq!(BitPacking::unpack_single::<16, 512>(&packed, i), values[i]);
             assert_eq!(
                 unsafe { BitPacking::unchecked_unpack_single(16, &packed, i) },
                 values[i]
@@ -272,27 +292,22 @@ mod test {
         }
     }
 
-    fn try_round_trip<T: BitPacking + Debug, const W: usize>()
-    where
-        BitPackWidth<W>: SupportedBitPackWidth<T>,
-        [(); 128 * W / size_of::<T>()]:,
-        [(); 1024 * W / T::T]:,
-    {
+    fn try_round_trip<T: BitPacking + Debug, const W: usize, const B: usize>() {
         let mut values: [T; 1024] = [T::zero(); 1024];
         for i in 0..1024 {
             values[i] = T::from(i % (1 << (W % T::T))).unwrap();
         }
 
-        let mut packed = [T::zero(); 1024 * W / T::T];
-        BitPacking::pack::<W>(&values, &mut packed);
+        let mut packed = [T::zero(); B];
+        BitPacking::pack::<W, B>(&values, &mut packed);
 
         let mut unpacked = [T::zero(); 1024];
-        BitPacking::unpack::<W>(&packed, &mut unpacked);
+        BitPacking::unpack::<W, B>(&packed, &mut unpacked);
 
         assert_eq!(&unpacked, &values);
 
         for i in 0..1024 {
-            assert_eq!(BitPacking::unpack_single::<W>(&packed, i), values[i]);
+            assert_eq!(BitPacking::unpack_single::<W, B>(&packed, i), values[i]);
             assert_eq!(
                 unsafe { BitPacking::unchecked_unpack_single(W, &packed, i) },
                 values[i]
@@ -305,7 +320,8 @@ mod test {
             paste! {
                 #[test]
                 fn [<test_round_trip_ $T _ $W>]() {
-                    try_round_trip::<$T, $W>();
+                    const B: usize = 1024 * $W / <$T>::T;
+                    try_round_trip::<$T, $W, B>();
                 }
             }
         };

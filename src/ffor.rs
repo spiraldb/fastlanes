@@ -1,33 +1,34 @@
-use crate::{BitPackWidth, BitPacking, FastLanes, SupportedBitPackWidth, pack, unpack};
+use crate::{pack, unpack, BitPacking, FastLanes, supported_bit_width};
 use paste::paste;
 
 pub trait FoR: BitPacking {
-    fn for_pack<const W: usize>(
+    fn for_pack<const W: usize, const B: usize>(
         input: &[Self; 1024],
         reference: Self,
-        output: &mut [Self; 1024 * W / Self::T],
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+        output: &mut [Self; B],
+    );
 
-    fn unfor_pack<const W: usize>(
-        input: &[Self; 1024 * W / Self::T],
+    fn unfor_pack<const W: usize, const B: usize>(
+        input: &[Self; B],
         reference: Self,
         output: &mut [Self; 1024],
-    ) where
-        BitPackWidth<W>: SupportedBitPackWidth<Self>;
+    );
 }
 
 macro_rules! impl_for {
     ($T:ty) => {
         paste! {
             impl FoR for $T {
-                fn for_pack<const W: usize>(
+                fn for_pack<const W: usize, const B: usize>(
                     input: &[Self; 1024],
                     reference: Self,
-                    output: &mut [Self; 1024 * W / Self::T],
-                ) where
-                    BitPackWidth<W>: SupportedBitPackWidth<Self>,
-                {
+                    output: &mut [Self; B],
+                ) {
+                    const {
+                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                        assert!(B == 1024 * W / Self::T);
+                    }
+
                     for lane in 0..Self::LANES {
                         pack!($T, W, output, lane, |$idx| {
                             input[$idx].wrapping_sub(reference)
@@ -35,13 +36,16 @@ macro_rules! impl_for {
                     }
                 }
 
-                fn unfor_pack<const W: usize>(
-                    input: &[Self; 1024 * W / Self::T],
+                fn unfor_pack<const W: usize, const B: usize>(
+                    input: &[Self; B],
                     reference: Self,
                     output: &mut [Self; 1024],
-                ) where
-                    BitPackWidth<W>: SupportedBitPackWidth<Self>,
-                {
+                ) {
+                    const {
+                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                        assert!(B == 1024 * W / Self::T);
+                    }
+
                     for lane in 0..Self::LANES {
                         unpack!($T, W, input, lane, |$idx, $elem| {
                             output[$idx] = $elem.wrapping_add(reference)
@@ -66,16 +70,18 @@ mod test {
     #[test]
     fn test_ffor() {
         const W: usize = 15;
+        const B: usize = 1024 * W / u16::T;
+
         let mut values: [u16; 1024] = [0; 1024];
         for i in 0..1024 {
             values[i] = (i % (1 << W)) as u16;
         }
 
         let mut packed = [0; 128 * W / size_of::<u16>()];
-        FoR::for_pack::<W>(&values, 10, &mut packed);
+        FoR::for_pack::<W, B>(&values, 10, &mut packed);
 
         let mut unpacked = [0; 1024];
-        BitPacking::unpack::<W>(&packed, &mut unpacked);
+        BitPacking::unpack::<W, B>(&packed, &mut unpacked);
 
         for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
             assert_eq!(

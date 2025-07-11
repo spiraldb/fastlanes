@@ -1,5 +1,4 @@
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![no_std]
 
 extern crate alloc;
@@ -33,12 +32,6 @@ impl FastLanes for u16 {}
 impl FastLanes for u32 {}
 impl FastLanes for u64 {}
 
-pub struct Pred<const B: bool>;
-
-pub trait Satisfied {}
-
-impl Satisfied for Pred<true> {}
-
 // Macro for repeating a code block bit_size_of::<T> times.
 #[macro_export]
 macro_rules! seq_t {
@@ -46,6 +39,16 @@ macro_rules! seq_t {
     ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..16 $body)};
     ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body)};
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
+}
+
+const fn supported_bit_width(width: usize, type_width: usize) -> bool {
+    match type_width {
+        8 => width <= 8,
+        16 => width <= 16,
+        32 => width <= 32,
+        64 => width <= 64,
+        _ => unreachable!(),
+    }
 }
 
 pub trait FastLanesComparable: Copy {
@@ -60,7 +63,7 @@ macro_rules! impl_fastlanes_comparable {
             type Bitpacked = $bitpacked_type;
 
             #[inline]
-            #[allow(clippy::useless_transmute)]
+            #[allow(unnecessary_transmutes)]
             fn as_unpacked(inner: Self::Bitpacked) -> Self {
                 unsafe { core::mem::transmute(inner) }
             }
@@ -108,19 +111,20 @@ mod tests {
         }
 
         // Pack the values.
-        let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-        BitPacking::pack::<WIDTH>(&values, &mut packed);
+        const B: usize = 128 * WIDTH / size_of::<u16>();
+        let mut packed = [0; B];
+        BitPacking::pack::<WIDTH, B>(&values, &mut packed);
 
         // Unpack the values.
         let mut unpacked = [0u16; 1024];
-        BitPacking::unpack::<WIDTH>(&packed, &mut unpacked);
+        BitPacking::unpack::<WIDTH, B>(&packed, &mut unpacked);
         assert_eq!(values, unpacked);
 
         // Unpack a single value at index 14.
         // Note that for more than ~10 values, it can be faster to unpack all values and then
         // access the desired one.
         for i in 0..1024 {
-            assert_eq!(BitPacking::unpack_single::<WIDTH>(&packed, i), values[i]);
+            assert_eq!(BitPacking::unpack_single::<WIDTH, B>(&packed, i), values[i]);
         }
     }
 }
