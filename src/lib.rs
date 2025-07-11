@@ -63,7 +63,7 @@ macro_rules! impl_fastlanes_comparable {
             type Bitpacked = $bitpacked_type;
 
             #[inline]
-            #[allow(unnecessary_transmutes)]
+            #[allow(unnecessary_transmutes, clippy::useless_transmute)]
             fn as_unpacked(inner: Self::Bitpacked) -> Self {
                 unsafe { core::mem::transmute(inner) }
             }
@@ -103,6 +103,7 @@ mod tests {
     #[test]
     fn pack_u16_into_u3_no_unsafe() {
         const WIDTH: usize = 3;
+        const B: usize = 128 * WIDTH / size_of::<u16>();
 
         // Generate some values.
         let mut values: [u16; 1024] = [0; 1024];
@@ -111,7 +112,6 @@ mod tests {
         }
 
         // Pack the values.
-        const B: usize = 128 * WIDTH / size_of::<u16>();
         let mut packed = [0; B];
         BitPacking::pack::<WIDTH, B>(&values, &mut packed);
 
