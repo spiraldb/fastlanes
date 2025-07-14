@@ -1,4 +1,3 @@
-#![allow(incomplete_features)]
 #![no_std]
 
 extern crate alloc;

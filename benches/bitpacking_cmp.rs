@@ -1,4 +1,3 @@
-#![allow(incomplete_features)]
 #![allow(unexpected_cfgs)]
 
 fn main() {
