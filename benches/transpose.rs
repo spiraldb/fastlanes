@@ -1,7 +1,4 @@
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
-
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use fastlanes::Transpose;
 

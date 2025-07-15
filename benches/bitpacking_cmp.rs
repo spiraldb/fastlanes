@@ -1,5 +1,3 @@
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![allow(unexpected_cfgs)]
 
 fn main() {
@@ -20,11 +18,10 @@ mod bench {
     where
         T: BitPacking + FastLanesComparable<Bitpacked = T> + FromPrimitive + Copy,
         T: BitPacking + BitPackingCompare + Copy,
-        [(); 128 * W / size_of::<T>()]:,
     {
         let value = T::from_usize(1).expect("");
         let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+        let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
         unsafe { BitPacking::unchecked_pack(W, &values, &mut packed) };
 
@@ -48,11 +45,10 @@ mod bench {
     fn bitpacking_cmp_seq<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
-        [(); 128 * W / size_of::<T>()]:,
     {
         let value = T::from_usize(1).expect("");
         let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+        let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
         unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
@@ -70,10 +66,9 @@ mod bench {
     fn bitpacking_cmp_unpack<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
-        [(); 128 * W / size_of::<T>()]:,
     {
         let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+        let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
         unsafe { T::unchecked_pack(W, &values, &mut packed) };
 

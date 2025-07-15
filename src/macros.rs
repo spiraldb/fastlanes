@@ -193,7 +193,7 @@ mod test {
         }
 
         let mut packed_orig: [u16; 960] = [0; 960];
-        BitPacking::pack::<15>(&values, &mut packed_orig);
+        BitPacking::pack::<15, 960>(&values, &mut packed_orig);
 
         let mut unpacked: [u16; 1024] = [0; 1024];
         for lane in 0..u16::LANES {

@@ -1,6 +1,3 @@
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
-
 // TODO(joe): remove this once codspeed supports const generics.
 
 use divan::Bencher;
@@ -14,14 +11,13 @@ fn main() {
 #[divan::bench(types=[u16, u32, u64])]
 fn bitpacking_cmp_fused<T>(bencher: Bencher)
 where
-    [(); 128 * 3 / size_of::<T>()]:,
     T: BitPacking + FastLanesComparable<Bitpacked = T> + FromPrimitive + Copy,
     T::Bitpacked: BitPacking + BitPackingCompare + Copy,
 {
     const W: usize = 3;
     let value = T::from_usize(1).expect("");
     let values = [T::from_usize(2).expect(""); 1024];
-    let mut packed = [T::zero(); 128 * 3 / size_of::<T>()];
+    let mut packed = vec![T::zero(); 128 * 3 / size_of::<T>()];
 
     unsafe { BitPacking::unchecked_pack(W, &values, &mut packed) };
 
@@ -41,14 +37,11 @@ where
 }
 
 #[divan::bench(types=[u16, u32, u64])]
-fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher)
-where
-    [(); 128 * 3 / size_of::<T>()]:,
-{
+fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
     const W: usize = 3;
     let value = T::from_usize(1).expect("");
     let values = [T::from_usize(2).expect(""); 1024];
-    let mut packed = [T::zero(); 128 * 3 / size_of::<T>()];
+    let mut packed = vec![T::zero(); 128 * 3 / size_of::<T>()];
 
     unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
@@ -61,13 +54,10 @@ where
 }
 
 #[divan::bench(types=[u16, u32, u64])]
-fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher)
-where
-    [(); 128 * 3 / size_of::<T>()]:,
-{
+fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
     const W: usize = 3;
     let values = [T::from_usize(2).expect(""); 1024];
-    let mut packed = [T::zero(); 128 * W / size_of::<T>()];
+    let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
     unsafe { T::unchecked_pack(W, &values, &mut packed) };
 

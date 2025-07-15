@@ -1,32 +1,32 @@
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
-
 use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use fastlanes::BitPacking;
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use fastlanes::{BitPacking, FastLanes};
 
 fn pack(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("pack");
         group.bench_function("pack 16 -> 3 heap", |b| {
             const WIDTH: usize = 3;
+            const B: usize = 1024 * WIDTH / u16::T;
             let values = vec![3u16; 1024];
             let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
 
             b.iter(|| {
-                BitPacking::pack::<WIDTH>(black_box(array_ref![values, 0, 1024]), array_mut_ref![
-                    packed, 0, 192
-                ]);
+                BitPacking::pack::<WIDTH, B>(
+                    black_box(array_ref![values, 0, 1024]),
+                    array_mut_ref![packed, 0, 192],
+                );
             });
         });
 
         group.bench_function("pack 16 -> 3 stack", |b| {
             const WIDTH: usize = 3;
+            const B: usize = 1024 * WIDTH / u16::T;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            b.iter(|| BitPacking::pack::<WIDTH>(black_box(&values), &mut packed));
+            b.iter(|| BitPacking::pack::<WIDTH, B>(black_box(&values), &mut packed));
         });
     }
 
@@ -34,13 +34,14 @@ fn pack(c: &mut Criterion) {
         let mut group = c.benchmark_group("unpack");
         group.bench_function("unpack 16 <- 3 stack", |b| {
             const WIDTH: usize = 3;
+            const B: usize = 1024 * WIDTH / u16::T;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::pack::<WIDTH>(&values, &mut packed);
+            BitPacking::pack::<WIDTH, B>(&values, &mut packed);
 
             let mut unpacked = [0u16; 1024];
             b.iter(|| {
-                BitPacking::unpack::<WIDTH>(&black_box(packed), &mut unpacked);
+                BitPacking::unpack::<WIDTH, B>(&black_box(packed), &mut unpacked);
                 let _ = black_box(unpacked);
             });
         });
@@ -50,9 +51,10 @@ fn pack(c: &mut Criterion) {
         let mut group = c.benchmark_group("unpack");
         group.bench_function("unchecked unpack 16 <- 3 stack", |b| {
             const WIDTH: usize = 3;
+            const B: usize = 1024 * WIDTH / u16::T;
             let values = [3u16; 1024];
             let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::pack::<WIDTH>(&values, &mut packed);
+            BitPacking::pack::<WIDTH, B>(&values, &mut packed);
 
             let mut unpacked = [0u16; 1024];
             b.iter(|| {
@@ -66,13 +68,17 @@ fn pack(c: &mut Criterion) {
         let mut group = c.benchmark_group("unpack-single");
         group.bench_function("unpack single 16 <- 3", |b| {
             const WIDTH: usize = 3;
+            const B: usize = 1024 * WIDTH / u16::T;
             let values = vec![3u16; 1024];
             let mut packed = vec![0; 128 * WIDTH / size_of::<u16>()];
-            BitPacking::pack::<WIDTH>(array_ref![values, 0, 1024], array_mut_ref![packed, 0, 192]);
+            BitPacking::pack::<WIDTH, B>(
+                array_ref![values, 0, 1024],
+                array_mut_ref![packed, 0, 192],
+            );
 
             b.iter(|| {
                 for i in 0..1024 {
-                    black_box::<u16>(BitPacking::unpack_single::<WIDTH>(
+                    black_box::<u16>(BitPacking::unpack_single::<WIDTH, B>(
                         black_box(array_ref![packed, 0, 192]),
                         i,
                     ));
@@ -84,6 +90,7 @@ fn pack(c: &mut Criterion) {
 
 fn throughput(c: &mut Criterion) {
     const WIDTH: usize = 3;
+    const B: usize = 1024 * WIDTH / u16::T;
     const NUM_BATCHES: usize = 1024;
     const N: usize = 1024 * NUM_BATCHES;
     const OUTPUT_BATCH_SIZE: usize = 128 * WIDTH / size_of::<u16>();
@@ -96,7 +103,7 @@ fn throughput(c: &mut Criterion) {
     group.bench_function("compress", |b| {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
-                BitPacking::pack::<WIDTH>(
+                BitPacking::pack::<WIDTH, B>(
                     black_box(array_ref![values, i * 1024, 1024]),
                     array_mut_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
                 );
@@ -107,7 +114,7 @@ fn throughput(c: &mut Criterion) {
     group.bench_function("decompress", |b| {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
-                BitPacking::unpack::<WIDTH>(
+                BitPacking::unpack::<WIDTH, B>(
                     black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     array_mut_ref![values, i * 1024, 1024],
                 );
