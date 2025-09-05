@@ -5,7 +5,7 @@ use std::mem::size_of;
 fn rle(c: &mut Criterion) {
     let mut group = c.benchmark_group("rle");
 
-    group.bench_function("encode u32", |b| {
+    group.bench_function("rle encode u32", |b| {
         let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
         let mut rle_vals = [0u32; 1024];
         let mut rle_idxs = [0u16; 1024];
@@ -16,7 +16,7 @@ fn rle(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("decode u32", |b| {
+    group.bench_function("rle decode u32", |b| {
         let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
         let mut rle_vals = [0u32; 1024];
         let mut rle_idxs = [0u16; 1024];
@@ -44,7 +44,7 @@ fn throughput(c: &mut Criterion) {
 
     let input_data: Vec<u32> = (0..N).map(|i| (i / 100) as u32).collect();
 
-    group.bench_function("compress", |b| {
+    group.bench_function("rle encode 32", |b| {
         b.iter(|| {
             for batch in 0..NUM_BATCHES {
                 let batch_start = batch * 1024;
@@ -71,7 +71,7 @@ fn throughput(c: &mut Criterion) {
         encoded_batches.push((rle_vals, rle_idxs, unique_count));
     }
 
-    group.bench_function("decompress", |b| {
+    group.bench_function("rle decode 32", |b| {
         b.iter(|| {
             for (rle_vals, rle_idxs, unique_count) in &encoded_batches {
                 let mut output = [0u32; 1024];
