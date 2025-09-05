@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "transpose"
 harness = false
+
+[[bench]]
+name = "rle"
+harness = false

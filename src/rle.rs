@@ -1,0 +1,169 @@
+use crate::FastLanes;
+use paste::paste;
+
+pub trait RLE: FastLanes {
+    /// Encode an array using Run-Length Encoding
+    ///
+    /// Creates a dictionary of unique values (`rle_vals`) and an index array
+    /// (`rle_idxs`) that maps each input position to a dictionary entry.
+    ///
+    /// # Returns
+    /// The number of unique values in the dictionary
+    fn encode(
+        input: &[Self; 1024],
+        rle_vals: &mut [Self; 1024],
+        rle_idxs: &mut [u16; 1024],
+    ) -> usize;
+
+    /// Decode RLE-encoded data back to original values
+    ///
+    /// Takes the dictionary of unique values and indices, reconstructing the original array
+    fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]);
+}
+
+macro_rules! impl_rle {
+    ($T:ty) => {
+        paste! {
+            impl RLE for $T {
+                #[inline(never)]
+                fn encode(
+                    input: &[Self; 1024],
+                    rle_vals: &mut [Self; 1024],
+                    rle_idxs: &mut [u16; 1024],
+                ) -> usize {
+                    let mut pos_val = 0u16;
+                    let mut rle_val_idx = 0usize;
+
+                    let mut prev_val = input[0];
+                    rle_vals[rle_val_idx] = prev_val;
+                    rle_val_idx += 1;
+                    rle_idxs[0] = pos_val;
+
+                    for i in 1..1024 {
+                        let cur_val = input[i];
+                        if cur_val != prev_val {
+                            rle_vals[rle_val_idx] = cur_val;
+                            rle_val_idx += 1;
+                            pos_val += 1;
+                            prev_val = cur_val;
+                        }
+                        rle_idxs[i] = pos_val;
+                    }
+
+                    rle_val_idx
+                }
+
+                #[inline(never)]
+                fn decode(
+                    rle_vals: &[Self],
+                    rle_idxs: &[u16; 1024],
+                    output: &mut [Self; 1024],
+                ) {
+                    for i in 0..1024 {
+                        let idx = rle_idxs[i] as usize;
+                        output[i] = rle_vals[idx];
+                    }
+                }
+            }
+        }
+    };
+}
+
+impl_rle!(u8);
+impl_rle!(u16);
+impl_rle!(u32);
+impl_rle!(u64);
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_rle_encode_unique_count() {
+        let input: [u32; 1024] = core::array::from_fn(|i| (i / 100 + 1) as u32);
+        let mut rle_vals = [0u32; 1024];
+        let mut rle_idxs = [0u16; 1024];
+
+        let unique_count = u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+
+        assert_eq!(unique_count, 11);
+    }
+
+    #[test]
+    fn test_rle_encode_values() {
+        let input: [u32; 1024] = core::array::from_fn(|i| (i / 100 + 1) as u32);
+        let mut rle_vals = [0u32; 1024];
+        let mut rle_idxs = [0u16; 1024];
+
+        let unique_count = u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+
+        // Check that RLE values are 1, 2, 3, ..., 11
+        for i in 0..unique_count {
+            assert_eq!(rle_vals[i], i as u32 + 1);
+        }
+    }
+
+    #[test]
+    fn test_rle_encode_index_groups() {
+        let input: [u32; 1024] = core::array::from_fn(|i| (i / 100 + 1) as u32);
+        let mut rle_vals = [0u32; 1024];
+        let mut rle_idxs = [0u16; 1024];
+
+        u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+
+        for i in 0..100 {
+            assert_eq!(rle_idxs[i], 0);
+        }
+
+        for i in 100..200 {
+            assert_eq!(rle_idxs[i], 1);
+        }
+
+        for i in 1000..1024 {
+            assert_eq!(rle_idxs[i], 10);
+        }
+    }
+
+    #[test]
+    fn test_rle_encode_single_value() {
+        let input = [42u16; 1024];
+        let mut rle_vals = [0u16; 1024];
+        let mut rle_idxs = [0u16; 1024];
+
+        let unique_count = u16::encode(&input, &mut rle_vals, &mut rle_idxs);
+
+        assert_eq!(unique_count, 1);
+        assert_eq!(rle_vals[0], 42);
+
+        for &idx in &rle_idxs {
+            assert_eq!(idx, 0);
+        }
+    }
+
+    #[test]
+    fn test_rle_encode_all_different() {
+        let input: [u8; 1024] = core::array::from_fn(|i| (i % 256) as u8);
+
+        let mut rle_vals = [0u8; 1024];
+        let mut rle_idxs = [0u16; 1024];
+
+        let unique_count = u8::encode(&input, &mut rle_vals, &mut rle_idxs);
+
+        // RLE creates a new dictionary entry every time the value changes,
+        // not when we encounter a new unique value.
+        assert_eq!(unique_count, 1024);
+    }
+
+    #[test]
+    fn test_rle_round_trip() {
+        let input: [u8; 1024] = core::array::from_fn(|i| (i % 256) as u8);
+
+        let mut rle_vals = [0u8; 1024];
+        let mut rle_idxs = [0u16; 1024];
+        let unique_count = u8::encode(&input, &mut rle_vals, &mut rle_idxs);
+
+        let mut decoded = [0u8; 1024];
+        u8::decode(&rle_vals[..unique_count], &rle_idxs, &mut decoded);
+        assert_eq!(input, decoded);
+    }
+}
