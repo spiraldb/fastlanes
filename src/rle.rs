@@ -5,7 +5,7 @@ pub trait RLE: FastLanes {
     /// Encode an array using Run-Length Encoding
     ///
     /// Creates a dictionary of unique values (`rle_vals`) and an index array
-    /// (`rle_idxs`) that maps each input position to a dictionary entry. 
+    /// (`rle_idxs`) that maps each input position to a dictionary entry.
     ///
     /// # Returns
     /// The number of unique values in the dictionary
