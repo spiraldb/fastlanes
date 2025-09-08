@@ -18,7 +18,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust
 
-
       - name: Rust Build
         run: cargo build --all-features --all-targets
       - name: Rust Lint - Format
@@ -50,3 +49,4 @@ jobs:
         with:
           run: cargo codspeed run
           token: ${{ secrets.CODSPEED_TOKEN }}
+          mode: instrumentation
