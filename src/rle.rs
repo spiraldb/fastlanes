@@ -4,11 +4,11 @@ use paste::paste;
 pub trait RLE: FastLanes {
     /// Encode an array using Run-Length Encoding
     ///
-    /// Creates a dictionary of unique values (`rle_vals`) and an index array
+    /// Creates a dictionary of run values (`rle_vals`) and an index array
     /// (`rle_idxs`) that maps each input position to a dictionary entry.
     ///
     /// # Returns
-    /// The number of unique values in the dictionary
+    /// The number of run values in the dictionary
     fn encode(
         input: &[Self; 1024],
         rle_vals: &mut [Self; 1024],
@@ -17,7 +17,7 @@ pub trait RLE: FastLanes {
 
     /// Decode RLE-encoded data back to original values
     ///
-    /// Takes the dictionary of unique values and indices, reconstructing the original array
+    /// Takes the dictionary of run values and indices, reconstructing the original array
     fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]);
 }
 
