@@ -34,20 +34,20 @@ macro_rules! impl_rle {
                     let mut pos_val = 0u16;
                     let mut rle_val_idx = 0usize;
 
-                    let mut prev_val = input[0];
-                    rle_vals[rle_val_idx] = prev_val;
+                    let mut prev_val = unsafe { *input.get_unchecked(0) };
+                    unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = prev_val };
                     rle_val_idx += 1;
-                    rle_idxs[0] = pos_val;
+                    unsafe { *rle_idxs.get_unchecked_mut(0) = pos_val };
 
                     for i in 1..1024 {
-                        let cur_val = input[i];
+                        let cur_val = unsafe { *input.get_unchecked(i) };
                         if cur_val != prev_val {
-                            rle_vals[rle_val_idx] = cur_val;
+                            unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = cur_val };
                             rle_val_idx += 1;
                             pos_val += 1;
                             prev_val = cur_val;
                         }
-                        rle_idxs[i] = pos_val;
+                        unsafe { *rle_idxs.get_unchecked_mut(i) = pos_val };
                     }
 
                     rle_val_idx
@@ -60,8 +60,8 @@ macro_rules! impl_rle {
                     output: &mut [Self; 1024],
                 ) {
                     for i in 0..1024 {
-                        let idx = rle_idxs[i] as usize;
-                        output[i] = rle_vals[idx];
+                        let idx = unsafe { *rle_idxs.get_unchecked(i) } as usize;
+                        unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(idx) };
                     }
                 }
             }
