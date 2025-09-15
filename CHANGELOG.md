@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/spiraldb/fastlanes/compare/v0.2.1...v0.2.2) - 2025-09-15
+
+### Other
+
+- use `get_unchecked` for index accesses in rle ([#76](https://github.com/spiraldb/fastlanes/pull/76))
+- improve fls-rle comments ([#75](https://github.com/spiraldb/fastlanes/pull/75))
+- *(deps)* update codspeedhq/action digest to 653fdc3 ([#73](https://github.com/spiraldb/fastlanes/pull/73))
+- *(deps)* pin dependencies ([#67](https://github.com/spiraldb/fastlanes/pull/67))
+- *(deps)* update codspeedhq/action action to v4 ([#69](https://github.com/spiraldb/fastlanes/pull/69))
+- *(deps)* update actions/checkout action to v5 ([#68](https://github.com/spiraldb/fastlanes/pull/68))
+
 ## [0.2.1](https://github.com/spiraldb/fastlanes/compare/v0.2.0...v0.2.1) - 2025-09-05
 
 ### Added
