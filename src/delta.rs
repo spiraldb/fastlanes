@@ -27,7 +27,11 @@ macro_rules! impl_delta {
     ($T:ty) => {
         impl Delta for $T {
             #[inline(never)]
-            fn delta<const LANES: usize>(input: &[Self; 1024], base: &[Self; LANES], output: &mut [Self; 1024]) {
+            fn delta<const LANES: usize>(
+                input: &[Self; 1024],
+                base: &[Self; LANES],
+                output: &mut [Self; 1024],
+            ) {
                 const {
                     assert!(LANES == Self::LANES);
                 }
@@ -43,7 +47,11 @@ macro_rules! impl_delta {
             }
 
             #[inline(never)]
-            fn undelta<const LANES: usize>(input: &[Self; 1024], base: &[Self; LANES], output: &mut [Self; 1024]) {
+            fn undelta<const LANES: usize>(
+                input: &[Self; 1024],
+                base: &[Self; LANES],
+                output: &mut [Self; 1024],
+            ) {
                 const {
                     assert!(LANES == Self::LANES);
                 }
