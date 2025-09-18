@@ -1,5 +1,4 @@
 use crate::FastLanes;
-use paste::paste;
 
 pub trait RLE: FastLanes {
     /// Encode an array using Run-Length Encoding
@@ -21,58 +20,43 @@ pub trait RLE: FastLanes {
     fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]);
 }
 
-macro_rules! impl_rle {
-    ($T:ty) => {
-        paste! {
-            impl RLE for $T {
-                #[inline(never)]
-                fn encode(
-                    input: &[Self; 1024],
-                    rle_vals: &mut [Self; 1024],
-                    rle_idxs: &mut [u16; 1024],
-                ) -> usize {
-                    let mut pos_val = 0u16;
-                    let mut rle_val_idx = 0usize;
+impl<T: FastLanes> RLE for T {
+    #[inline(never)]
+    fn encode(
+        input: &[Self; 1024],
+        rle_vals: &mut [Self; 1024],
+        rle_idxs: &mut [u16; 1024],
+    ) -> usize {
+        let mut pos_val = 0u16;
+        let mut rle_val_idx = 0usize;
 
-                    let mut prev_val = unsafe { *input.get_unchecked(0) };
-                    unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = prev_val };
-                    rle_val_idx += 1;
-                    unsafe { *rle_idxs.get_unchecked_mut(0) = pos_val };
+        let mut prev_val = unsafe { *input.get_unchecked(0) };
+        unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = prev_val };
+        rle_val_idx += 1;
+        unsafe { *rle_idxs.get_unchecked_mut(0) = pos_val };
 
-                    for i in 1..1024 {
-                        let cur_val = unsafe { *input.get_unchecked(i) };
-                        if cur_val != prev_val {
-                            unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = cur_val };
-                            rle_val_idx += 1;
-                            pos_val += 1;
-                            prev_val = cur_val;
-                        }
-                        unsafe { *rle_idxs.get_unchecked_mut(i) = pos_val };
-                    }
-
-                    rle_val_idx
-                }
-
-                #[inline(never)]
-                fn decode(
-                    rle_vals: &[Self],
-                    rle_idxs: &[u16; 1024],
-                    output: &mut [Self; 1024],
-                ) {
-                    for i in 0..1024 {
-                        let idx = unsafe { *rle_idxs.get_unchecked(i) } as usize;
-                        unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(idx) };
-                    }
-                }
+        for i in 1..1024 {
+            let cur_val = unsafe { *input.get_unchecked(i) };
+            if cur_val != prev_val {
+                unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = cur_val };
+                rle_val_idx += 1;
+                pos_val += 1;
+                prev_val = cur_val;
             }
+            unsafe { *rle_idxs.get_unchecked_mut(i) = pos_val };
         }
-    };
-}
 
-impl_rle!(u8);
-impl_rle!(u16);
-impl_rle!(u32);
-impl_rle!(u64);
+        rle_val_idx
+    }
+
+    #[inline(never)]
+    fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]) {
+        for i in 0..1024 {
+            let idx = unsafe { *rle_idxs.get_unchecked(i) } as usize;
+            unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(idx) };
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

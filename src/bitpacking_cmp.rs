@@ -1,4 +1,7 @@
+use crate::seq_t;
+use crate::unpack;
 use crate::{supported_bit_width, FastLanes, FastLanesComparable};
+use paste::paste;
 
 pub trait BitPackingCompare: FastLanes {
     /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
@@ -33,61 +36,59 @@ pub trait BitPackingCompare: FastLanes {
 
 macro_rules! impl_packing_compare {
     ($T:ty) => {
-        paste::paste! {
-            impl BitPackingCompare for $T {
-                #[inline(never)]
-                fn unpack_cmp<const W: usize, const B: usize, V, F>(
-                    input: &[Self; B],
-                    output: &mut [bool; 1024],
-                    f: F,
-                    other: V,
-                )
-                where
-                    V: FastLanesComparable<Bitpacked = Self>,
-                    F: Fn(V, V) -> bool
-                {
-                    const {
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
-
-                    for lane in (0..Self::LANES) {
-                        $crate::unpack!($T, W, input, lane, |$idx, $elem| {
-                            output[$idx] = f(V::as_unpacked($elem), other);
-                        });
-                    }
+        impl BitPackingCompare for $T {
+            #[inline(never)]
+            fn unpack_cmp<const W: usize, const B: usize, V, F>(
+                input: &[Self; B],
+                output: &mut [bool; 1024],
+                f: F,
+                other: V,
+            )
+            where
+                V: FastLanesComparable<Bitpacked = Self>,
+                F: Fn(V, V) -> bool
+            {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
                 }
 
-                unsafe fn unchecked_unpack_cmp<V, F>(
-                     width: usize,
-                     input: &[Self],
-                     output: &mut [bool; 1024],
-                     comparison: F,
-                     value: V,
-                )
-                where
-                    V: FastLanesComparable<Bitpacked = Self>,
-                    F: Fn(V, V) -> bool
-                {
-                    let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
-                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-
-                    $crate::seq_t!(W in $T {
-                         match width {
-                             #(W => {
-                                 const B: usize = 1024 * W / <$T>::T;
-                                 Self::unpack_cmp::<W, B, V, F>(
-                                     arrayref::array_ref![input, 0, 1024 * W / <$T>::T],
-                                     output,
-                                     comparison,
-                                     value
-                                )
-                             },)*
-                             _ => unreachable!("Unsupported width: {}", width)
-                         }
-                     })
+                for lane in (0..Self::LANES) {
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        output[$idx] = f(V::as_unpacked($elem), other);
+                    });
                 }
+            }
+
+            unsafe fn unchecked_unpack_cmp<V, F>(
+                 width: usize,
+                 input: &[Self],
+                 output: &mut [bool; 1024],
+                 comparison: F,
+                 value: V,
+            )
+            where
+                V: FastLanesComparable<Bitpacked = Self>,
+                F: Fn(V, V) -> bool
+            {
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            Self::unpack_cmp::<W, B, V, F>(
+                                arrayref::array_ref![input, 0, 1024 * W / <$T>::T],
+                                output,
+                                comparison,
+                                value
+                            )
+                        },)*
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
             }
         }
     };

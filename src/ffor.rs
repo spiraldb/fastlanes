@@ -17,40 +17,38 @@ pub trait FoR: BitPacking {
 
 macro_rules! impl_for {
     ($T:ty) => {
-        paste! {
-            impl FoR for $T {
-                fn for_pack<const W: usize, const B: usize>(
-                    input: &[Self; 1024],
-                    reference: Self,
-                    output: &mut [Self; B],
-                ) {
-                    const {
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
-
-                    for lane in 0..Self::LANES {
-                        pack!($T, W, output, lane, |$idx| {
-                            input[$idx].wrapping_sub(reference)
-                        });
-                    }
+        impl FoR for $T {
+            fn for_pack<const W: usize, const B: usize>(
+                input: &[Self; 1024],
+                reference: Self,
+                output: &mut [Self; B],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
                 }
 
-                fn unfor_pack<const W: usize, const B: usize>(
-                    input: &[Self; B],
-                    reference: Self,
-                    output: &mut [Self; 1024],
-                ) {
-                    const {
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
+                for lane in 0..Self::LANES {
+                    pack!($T, W, output, lane, |$idx| {
+                        input[$idx].wrapping_sub(reference)
+                    });
+                }
+            }
 
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            output[$idx] = $elem.wrapping_add(reference)
-                        });
-                    }
+            fn unfor_pack<const W: usize, const B: usize>(
+                input: &[Self; B],
+                reference: Self,
+                output: &mut [Self; 1024],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+
+                for lane in 0..Self::LANES {
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        output[$idx] = $elem.wrapping_add(reference)
+                    });
                 }
             }
         }

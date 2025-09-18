@@ -118,9 +118,9 @@ macro_rules! unpack {
             if $W == 0 {
                 // Special case for W=0, we just need to zero the output.
                 // We'll still respect the iteration order in case the kernel has side effects.
+                let zero: $T = 0;
                 paste!(seq_t!(row in $T {
                     let idx = index(row, $lane);
-                    let zero: $T = 0;
                     __kernel__!(idx, zero);
                 }));
             } else if $W == T {

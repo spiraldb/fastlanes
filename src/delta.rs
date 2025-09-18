@@ -25,59 +25,65 @@ pub trait Delta: BitPacking {
 
 macro_rules! impl_delta {
     ($T:ty) => {
-        paste! {
-            impl Delta for $T {
-                #[inline(never)]
-                fn delta<const LANES: usize>(input: &[Self; 1024], base: &[Self; LANES], output: &mut [Self; 1024]) {
-                    const {
-                        assert!(LANES == Self::LANES);
-                    }
-
-                    for lane in 0..Self::LANES {
-                        let mut prev = base[lane];
-                        iterate!($T, lane, |$idx| {
-                            let next = input[$idx];
-                            output[$idx] = next.wrapping_sub(prev);
-                            prev = next;
-                        });
-                    }
+        impl Delta for $T {
+            #[inline(never)]
+            fn delta<const LANES: usize>(
+                input: &[Self; 1024],
+                base: &[Self; LANES],
+                output: &mut [Self; 1024],
+            ) {
+                const {
+                    assert!(LANES == Self::LANES);
                 }
 
-                #[inline(never)]
-                fn undelta<const LANES: usize>(input: &[Self; 1024], base: &[Self; LANES], output: &mut [Self; 1024]) {
-                    const {
-                        assert!(LANES == Self::LANES);
-                    }
-                    for lane in 0..LANES {
-                        let mut prev = base[lane];
-                        iterate!($T, lane, |$idx| {
-                            let next = input[$idx].wrapping_add(prev);
-                            output[$idx] = next;
-                            prev = next;
-                        });
-                    }
+                for lane in 0..Self::LANES {
+                    let mut prev = base[lane];
+                    iterate!($T, lane, |$idx| {
+                        let next = input[$idx];
+                        output[$idx] = next.wrapping_sub(prev);
+                        prev = next;
+                    });
+                }
+            }
+
+            #[inline(never)]
+            fn undelta<const LANES: usize>(
+                input: &[Self; 1024],
+                base: &[Self; LANES],
+                output: &mut [Self; 1024],
+            ) {
+                const {
+                    assert!(LANES == Self::LANES);
+                }
+                for lane in 0..LANES {
+                    let mut prev = base[lane];
+                    iterate!($T, lane, |$idx| {
+                        let next = input[$idx].wrapping_add(prev);
+                        output[$idx] = next;
+                        prev = next;
+                    });
+                }
+            }
+
+            #[inline(never)]
+            fn undelta_pack<const LANES: usize, const W: usize, const B: usize>(
+                input: &[Self; B],
+                base: &[Self; LANES],
+                output: &mut [Self; 1024],
+            ) {
+                const {
+                    assert!(LANES == Self::LANES);
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
                 }
 
-                #[inline(never)]
-                fn undelta_pack<const LANES: usize, const W: usize, const B: usize>(
-                    input: &[Self; B],
-                    base: &[Self; LANES],
-                    output: &mut [Self; 1024],
-                ) {
-                    const {
-                        assert!(LANES == Self::LANES);
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
-
-                    for lane in 0..Self::LANES {
-                        let mut prev = base[lane];
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            let next = $elem.wrapping_add(prev);
-                            output[$idx] = next;
-                            prev = next;
-                        });
-                    }
+                for lane in 0..Self::LANES {
+                    let mut prev = base[lane];
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        let next = $elem.wrapping_add(prev);
+                        output[$idx] = next;
+                        prev = next;
+                    });
                 }
             }
         }

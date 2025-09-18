@@ -47,179 +47,177 @@ pub trait BitPacking: FastLanes {
 
 macro_rules! impl_packing {
     ($T:ty) => {
-        paste! {
-            impl BitPacking for $T {
-                #[inline(never)]
-                fn pack<const W: usize, const B: usize>(
-                    input: &[Self; 1024],
-                    output: &mut [Self; B],
-                ) {
-                    const {
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
-
-
-                    for lane in 0..Self::LANES {
-                        pack!($T, W, output, lane, |$idx| {
-                            input[$idx]
-                        });
-                    }
+        impl BitPacking for $T {
+            #[inline(never)]
+            fn pack<const W: usize, const B: usize>(
+                input: &[Self; 1024],
+                output: &mut [Self; B],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
                 }
 
-                unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
-                    let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(output.len(), packed_len, "Output buffer must be of size 1024 * W / T");
-                    debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
-                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
-                    seq_t!(W in $T {
-                        match width {
-                            #(W => {
-                                const B: usize = 1024 * W / <$T>::T;
-                                Self::pack::<W, B>(
-                                    array_ref![input, 0, 1024],
-                                    array_mut_ref![output, 0, B],
-                                )
-                            },)*
-                            // seq_t has exclusive upper bound
-                            Self::T => {
-                                // How large is the target buffer size?
-                                const W: usize = <$T>::T;
-                                const B: usize = 1024;
-                                Self::pack::<W, B>(
-                                    array_ref![input, 0, 1024],
-                                    array_mut_ref![output, 0, 1024],
-                                )
-                            },
-                            _ => unreachable!("Unsupported width: {}", width)
-                        }
-                    })
+                for lane in 0..Self::LANES {
+                    pack!($T, W, output, lane, |$idx| {
+                        input[$idx]
+                    });
+                }
+            }
+
+            unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(output.len(), packed_len, "Output buffer must be of size 1024 * W / T");
+                debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            Self::pack::<W, B>(
+                                array_ref![input, 0, 1024],
+                                array_mut_ref![output, 0, B],
+                            )
+                        },)*
+                        // seq_t has exclusive upper bound
+                        Self::T => {
+                            // How large is the target buffer size?
+                            const W: usize = <$T>::T;
+                            const B: usize = 1024;
+                            Self::pack::<W, B>(
+                                array_ref![input, 0, 1024],
+                                array_mut_ref![output, 0, 1024],
+                            )
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
+            }
+
+            #[inline(never)]
+            fn unpack<const W: usize, const B: usize>(
+                input: &[Self; B],
+                output: &mut [Self; 1024],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
                 }
 
-                #[inline(never)]
-                fn unpack<const W: usize, const B: usize>(
-                    input: &[Self; B],
-                    output: &mut [Self; 1024],
-                ) {
-                    const {
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
 
+                for lane in 0..Self::LANES {
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        output[$idx] = $elem
+                    });
+                }
+            }
 
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            output[$idx] = $elem
-                        });
+            unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            Self::unpack::<W, B>(
+                                array_ref![input, 0, B],
+                                array_mut_ref![output, 0, 1024],
+                            )
+                        },)*
+                        // seq_t has exclusive upper bound
+                        Self::T => {
+                            const W: usize = <$T>::T;
+                            const B: usize = 1024;
+                            Self::unpack::<W, B>(
+                                array_ref![input, 0, 1024],
+                                array_mut_ref![output, 0, 1024],
+                            )
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
                     }
+                }))
+            }
+
+            /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
+            fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self
+            {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
                 }
 
-                unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
-                    let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
-                    debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
-                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-
-                    seq_t!(W in $T {
-                        match width {
-                            #(W => {
-                                const B: usize = 1024 * W / <$T>::T;
-                                Self::unpack::<W, B>(
-                                    array_ref![input, 0, B],
-                                    array_mut_ref![output, 0, 1024],
-                                )
-                            },)*
-                            // seq_t has exclusive upper bound
-                            Self::T => {
-                                const W: usize = <$T>::T;
-                                const B: usize = 1024;
-                                Self::unpack::<W, B>(
-                                    array_ref![input, 0, 1024],
-                                    array_mut_ref![output, 0, 1024],
-                                )
-                            },
-                            _ => unreachable!("Unsupported width: {}", width)
-                        }
-                    })
+                if W == 0 {
+                    // Special case for W=0, we just need to zero the output.
+                    return 0 as $T;
                 }
 
-                /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-                fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self
-                {
-                    const {
-                        assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                        assert!(B == 1024 * W / Self::T);
-                    }
+                // We can think of the input array as effectively a row-major, left-to-right
+                // 2-D array of with `Self::LANES` columns and `Self::T` rows.
+                //
+                // Meanwhile, we can think of the packed array as either:
+                //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
+                //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
+                //
+                // Bitpacking involves a transposition of the input array ordering, such that
+                // decompression can be fused efficiently with encodings like delta and RLE.
+                //
+                // First step, we need to get the lane and row for interpretation #1 above.
+                assert!(index < 1024, "Index must be less than 1024, got {}", index);
+                let (lane, row): (usize, usize) = {
+                    const LANES: [u8; 1024] = lanes_by_index::<$T>();
+                    const ROWS: [u8; 1024] = rows_by_index::<$T>();
+                    (LANES[index] as usize, ROWS[index] as usize)
+                };
 
-                    if W == 0 {
-                        // Special case for W=0, we just need to zero the output.
-                        return 0 as $T;
-                    }
-
-                    // We can think of the input array as effectively a row-major, left-to-right
-                    // 2-D array of with `Self::LANES` columns and `Self::T` rows.
-                    //
-                    // Meanwhile, we can think of the packed array as either:
-                    //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
-                    //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
-                    //
-                    // Bitpacking involves a transposition of the input array ordering, such that
-                    // decompression can be fused efficiently with encodings like delta and RLE.
-                    //
-                    // First step, we need to get the lane and row for interpretation #1 above.
-                    assert!(index < 1024, "Index must be less than 1024, got {}", index);
-                    let (lane, row): (usize, usize) = {
-                        const LANES: [u8; 1024] = lanes_by_index::<$T>();
-                        const ROWS: [u8; 1024] = rows_by_index::<$T>();
-                        (LANES[index] as usize, ROWS[index] as usize)
-                    };
-
-                    if W == <$T>::T {
-                        // Special case for W==T, we can just read the value directly
-                        return packed[<$T>::LANES * row + lane];
-                    }
-
-                    let mask: $T = (1 << (W % <$T>::T)) - 1;
-                    let start_bit = row * W;
-                    let start_word = start_bit / <$T>::T;
-                    let lo_shift = start_bit % <$T>::T;
-                    let remaining_bits = <$T>::T - lo_shift;
-
-                    let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
-                    return if remaining_bits >= W {
-                        // in this case we will mask out all bits of hi word
-                        lo & mask
-                    } else {
-                        // guaranteed that lo_shift > 0 and thus remaining_bits < T
-                        let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
-                        (lo | hi) & mask
-                    };
+                if W == <$T>::T {
+                    // Special case for W==T, we can just read the value directly
+                    return packed[<$T>::LANES * row + lane];
                 }
 
-                unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
-                    const T: usize = <$T>::T;
+                let mask: $T = (1 << (W % <$T>::T)) - 1;
+                let start_bit = row * W;
+                let start_word = start_bit / <$T>::T;
+                let lo_shift = start_bit % <$T>::T;
+                let remaining_bits = <$T>::T - lo_shift;
 
-                    let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
-                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                return if remaining_bits >= W {
+                    // in this case we will mask out all bits of hi word
+                    lo & mask
+                } else {
+                    // guaranteed that lo_shift > 0 and thus remaining_bits < T
+                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                    (lo | hi) & mask
+                };
+            }
 
-                    seq_t!(W in $T {
-                        match width {
-                            #(W => {
-                                const B: usize = 1024 * W / T;
-                                return <$T>::unpack_single::<W, B>(array_ref![packed, 0, B], index);
-                            },)*
-                            // seq_t has exclusive upper bound
-                            T => {
-                                const W: usize = T;
-                                const B: usize = 1024;
-                                return <$T>::unpack_single::<W, B>(array_ref![packed, 0, 1024], index);
-                            },
-                            _ => unreachable!("Unsupported width: {}", width)
-                        }
-                    })
-                }
+            unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
+                const T: usize = <$T>::T;
+
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / T;
+                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, B], index);
+                        },)*
+                        // seq_t has exclusive upper bound
+                        T => {
+                            const W: usize = T;
+                            const B: usize = 1024;
+                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, 1024], index);
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
             }
         }
     };
