@@ -4,6 +4,7 @@ use arrayref::{array_mut_ref, array_ref};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fastlanes::{BitPacking, FastLanes};
 use std::hint::black_box;
+//
 
 fn pack(c: &mut Criterion) {
     {
