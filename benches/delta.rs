@@ -1,5 +1,5 @@
 use arrayref::{array_mut_ref, array_ref};
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use std::mem::size_of;
 
 use fastlanes::{BitPacking, Delta, FastLanes, Transpose};
@@ -28,16 +28,22 @@ fn delta(c: &mut Criterion) {
     group.bench_function("delta u16 fused", |b| {
         b.iter(|| {
             let mut unpacked = [0; 1024];
-            Delta::undelta_pack::<LANES, W, B>(&packed, &[0; 64], &mut unpacked);
+            Delta::undelta_pack::<LANES, W, B>(
+                black_box(&packed),
+                black_box(&[0; 64]),
+                &mut unpacked,
+            );
+            black_box(unpacked);
         });
     });
 
     group.bench_function("delta u16 unfused", |b| {
         b.iter(|| {
             let mut unpacked = [0; 1024];
-            BitPacking::unpack::<W, B>(&packed, &mut unpacked);
+            BitPacking::unpack::<W, B>(black_box(&packed), &mut unpacked);
             let mut undelta = [0; 1024];
-            Delta::undelta(&unpacked, &[0; 64], &mut undelta);
+            Delta::undelta(black_box(&unpacked), black_box(&[0; 64]), &mut undelta);
+            black_box(undelta);
         });
     });
 }
@@ -58,10 +64,11 @@ fn throughput(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
                 BitPacking::pack::<WIDTH, B>(
-                    array_ref![values, i * 1024, 1024],
+                    black_box(array_ref![values, i * 1024, 1024]),
                     array_mut_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
                 );
             }
+            black_box(&packed);
         });
     });
 
@@ -69,10 +76,11 @@ fn throughput(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..NUM_BATCHES {
                 BitPacking::unpack::<WIDTH, B>(
-                    array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE],
+                    black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     array_mut_ref![values, i * 1024, 1024],
                 );
             }
+            black_box(&values);
         });
     });
 }

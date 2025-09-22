@@ -3,6 +3,7 @@
 use divan::Bencher;
 use fastlanes::{BitPacking, BitPackingCompare, FastLanesComparable};
 use num_traits::FromPrimitive;
+use std::hint::black_box;
 
 fn main() {
     divan::main();
@@ -27,11 +28,12 @@ where
         unsafe {
             BitPackingCompare::unchecked_unpack_cmp(
                 W,
-                &packed,
+                black_box(&packed),
                 &mut unpacked,
                 |a, b| a == b,
-                value,
+                black_box(value),
             );
+            black_box(unpacked);
         };
     });
 }
@@ -48,8 +50,8 @@ fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
     let mut unpacked = [T::zero(); 1024];
 
     bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack(W, &packed, &mut unpacked) };
-        collect_bool_cmp(&unpacked, &value)
+        unsafe { T::unchecked_unpack(W, black_box(&packed), &mut unpacked) };
+        black_box(collect_bool_cmp(&unpacked, black_box(&value)))
     });
 }
 
@@ -64,7 +66,8 @@ fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher)
     let mut unpacked = [T::zero(); 1024];
 
     bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack(W, &packed, &mut unpacked) };
+        unsafe { T::unchecked_unpack(W, black_box(&packed), &mut unpacked) };
+        black_box(unpacked);
     });
 }
 
