@@ -1,8 +1,9 @@
 use std::mem::size_of;
 
 use arrayref::{array_mut_ref, array_ref};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fastlanes::{BitPacking, FastLanes};
+use std::hint::black_box;
 
 fn pack(c: &mut Criterion) {
     {
