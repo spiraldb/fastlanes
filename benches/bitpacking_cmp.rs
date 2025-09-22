@@ -30,8 +30,8 @@ mod bench {
         bencher.bench_local(|| {
             unsafe {
                 BitPackingCompare::unchecked_unpack_cmp(
-                    W,
-                    &packed,
+                    black_box(W),
+                    black_box(&packed),
                     &mut unpacked,
                     |a, b| a == b,
                     black_box(value),
@@ -56,7 +56,7 @@ mod bench {
         let mut bools = [0u64; 16];
 
         bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(W, &packed, &mut unpacked) };
+            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
             collect_bool_cmp(&unpacked, &black_box(value), black_box(&mut bools));
             black_box(bools)
         });
@@ -75,7 +75,8 @@ mod bench {
         let mut unpacked = [T::zero(); 1024];
 
         bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(W, &packed, &mut unpacked) };
+            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
+            black_box(unpacked);
         });
     }
 

@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 use fastlanes::Transpose;
 
@@ -11,7 +12,10 @@ fn transpose(c: &mut Criterion) {
         }
 
         let mut transposed = [0; 1024];
-        b.iter(|| Transpose::transpose(&values, &mut transposed));
+        b.iter(|| {
+            Transpose::transpose(black_box(&values), &mut transposed);
+            black_box(transposed);
+        });
     });
 }
 

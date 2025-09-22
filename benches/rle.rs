@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fastlanes::RLE;
+use std::hint::black_box;
 use std::mem::size_of;
 
 fn rle(c: &mut Criterion) {
