@@ -4,6 +4,7 @@ use divan::Bencher;
 use fastlanes::{BitPacking, BitPackingCompare, FastLanesComparable};
 use num_traits::FromPrimitive;
 use std::hint::black_box;
+use std::mem::size_of;
 
 fn main() {
     divan::main();
@@ -22,20 +23,20 @@ where
 
     unsafe { BitPacking::unchecked_pack(W, &values, &mut packed) };
 
-    let mut unpacked = [false; 1024];
-
-    bencher.bench_local(|| {
-        unsafe {
-            BitPackingCompare::unchecked_unpack_cmp(
-                W,
-                black_box(&packed),
-                &mut unpacked,
-                |a, b| a == b,
-                black_box(value),
-            );
-            black_box(unpacked);
-        };
-    });
+    bencher
+        .with_inputs(|| [false; 1024])
+        .bench_local_refs(|unpacked| {
+            unsafe {
+                BitPackingCompare::unchecked_unpack_cmp(
+                    W,
+                    black_box(&packed),
+                    unpacked,
+                    |a, b| a == b,
+                    black_box(value),
+                );
+                black_box(unpacked);
+            };
+        });
 }
 
 #[divan::bench(types=[u16, u32, u64])]
@@ -47,12 +48,12 @@ fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
 
     unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
-    let mut unpacked = [T::zero(); 1024];
-
-    bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack(W, black_box(&packed), &mut unpacked) };
-        black_box(collect_bool_cmp(&unpacked, black_box(&value)))
-    });
+    bencher
+        .with_inputs(|| [T::zero(); 1024])
+        .bench_local_refs(|unpacked| {
+            unsafe { T::unchecked_unpack(W, black_box(&packed), unpacked) };
+            black_box(collect_bool_cmp(unpacked, black_box(&value)));
+        });
 }
 
 #[divan::bench(types=[u16, u32, u64])]
@@ -63,12 +64,12 @@ fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher)
 
     unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
-    let mut unpacked = [T::zero(); 1024];
-
-    bencher.bench_local(|| {
-        unsafe { T::unchecked_unpack(W, black_box(&packed), &mut unpacked) };
-        black_box(unpacked);
-    });
+    bencher
+        .with_inputs(|| [T::zero(); 1024])
+        .bench_local_refs(|unpacked| {
+            unsafe { T::unchecked_unpack(W, black_box(&packed), unpacked) };
+            black_box(*unpacked);
+        });
 }
 
 #[inline(never)]

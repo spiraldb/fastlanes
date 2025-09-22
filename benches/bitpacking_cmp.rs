@@ -10,6 +10,7 @@ mod bench {
     use fastlanes::{BitPacking, BitPackingCompare, FastLanesComparable};
     use num_traits::FromPrimitive;
     use std::hint::black_box;
+    use std::mem::size_of;
 
     const BENCH_W: [usize; 4] = [2, 3, 5, 7];
 
@@ -22,23 +23,22 @@ mod bench {
         let value = T::from_usize(1).expect("");
         let values = [T::from_usize(2).expect(""); 1024];
         let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
-
         unsafe { BitPacking::unchecked_pack(W, &values, &mut packed) };
 
-        let mut unpacked = [false; 1024];
-
-        bencher.bench_local(|| {
-            unsafe {
-                BitPackingCompare::unchecked_unpack_cmp(
-                    black_box(W),
-                    black_box(&packed),
-                    &mut unpacked,
-                    |a, b| a == b,
-                    black_box(value),
-                );
-                black_box(unpacked)
-            };
-        });
+        bencher
+            .with_inputs(|| [false; 1024])
+            .bench_local_refs(|unpacked| {
+                unsafe {
+                    BitPackingCompare::unchecked_unpack_cmp(
+                        black_box(W),
+                        black_box(&packed),
+                        unpacked,
+                        |a, b| a == b,
+                        black_box(value),
+                    );
+                    black_box(unpacked);
+                };
+            });
     }
 
     #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
@@ -49,17 +49,15 @@ mod bench {
         let value = T::from_usize(1).expect("");
         let values = [T::from_usize(2).expect(""); 1024];
         let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
-
         unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
-        let mut unpacked = [T::zero(); 1024];
-        let mut bools = [0u64; 16];
-
-        bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
-            collect_bool_cmp(&unpacked, &black_box(value), black_box(&mut bools));
-            black_box(bools)
-        });
+        bencher
+            .with_inputs(|| ([T::zero(); 1024], [0u64; 16]))
+            .bench_local_refs(|(unpacked, bools)| {
+                unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), unpacked) };
+                collect_bool_cmp(unpacked, &black_box(value), black_box(bools));
+                black_box(*bools);
+            });
     }
 
     #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
@@ -69,15 +67,14 @@ mod bench {
     {
         let values = [T::from_usize(2).expect(""); 1024];
         let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
-
         unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
-        let mut unpacked = [T::zero(); 1024];
-
-        bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
-            black_box(unpacked);
-        });
+        bencher
+            .with_inputs(|| [T::zero(); 1024])
+            .bench_local_refs(|unpacked| {
+                unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), unpacked) };
+                black_box(*unpacked);
+            });
     }
 
     pub fn collect_bool_cmp<T: PartialEq + Copy>(
