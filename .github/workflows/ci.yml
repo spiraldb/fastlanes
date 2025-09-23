@@ -29,6 +29,7 @@ jobs:
 
   bench-codspeed:
     name: Benchmark with Codspeed
+
     runs-on:
       - runs-on=${{ github.run_id }}
       - family=c6a.metal
