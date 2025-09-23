@@ -38,7 +38,7 @@ where
     });
 }
 
-#[divan::bench(types=[u16, u32, u64])]
+#[divan::bench(types=[u16, u32, u64], sample_count = 10000)]
 fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
     const W: usize = 3;
     let value = T::from_usize(1).expect("");
@@ -55,7 +55,7 @@ fn bitpacking_cmp_seq<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
     });
 }
 
-#[divan::bench(types=[u16, u32, u64])]
+#[divan::bench(types=[u16, u32, u64], sample_count = 10000)]
 fn bitpacking_cmp_unpack<T: BitPacking + FromPrimitive + Copy>(bencher: Bencher) {
     const W: usize = 3;
     let values = [T::from_usize(2).expect(""); 1024];
