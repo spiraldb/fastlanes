@@ -5,7 +5,6 @@ use divan::Bencher;
 use fastlanes::{BitPacking, FastLanes};
 use std::hint::black_box;
 
-#[macro_use]
 mod shared;
 
 fn main() {

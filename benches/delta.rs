@@ -5,7 +5,6 @@ use std::mem::size_of;
 
 use fastlanes::{BitPacking, Delta, FastLanes, Transpose};
 
-#[macro_use]
 mod shared;
 
 fn main() {

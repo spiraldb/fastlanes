@@ -2,7 +2,6 @@ use divan::Bencher;
 use fastlanes::RLE;
 use std::hint::black_box;
 
-#[macro_use]
 mod shared;
 
 fn main() {
