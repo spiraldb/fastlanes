@@ -31,9 +31,9 @@ jobs:
     name: Benchmark with Codspeed
     runs-on:
       - runs-on=${{ github.run_id }}
-      - image=ubuntu24-full-x64
       - family=c6a.metal
-      - spot=false
+      - image=ubuntu24-full-x64
+      - tag=bench-codspeed
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
