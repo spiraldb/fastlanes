@@ -41,7 +41,7 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
+    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
     fn bitpacking_cmp_seq<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
@@ -62,7 +62,7 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W)]
+    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
     fn bitpacking_cmp_unpack<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
