@@ -133,7 +133,7 @@ macro_rules! unpack {
             } else {
                 #[inline(always)]
                 fn mask(width: usize) -> $T {
-                    if width == T { <$T>::MAX } else { (1 << (width % T)) - 1 }
+                    (1 << width) - 1
                 }
 
                 let mut src: $T = $packed[$lane];
