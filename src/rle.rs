@@ -1,6 +1,4 @@
-use crate::FastLanes;
-
-pub trait RLE: FastLanes {
+pub trait RLE: Sized {
     /// Encode an array using Run-Length Encoding
     ///
     /// Creates a dictionary of run values (`rle_vals`) and an index array
@@ -20,7 +18,7 @@ pub trait RLE: FastLanes {
     fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]);
 }
 
-impl<T: FastLanes> RLE for T {
+impl<T: PartialEq + Copy> RLE for T {
     #[inline(never)]
     fn encode(
         input: &[Self; 1024],
