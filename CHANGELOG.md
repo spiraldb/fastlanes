@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/spiraldb/fastlanes/compare/v0.2.2...v0.3.0) - 2025-09-30
+
+### Fixed
+
+- increase sample count to stabilize benchmarks ([#82](https://github.com/spiraldb/fastlanes/pull/82))
+- black box input and output parameters ([#79](https://github.com/spiraldb/fastlanes/pull/79))
+
+### Other
+
+- Relax bounds on RLE compression ([#89](https://github.com/spiraldb/fastlanes/pull/89))
+- Simplify unpack mask to match the pack mask ([#88](https://github.com/spiraldb/fastlanes/pull/88))
+- Use c6.8xlarge for codspeed benchmarks ([#87](https://github.com/spiraldb/fastlanes/pull/87))
+- Remove unsafe example from readme ([#86](https://github.com/spiraldb/fastlanes/pull/86))
+- switch to metal instance for ci benchmarks ([#84](https://github.com/spiraldb/fastlanes/pull/84))
+- move all benchmarks to divan ([#83](https://github.com/spiraldb/fastlanes/pull/83))
+- Narrow down the scope of paste macro ([#77](https://github.com/spiraldb/fastlanes/pull/77))
+- *(deps)* update marcoieni/release-plz-action digest to acb9246 ([#74](https://github.com/spiraldb/fastlanes/pull/74))
+
 ## [0.2.0](https://github.com/spiraldb/fastlanes/compare/v0.1.8...v0.2.0) - 2025-07-15
 
 ### Added
