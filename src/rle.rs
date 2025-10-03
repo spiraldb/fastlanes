@@ -15,7 +15,9 @@ pub trait RLE: Sized {
     /// Decode RLE-encoded data back to original values
     ///
     /// Takes the dictionary of run values and indices, reconstructing the original array
-    fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]);
+    fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
+    where
+        I: Copy + Into<usize>;
 }
 
 impl<T: PartialEq + Copy> RLE for T {
@@ -48,10 +50,12 @@ impl<T: PartialEq + Copy> RLE for T {
     }
 
     #[inline(never)]
-    fn decode(rle_vals: &[Self], rle_idxs: &[u16; 1024], output: &mut [Self; 1024]) {
-        for i in 0..1024 {
-            let idx = unsafe { *rle_idxs.get_unchecked(i) } as usize;
-            unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(idx) };
+    fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
+    where
+        I: Copy + Into<usize>,
+    {
+        for (idx, output) in rle_idxs.iter().zip(output.iter_mut()) {
+            *output = unsafe { *rle_vals.get_unchecked((*idx).into()) };
         }
     }
 }
