@@ -54,9 +54,8 @@ impl<T: PartialEq + Copy> RLE for T {
     where
         I: Copy + Into<usize>,
     {
-        for i in 0..1024 {
-            let idx = unsafe { *rle_idxs.get_unchecked(i) }.into();
-            unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(idx) };
+        for (idx, output) in rle_idxs.iter().zip(output.iter_mut()) {
+            *output = unsafe { *rle_vals.get_unchecked((*idx).into()) };
         }
     }
 }
