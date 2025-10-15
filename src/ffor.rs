@@ -15,6 +15,14 @@ pub trait FoR: BitPacking {
         output: &mut [Self; 1024],
     );
 
+    /// Fused unpack and wrapping add a FoR reference value.
+    /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of
+    /// compile-time known.
+    ///
+    /// # Safety
+    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
+    /// is the packed width. The output slice must be of exactly length 1024.
+    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unfor_pack(
         width: usize,
         input: &[Self],
