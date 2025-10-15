@@ -43,6 +43,7 @@ macro_rules! impl_for {
                 }
             }
 
+            #[inline(never)]
             fn unfor_pack<const W: usize, const B: usize>(
                 input: &[Self; B],
                 reference: Self,
