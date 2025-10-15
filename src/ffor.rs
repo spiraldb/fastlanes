@@ -15,7 +15,7 @@ pub trait FoR: BitPacking {
         output: &mut [Self; 1024],
     );
 
-    /// Fused unpack and wrapping add a FoR reference value.
+    /// Fused unpack and wrapping add a `FoR` reference value.
     /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of
     /// compile-time known.
     ///
