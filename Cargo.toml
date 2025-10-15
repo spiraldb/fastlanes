@@ -48,6 +48,10 @@ name = "bitpacking"
 harness = false
 
 [[bench]]
+name = "ffor"
+harness = false
+
+[[bench]]
 name = "bitpacking_cmp"
 harness = false
 
