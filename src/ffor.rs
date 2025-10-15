@@ -1,4 +1,5 @@
-use crate::{pack, supported_bit_width, unpack, BitPacking, FastLanes};
+use crate::{pack, seq_t, supported_bit_width, unpack, BitPacking, FastLanes};
+use arrayref::{array_mut_ref, array_ref};
 use paste::paste;
 
 pub trait FoR: BitPacking {
@@ -12,6 +13,13 @@ pub trait FoR: BitPacking {
         input: &[Self; B],
         reference: Self,
         output: &mut [Self; 1024],
+    );
+
+    unsafe fn unchecked_unfor_pack(
+        width: usize,
+        input: &[Self],
+        reference: Self,
+        output: &mut [Self],
     );
 }
 
@@ -51,6 +59,37 @@ macro_rules! impl_for {
                     });
                 }
             }
+
+           unsafe fn unchecked_unfor_pack(width: usize, input: &[Self], reference: Self, output: &mut [Self]) {
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            Self::unfor_pack::<W, B>(
+                                array_ref![input, 0, B],
+                                reference,
+                                array_mut_ref![output, 0, 1024],
+                            )
+                        },)*
+                        // seq_t has exclusive upper bound
+                        Self::T => {
+                            const W: usize = <$T>::T;
+                            const B: usize = 1024;
+                            Self::unfor_pack::<W, B>(
+                                array_ref![input, 0, 1024],
+                                reference,
+                                array_mut_ref![output, 0, 1024],
+                            )
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
+            }
         }
     };
 }
@@ -72,7 +111,7 @@ mod test {
 
         let mut values: [u16; 1024] = [0; 1024];
         for i in 0..1024 {
-            values[i] = (i % (1 << W)) as u16;
+            values[i] = (i % (1 << W)) as u16 + 10;
         }
 
         let mut packed = [0; 128 * W / size_of::<u16>()];
@@ -85,6 +124,34 @@ mod test {
             assert_eq!(
                 // Check that the unpacked array is 10 less than the original (modulo 2^15)
                 a.wrapping_sub(10) & ((1 << W) - 1),
+                *b,
+                "Mismatch at index {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ffor_unchecked() {
+        const W: usize = 15;
+        const B: usize = 1024 * W / u16::T;
+
+        let mut values: [u16; 1024] = [0; 1024];
+        for i in 0..1024 {
+            values[i] = (i % (1 << W)) as u16 + 10;
+        }
+
+        let mut packed = [0; 128 * W / size_of::<u16>()];
+        FoR::for_pack::<W, B>(&values, 10, &mut packed);
+
+        let mut unpacked = [0; 1024];
+        unsafe {
+            FoR::unchecked_unfor_pack(W, &packed, 10, &mut unpacked);
+        }
+
+        for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
+            assert_eq!(
+                // Check that the unpacked array is 10 less than the original (modulo 2^15)
+                *a,
                 *b,
                 "Mismatch at index {i}"
             );
