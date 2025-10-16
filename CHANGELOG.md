@@ -31,6 +31,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/spiraldb/fastlanes/compare/v0.4.0...v0.5.0) - 2025-10-16
+
+### Added
+
+- unchecked for bp ([#97](https://github.com/spiraldb/fastlanes/pull/97))
+
+### Fixed
+
+- fixup FoR doc str and bench ([#98](https://github.com/spiraldb/fastlanes/pull/98))
+
+### Other
+
+- *(deps)* update marcoieni/release-plz-action digest to d529f73 ([#96](https://github.com/spiraldb/fastlanes/pull/96))
+- *(deps)* update codspeedhq/action digest to 7a5b8b0 ([#95](https://github.com/spiraldb/fastlanes/pull/95))
+- *(deps)* update codspeedhq/action digest to 3959e9e ([#93](https://github.com/spiraldb/fastlanes/pull/93))
+- *(deps)* update rust crate divan to v4 ([#90](https://github.com/spiraldb/fastlanes/pull/90))
+
 ## [0.4.0](https://github.com/spiraldb/fastlanes/compare/v0.3.0...v0.4.0) - 2025-10-03
 
 ### Added
