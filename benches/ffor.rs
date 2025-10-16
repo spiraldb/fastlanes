@@ -165,8 +165,8 @@ fn throughput_decompress_unchecked(bencher: Bencher) {
                     black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     REFERENCE,
                     array_mut_ref![unpacked, i * 1024, 1024],
-                )
-            };
+                );
+            }
         }
         black_box(&unpacked);
     });
@@ -249,7 +249,7 @@ fn throughput_decompress_separate_reference(bencher: Bencher) {
             );
         }
         // Second pass: apply reference values
-        for val in unpacked.iter_mut() {
+        for val in &mut unpacked {
             *val = val.wrapping_add(REFERENCE);
         }
         black_box(&unpacked);
@@ -286,11 +286,11 @@ fn throughput_decompress_unchecked_separate_reference(bencher: Bencher) {
                     WIDTH,
                     black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     array_mut_ref![unpacked, i * 1024, 1024],
-                )
-            };
+                );
+            }
         }
         // Second pass: apply reference values
-        for val in unpacked.iter_mut() {
+        for val in &mut unpacked {
             *val = val.wrapping_add(REFERENCE);
         }
         black_box(&unpacked);
