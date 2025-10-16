@@ -165,8 +165,8 @@ fn throughput_decompress_unchecked(bencher: Bencher) {
                     black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     REFERENCE,
                     array_mut_ref![unpacked, i * 1024, 1024],
-                )
-            };
+                );
+            }
         }
         black_box(&unpacked);
     });
@@ -241,16 +241,16 @@ fn throughput_decompress_separate_reference(bencher: Bencher) {
     let mut unpacked = vec![0u16; N];
 
     with_counter!(bencher, unpacked.len() * std::mem::size_of::<u16>()).bench_local(|| {
+        // First pass: unpack all batches using bitpacking kernel
         for i in 0..NUM_BATCHES {
-            // First, unpack using bitpacking kernel
             BitPacking::unpack::<WIDTH, B>(
                 black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                 array_mut_ref![unpacked, i * 1024, 1024],
             );
-            // Then, apply reference values to this batch
-            for j in (i * 1024)..((i + 1) * 1024) {
-                unpacked[j] = unpacked[j].wrapping_add(REFERENCE);
-            }
+        }
+        // Second pass: apply reference values
+        for val in &mut unpacked {
+            *val = val.wrapping_add(REFERENCE);
         }
         black_box(&unpacked);
     });
@@ -279,19 +279,19 @@ fn throughput_decompress_unchecked_separate_reference(bencher: Bencher) {
     let mut unpacked = vec![0u16; N];
 
     with_counter!(bencher, unpacked.len() * std::mem::size_of::<u16>()).bench_local(|| {
+        // First pass: unpack all batches using unchecked bitpacking kernel
         for i in 0..NUM_BATCHES {
-            // First, unpack using unchecked bitpacking kernel
             unsafe {
                 BitPacking::unchecked_unpack(
                     WIDTH,
                     black_box(array_ref![packed, i * OUTPUT_BATCH_SIZE, OUTPUT_BATCH_SIZE]),
                     array_mut_ref![unpacked, i * 1024, 1024],
-                )
-            };
-            // Then, apply reference values to this batch
-            for j in (i * 1024)..((i + 1) * 1024) {
-                unpacked[j] = unpacked[j].wrapping_add(REFERENCE);
+                );
             }
+        }
+        // Second pass: apply reference values
+        for val in &mut unpacked {
+            *val = val.wrapping_add(REFERENCE);
         }
         black_box(&unpacked);
     });
