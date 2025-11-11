@@ -7,28 +7,37 @@ use crate::{pack, seq_t, supported_bit_width, unpack, FastLanes, FL_ORDER};
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {
-    /// Packs 1024 elements into W bits each.
-    /// The output is given as Self to ensure correct alignment.
+    /// Packs 1024 elements into `W` bits each.
+    ///
+    /// The output is given as `Self` to ensure correct alignment.
     fn pack<const W: usize, const B: usize>(input: &[Self; 1024], output: &mut [Self; B]);
 
-    /// Packs 1024 elements into `W` bits each, where `W` is runtime-known instead of
-    /// compile-time known.
+    /// Packs 1024 elements into `W` bits each, where `W` is runtime-known instead of compile-time
+    /// known.
     ///
     /// # Safety
-    /// The input slice must be of exactly length 1024. The output slice must be of length
-    /// `1024 * W / T`, where `T` is the bit-width of Self and `W` is the packed width.
+    ///
+    /// - The input slice must be of exactly length 1024.
+    /// - The output slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
+    ///   of `Self` and `W` is the packed bit-width.
+    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
+    ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks 1024 elements from `W` bits each.
     fn unpack<const W: usize, const B: usize>(input: &[Self; B], output: &mut [Self; 1024]);
 
-    /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of
-    /// compile-time known.
+    /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of compile-time
+    /// known.
     ///
     /// # Safety
-    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
-    /// is the packed width. The output slice must be of exactly length 1024.
+    ///
+    /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
+    ///   of `Self` and `W` is the packed bit-width.
+    /// - The output slice must be of exactly length 1024.
+    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
+    ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
@@ -39,8 +48,11 @@ pub trait BitPacking: FastLanes {
     /// where `W` is runtime-known instead of compile-time known.
     ///
     /// # Safety
-    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
-    /// is the packed width. The output slice must be of exactly length 1024.
+    ///
+    /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
+    ///   of `Self` and `W` is the packed bit-width.
+    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
+    ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
 }
