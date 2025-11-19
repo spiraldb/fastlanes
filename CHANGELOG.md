@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/spiraldb/fastlanes/compare/v0.5.0...v0.5.1) - 2025-11-19
+
+### Other
+
+- *(deps)* update codspeedhq/action digest to daf3e64 ([#103](https://github.com/spiraldb/fastlanes/pull/103))
+- clear up safety documentation ([#102](https://github.com/spiraldb/fastlanes/pull/102))
+- *(deps)* update codspeedhq/action digest to bb005fe ([#101](https://github.com/spiraldb/fastlanes/pull/101))
+- *(deps)* update codspeedhq/action digest to c6574d0 ([#99](https://github.com/spiraldb/fastlanes/pull/99))
+
 ## [0.5.0](https://github.com/spiraldb/fastlanes/compare/v0.4.0...v0.5.0) - 2025-10-16
 
 ### Added
