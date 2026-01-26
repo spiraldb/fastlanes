@@ -31,6 +31,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/spiraldb/fastlanes/compare/v0.5.0...v0.5.1) - 2026-01-26
+
+### Other
+
+- *(deps)* update codspeedhq/action digest to e736f0d ([#111](https://github.com/spiraldb/fastlanes/pull/111))
+- *(deps)* update actions/checkout action to v6 ([#109](https://github.com/spiraldb/fastlanes/pull/109))
+- *(deps)* update swatinem/rust-cache digest to 779680d ([#108](https://github.com/spiraldb/fastlanes/pull/108))
+- *(deps)* update marcoieni/release-plz-action digest to e592230 ([#107](https://github.com/spiraldb/fastlanes/pull/107))
+- *(deps)* update codspeedhq/action digest to 346a2d8 ([#105](https://github.com/spiraldb/fastlanes/pull/105))
+- *(deps)* update actions/checkout digest to 93cb6ef ([#104](https://github.com/spiraldb/fastlanes/pull/104))
+- *(deps)* update codspeedhq/action digest to daf3e64 ([#103](https://github.com/spiraldb/fastlanes/pull/103))
+- clear up safety documentation ([#102](https://github.com/spiraldb/fastlanes/pull/102))
+- *(deps)* update codspeedhq/action digest to bb005fe ([#101](https://github.com/spiraldb/fastlanes/pull/101))
+- *(deps)* update codspeedhq/action digest to c6574d0 ([#99](https://github.com/spiraldb/fastlanes/pull/99))
+
 ## [0.5.0](https://github.com/spiraldb/fastlanes/compare/v0.4.0...v0.5.0) - 2025-10-16
 
 ### Added
