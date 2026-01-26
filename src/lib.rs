@@ -8,20 +8,20 @@ use num_traits::{PrimInt, Unsigned};
 
 mod bitpacking;
 mod bitpacking_cmp;
+mod cuda_kernel_gen;
 mod delta;
 mod ffor;
 mod macros;
 mod rle;
 mod transpose;
-mod cuda_kernel_gen;
 
 pub use bitpacking::*;
 pub use bitpacking_cmp::*;
+pub use cuda_kernel_gen::*;
 pub use delta::*;
 pub use ffor::*;
 pub use rle::*;
 pub use transpose::*;
-pub use cuda_kernel_gen::*;
 
 pub const FL_ORDER: [usize; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
