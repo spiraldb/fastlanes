@@ -21,3 +21,16 @@ fn transpose_u16(bencher: Bencher) {
         black_box(transposed);
     });
 }
+
+#[divan::bench]
+fn transpose_u16_inplace(bencher: Bencher) {
+    bencher
+        .with_inputs(|| {
+            let mut values: [u16; 1024] = [0; 1024];
+            for i in 0..1024 {
+                values[i] = (i % u16::MAX as usize) as u16;
+            }
+            values
+        })
+        .bench_local_refs(|values| Transpose::transpose_inplace(values));
+}
