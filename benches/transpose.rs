@@ -32,5 +32,8 @@ fn transpose_u16_inplace(bencher: Bencher) {
             }
             values
         })
-        .bench_local_refs(|values| Transpose::transpose_inplace(values));
+        .bench_local_refs(|values| {
+            Transpose::transpose_inplace(values);
+            black_box(values);
+        });
 }

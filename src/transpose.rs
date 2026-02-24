@@ -41,6 +41,7 @@ impl<T: FastLanes> Transpose for T {
 /// Each index belongs to exactly one cycle of the permutation. We process each cycle
 /// exactly once by only starting a cycle walk when `start` is the minimum index in
 /// that cycle.
+#[allow(clippy::inline_always)]
 #[inline(always)]
 fn apply_permutation_inplace<T: Copy, F: Fn(usize) -> usize>(data: &mut [T; 1024], perm: F) {
     seq!(start in 0..1024 {{
@@ -54,6 +55,7 @@ fn apply_permutation_inplace<T: Copy, F: Fn(usize) -> usize>(data: &mut [T; 1024
             let mut j = perm(first_dest);
             let mut is_min = true;
             while j != start {
+                #[allow(clippy::absurd_extreme_comparisons)]
                 #[allow(unused_comparisons)]
                 if j < start {
                     is_min = false;
