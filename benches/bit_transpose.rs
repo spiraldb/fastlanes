@@ -32,7 +32,7 @@ fn transpose_scalar(bencher: Bencher) {
     bencher
         .with_inputs(|| (&input, [0u8; 128]))
         .bench_local_values(|(input, mut output)| {
-            transpose_bits_scalar(&input, &mut output);
+            transpose_bits_scalar(input, &mut output);
             output
         });
 }
@@ -66,7 +66,7 @@ fn untranspose_scalar(bencher: Bencher) {
     bencher
         .with_inputs(|| (&input, [0u8; 128]))
         .bench_local_values(|(input, mut output)| {
-            untranspose_bits_scalar(&input, &mut output);
+            untranspose_bits_scalar(input, &mut output);
             output
         });
 }
@@ -115,7 +115,7 @@ mod x86 {
         bencher
             .with_inputs(|| (&input, [0u8; 128]))
             .bench_local_values(|(input, mut output)| {
-                unsafe { transpose_bits_bmi2(&input, &mut output) };
+                unsafe { transpose_bits_bmi2(input, &mut output) };
                 output
             });
     }
@@ -131,7 +131,7 @@ mod x86 {
         bencher
             .with_inputs(|| (&input, [0u8; 128]))
             .bench_local_values(|(input, mut output)| {
-                unsafe { transpose_bits_vbmi(&input, &mut output) };
+                unsafe { transpose_bits_vbmi(input, &mut output) };
                 output
             });
     }
@@ -149,7 +149,7 @@ mod x86 {
         bencher
             .with_inputs(|| (&input, [0u8; 128]))
             .bench_local_values(|(input, mut output)| {
-                unsafe { untranspose_bits_bmi2(&input, &mut output) };
+                unsafe { untranspose_bits_bmi2(input, &mut output) };
                 output
             });
     }
@@ -165,7 +165,7 @@ mod x86 {
         bencher
             .with_inputs(|| (&input, [0u8; 128]))
             .bench_local_values(|(input, mut output)| {
-                unsafe { untranspose_bits_vbmi(&input, &mut output) };
+                unsafe { untranspose_bits_vbmi(input, &mut output) };
                 output
             });
     }
@@ -265,7 +265,7 @@ mod aarch64 {
         bencher
             .with_inputs(|| (&input, [0u8; 128]))
             .bench_local_values(|(input, mut output)| {
-                unsafe { transpose_bits_neon(&input, &mut output) };
+                unsafe { transpose_bits_neon(input, &mut output) };
                 output
             });
     }
@@ -279,7 +279,7 @@ mod aarch64 {
         bencher
             .with_inputs(|| (&input, [0u8; 128]))
             .bench_local_values(|(input, mut output)| {
-                unsafe { untranspose_bits_neon(&input, &mut output) };
+                unsafe { untranspose_bits_neon(input, &mut output) };
                 output
             });
     }
