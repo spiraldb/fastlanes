@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
 
 use divan::Bencher;
-use fastlanes::bit_transpose::{transpose_bits, untranspose_bits_scalar};
+use fastlanes::bit_transpose::{transpose_bits_scalar, untranspose_bits_scalar};
 
 fn main() {
     divan::main();
@@ -32,7 +32,7 @@ fn transpose_scalar(bencher: Bencher) {
     bencher
         .with_inputs(|| (&input, [0u8; 128]))
         .bench_local_values(|(input, mut output)| {
-            transpose_bits(&input, &mut output);
+            transpose_bits_scalar(&input, &mut output);
             output
         });
 }
@@ -49,7 +49,7 @@ fn transpose_scalar_throughput(bencher: Bencher) {
         .with_inputs(|| (&inputs, vec![[0u8; 128]; BATCH_SIZE]))
         .bench_local_values(|(inputs, mut outputs)| {
             for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
-                transpose_bits(input, output);
+                transpose_bits_scalar(input, output);
             }
             outputs
         });
