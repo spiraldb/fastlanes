@@ -162,9 +162,7 @@ pub unsafe fn transpose_bits_neon(input: &[u8; 128], output: &mut [u8; 128]) {
             let from_hi = vqtbl4q_u8(tbl_hi, idx_hi);
             let gathered = vorrq_u8(from_lo, from_hi);
 
-            let v = crate::bit_transpose::aarch64::bit_transpose_8x8_neon(vreinterpretq_u64_u8(
-                gathered,
-            ));
+            let v = bit_transpose_8x8_neon(vreinterpretq_u64_u8(gathered));
             vst1q_u8(buf.as_mut_ptr().add(pair * 16), vreinterpretq_u8_u64(v));
         }
 
