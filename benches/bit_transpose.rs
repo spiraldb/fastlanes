@@ -107,7 +107,6 @@ mod x86 {
     #[divan::bench]
     fn transpose_bmi2(bencher: Bencher) {
         if !has_bmi2() {
-            eprintln!("BMI2 not available, skipping benchmark");
             return;
         }
 
@@ -124,7 +123,6 @@ mod x86 {
     #[divan::bench]
     fn transpose_vbmi(bencher: Bencher) {
         if !has_vbmi() {
-            eprintln!("AVX512VBMI not available, skipping benchmark");
             return;
         }
 
@@ -143,7 +141,6 @@ mod x86 {
     #[divan::bench]
     fn untranspose_bmi2(bencher: Bencher) {
         if !has_bmi2() {
-            eprintln!("BMI2 not available, skipping benchmark");
             return;
         }
 
@@ -160,7 +157,6 @@ mod x86 {
     #[divan::bench]
     fn untranspose_vbmi(bencher: Bencher) {
         if !has_vbmi() {
-            eprintln!("AVX512VBMI not available, skipping benchmark");
             return;
         }
 
@@ -179,7 +175,6 @@ mod x86 {
     #[divan::bench]
     fn transpose_bmi2_throughput(bencher: Bencher) {
         if !has_bmi2() {
-            eprintln!("BMI2 not available, skipping benchmark");
             return;
         }
 
@@ -198,7 +193,6 @@ mod x86 {
     #[divan::bench]
     fn transpose_vbmi_throughput(bencher: Bencher) {
         if !has_vbmi() {
-            eprintln!("AVX512VBMI not available, skipping benchmark");
             return;
         }
 
@@ -219,7 +213,6 @@ mod x86 {
     #[divan::bench]
     fn untranspose_bmi2_throughput(bencher: Bencher) {
         if !has_bmi2() {
-            eprintln!("BMI2 not available, skipping benchmark");
             return;
         }
 
@@ -238,7 +231,6 @@ mod x86 {
     #[divan::bench]
     fn untranspose_vbmi_throughput(bencher: Bencher) {
         if !has_vbmi() {
-            eprintln!("AVX512VBMI not available, skipping benchmark");
             return;
         }
 
