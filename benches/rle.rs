@@ -1,3 +1,4 @@
+use arrayref::array_ref;
 use divan::Bencher;
 use fastlanes::RLE;
 use std::hint::black_box;
@@ -47,14 +48,13 @@ fn rle_throughput_encode_32(bencher: Bencher) {
     let input_data: Vec<u32> = (0..N).map(|i| (i / 100) as u32).collect();
 
     with_counter!(bencher, input_data.len() * std::mem::size_of::<u32>()).bench_local(|| {
+        let mut rle_vals = [0u32; 1024];
+        let mut rle_idxs = [0u16; 1024];
         for batch in 0..NUM_BATCHES {
             let batch_start = batch * 1024;
-            let input_batch: [u32; 1024] = std::array::from_fn(|i| input_data[batch_start + i]);
+            let input_batch = array_ref![input_data, batch_start, 1024];
 
-            let mut rle_vals = [0u32; 1024];
-            let mut rle_idxs = [0u16; 1024];
-
-            let unique_count = u32::encode(black_box(&input_batch), &mut rle_vals, &mut rle_idxs);
+            let unique_count = u32::encode(black_box(input_batch), &mut rle_vals, &mut rle_idxs);
             black_box(unique_count);
         }
     });
@@ -80,8 +80,8 @@ fn rle_throughput_decode_32(bencher: Bencher) {
     }
 
     with_counter!(bencher, input_data.len() * std::mem::size_of::<u32>()).bench_local(|| {
+        let mut output = [0u32; 1024];
         for (rle_vals, rle_idxs, unique_count) in &encoded_batches {
-            let mut output = [0u32; 1024];
             u32::decode(
                 black_box(&rle_vals[..*unique_count]),
                 black_box(rle_idxs),
