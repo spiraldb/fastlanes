@@ -57,10 +57,8 @@ macro_rules! impl_packing_compare {
 
                 for lane in (0..Self::LANES) {
                     unpack!($T, W, input, lane, |$idx, $elem| {
-                        unsafe {
-                            *output.get_unchecked_mut($idx / 64) |=
-                                u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
-                        }
+                        output[$idx / 64] |=
+                            u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
 
                     });
                 }
