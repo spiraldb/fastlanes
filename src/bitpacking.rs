@@ -137,8 +137,8 @@ macro_rules! impl_packing {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::unpack::<W, B>(
-                                array_ref![input, 0, B],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { &*input.as_ptr().cast::<[Self; B]>() },
+                                unsafe { &mut *output.as_mut_ptr().cast::<[Self; 1024]>() },
                             )
                         },)*
                         // seq_t has exclusive upper bound
@@ -146,8 +146,8 @@ macro_rules! impl_packing {
                             const W: usize = <$T>::T;
                             const B: usize = 1024;
                             Self::unpack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { &*input.as_ptr().cast::<[Self; B]>() },
+                                unsafe { &mut *output.as_mut_ptr().cast::<[Self; 1024]>() },
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)
@@ -219,13 +219,19 @@ macro_rules! impl_packing {
                     match width {
                         #(W => {
                             const B: usize = 1024 * W / T;
-                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, B], index);
+                            return <$T>::unpack_single::<W, B>(
+                                unsafe { &*packed.as_ptr().cast::<[Self; B]>() },
+                                index,
+                            );
                         },)*
                         // seq_t has exclusive upper bound
                         T => {
                             const W: usize = T;
                             const B: usize = 1024;
-                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, 1024], index);
+                            return <$T>::unpack_single::<W, B>(
+                                unsafe { &*packed.as_ptr().cast::<[Self; B]>() },
+                                index,
+                            );
                         },
                         _ => unreachable!("Unsupported width: {}", width)
                     }
