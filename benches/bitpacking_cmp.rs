@@ -45,7 +45,7 @@ mod bench {
                     |a, b| a == b,
                     black_box(value),
                 );
-                black_box(&unpacked);
+                black_box(&unpacked)
             };
         });
     }
@@ -66,7 +66,7 @@ mod bench {
 
         bencher.bench_local(|| {
             unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
-            collect_bool_cmp(&unpacked, black_box(&value), black_box(&mut bools));
+            collect_bool_cmp(&unpacked, &black_box(value), black_box(&mut bools));
             black_box(&bools);
         });
     }
@@ -101,15 +101,11 @@ mod bench {
     pub fn collect_bool<F: FnMut(usize) -> bool>(mut f: F, output: &mut [u64; 16]) {
         output.fill(0);
 
-        for chunk in 0..16 {
-            let mut packed = 0;
+        for (chunk, packed) in output.iter_mut().enumerate() {
             for bit_idx in 0..64 {
                 let i = bit_idx + chunk * 64;
-                packed |= u64::from(f(i)) << bit_idx;
+                *packed |= u64::from(f(i)) << bit_idx;
             }
-
-            // SAFETY: Already allocated sufficient capacity
-            output[chunk] = packed;
         }
     }
 }
