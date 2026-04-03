@@ -4,20 +4,20 @@ use crate::{supported_bit_width, FastLanes, FastLanesComparable};
 use paste::paste;
 
 pub trait BitPackingCompare: FastLanes {
-    /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
+    /// A fused unpack (see `BitPacking::unpack`) and compare into a 1024-bit mask.
     /// This will compare using the comparison function all the packed values with a constant value,
     /// the values are of type `Self`, whereas the comparison is on the type `V` (where `V::Bitpacked` = `Self`).
     /// This allows for comparison between signed values which are bitpacked as unsigned ones.
     fn unpack_cmp<const W: usize, const B: usize, V, F>(
         input: &[Self; B],
-        output: &mut [bool; 1024],
+        output: &mut [u64; 16],
         comparison: F,
         value: V,
     ) where
         V: FastLanesComparable<Bitpacked = Self>,
         F: Fn(V, V) -> bool;
 
-    /// A fused unpack (see `BitPacking::unpack`) and compare and pack into bit bools.
+    /// A fused unpack (see `BitPacking::unpack`) and compare into a 1024-bit mask.
     ///
     /// # Safety
     /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
@@ -26,7 +26,7 @@ pub trait BitPackingCompare: FastLanes {
     unsafe fn unchecked_unpack_cmp<V, F>(
         width: usize,
         input: &[Self],
-        output: &mut [bool; 1024],
+        output: &mut [u64; 16],
         comparison: F,
         value: V,
     ) where
@@ -40,7 +40,7 @@ macro_rules! impl_packing_compare {
             #[inline(never)]
             fn unpack_cmp<const W: usize, const B: usize, V, F>(
                 input: &[Self; B],
-                output: &mut [bool; 1024],
+                output: &mut [u64; 16],
                 f: F,
                 other: V,
             )
@@ -53,9 +53,12 @@ macro_rules! impl_packing_compare {
                     assert!(B == 1024 * W / Self::T);
                 }
 
+                output.fill(0);
+
                 for lane in (0..Self::LANES) {
                     unpack!($T, W, input, lane, |$idx, $elem| {
-                        output[$idx] = f(V::as_unpacked($elem), other);
+                        output[$idx / 64] |=
+                            u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
                     });
                 }
             }
@@ -63,7 +66,7 @@ macro_rules! impl_packing_compare {
             unsafe fn unchecked_unpack_cmp<V, F>(
                  width: usize,
                  input: &[Self],
-                 output: &mut [bool; 1024],
+                 output: &mut [u64; 16],
                  comparison: F,
                  value: V,
             )
@@ -103,7 +106,6 @@ impl_packing_compare!(u64);
 mod tests {
     use super::*;
     use crate::BitPacking;
-    use alloc::vec::Vec;
     use core::array;
 
     #[test]
@@ -120,14 +122,17 @@ mod tests {
         // Check equality against every value of the vector
         for v in 0..1024 {
             let cmp = {
-                let mut output = [false; 1024];
+                let mut output = [0u64; 16];
                 T::unpack_cmp::<W, B, _, _>(&packed, &mut output, |a, b| a == b, v);
                 output
             };
 
-            let expected = values.iter().map(|&x| x == v).collect::<Vec<_>>();
+            let mut expected = [0u64; 16];
+            for (idx, &value) in values.iter().enumerate() {
+                expected[idx / 64] |= u64::from(value == v) << (idx % 64);
+            }
 
-            assert_eq!(cmp.as_slice(), expected.as_slice(), "Failed == {v}");
+            assert_eq!(cmp, expected, "Failed == {v}");
         }
     }
 }

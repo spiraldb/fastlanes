@@ -34,7 +34,7 @@ mod bench {
 
         unsafe { BitPacking::unchecked_pack(width, &values, &mut packed) };
 
-        let mut unpacked = [false; 1024];
+        let mut unpacked = [0u64; 16];
 
         bencher.bench_local(|| {
             unsafe {
@@ -99,6 +99,8 @@ mod bench {
 
     #[inline]
     pub fn collect_bool<F: FnMut(usize) -> bool>(mut f: F, output: &mut [u64; 16]) {
+        output.fill(0);
+
         for chunk in 0..16 {
             let mut packed = 0;
             for bit_idx in 0..64 {
