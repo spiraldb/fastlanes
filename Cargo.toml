@@ -56,10 +56,6 @@ name = "bitpacking_cmp"
 harness = false
 
 [[bench]]
-name = "bitpacking_cmp_cod"
-harness = false
-
-[[bench]]
 name = "delta"
 harness = false
 
