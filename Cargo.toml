@@ -8,6 +8,7 @@ repository = "https://github.com/spiraldb/fastlanes"
 authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec"]
 edition = "2021"
+rust-version = "1.91"
 
 [dependencies]
 arrayref = "0.3.7"

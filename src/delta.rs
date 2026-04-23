@@ -1,7 +1,6 @@
 #![allow(unused_assignments)]
 
 use crate::{iterate, supported_bit_width, unpack, BitPacking, FastLanes};
-use paste::paste;
 
 pub trait Delta: BitPacking {
     fn delta<const LANES: usize>(
