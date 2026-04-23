@@ -60,7 +60,7 @@ jobs:
 
       - name: Build benchmarks
         env:
-          RUSTFLAGS: "-C target-cpu=+avx2"
+          RUSTFLAGS: "-C target-feature=+avx2"
         run: |
           cargo codspeed build --profile bench
 
