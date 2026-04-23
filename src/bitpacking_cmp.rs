@@ -53,19 +53,51 @@ macro_rules! impl_packing_compare {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                output.fill(0);
+                if <$T>::T == 8 {
+                    // u8 (LANES == 128). Split 128 lanes into two halves of 64
+                    // so the outer dimension of `output[2*row + half]` becomes
+                    // loop-invariant inside each half, which is what the
+                    // vectorizer needs to widen the 64-lane reduction.
+                    let mut output_local = [0u64; 16];
 
-                for lane in 0..Self::LANES {
-                    unsafe { core::hint::assert_unchecked(lane < Self::LANES); }
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        // SAFETY: `unpack!` emits $idx = row * LANES + lane with
-                        // row < T/8 and lane < LANES, so $idx < 1024 for all
-                        // supported T ∈ {u8, u16, u32, u64}.
-                        unsafe { core::hint::assert_unchecked($idx < 1024); }
-                        unsafe { core::hint::assert_unchecked($idx >> 6 < 16); }
-                        let pred = u64::from(f(V::as_unpacked($elem), other));
-                        output[$idx / 64] |= pred << ($idx % 64);
-                    });
+                    for half in 0..2usize {
+                        // SAFETY: outer loop bound.
+                        unsafe { core::hint::assert_unchecked(half < 2); }
+                        let mut row_words = [0u64; 8];
+
+                        for lane_in_half in 0..64usize {
+                            // SAFETY: inner loop bound.
+                            unsafe { core::hint::assert_unchecked(lane_in_half < 64); }
+                            let lane = half * 64 + lane_in_half;
+                            unsafe { core::hint::assert_unchecked(lane < 128); }
+                            unpack!($T, W, input, lane, |$idx, $elem| {
+                                // SAFETY: for u8, unpack! emits
+                                // $idx = row * 128 + lane with row < 8, so
+                                // $idx < 1024 and $idx / 128 < 8.
+                                unsafe { core::hint::assert_unchecked($idx < 1024); }
+                                let row = $idx / 128;
+                                unsafe { core::hint::assert_unchecked(row < 8); }
+                                let pred = u64::from(f(V::as_unpacked($elem), other));
+                                row_words[row] |= pred << lane_in_half;
+                            });
+                        }
+
+                        for row in 0..8 {
+                            output_local[2 * row + half] = row_words[row];
+                        }
+                    }
+
+                    *output = output_local;
+                } else {
+                    output.fill(0);
+
+                    for lane in 0..Self::LANES {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            unsafe { core::hint::assert_unchecked($idx < 1024); }
+                            output[$idx / 64] |=
+                                u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
+                        });
+                    }
                 }
             }
 
