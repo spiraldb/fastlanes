@@ -1,11 +1,11 @@
-fn main() {
-    divan::main();
-}
-
 use divan::Bencher;
 use fastlanes::{BitPacking, BitPackingCompare, FastLanesComparable};
 use num_traits::FromPrimitive;
 use std::hint::black_box;
+
+fn main() {
+    divan::main();
+}
 
 const BENCH_W: [usize; 4] = [2, 3, 5, 7];
 
