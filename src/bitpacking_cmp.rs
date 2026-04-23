@@ -49,38 +49,23 @@ macro_rules! impl_packing_compare {
                 F: Fn(V, V) -> bool
             {
                 const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(supported_bit_width(W, Self::T));
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                if Self::LANES > 64 {
-                    // For `u8`, staging byte predicates keeps the unpack/compare loop in a shape
-                    // LLVM can still vectorize, then we pack them into the final 1024-bit mask.
-                    let mut predicates = [0u8; 1024];
+                output.fill(0);
 
-                    #[allow(clippy::cast_lossless)]
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            predicates[$idx] = (f(V::as_unpacked($elem), other)) as u8;
-                        });
-                    }
-
-                    for (output_word, chunk) in output.iter_mut().zip(predicates.chunks_exact(64)) {
-                        *output_word = 0;
-
-                        for (bit, &predicate) in chunk.iter().enumerate() {
-                            *output_word |= u64::from(predicate) << bit;
-                        }
-                    }
-                } else {
-                    output.fill(0);
-
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            output[$idx / 64] |=
-                                u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
-                        });
-                    }
+                for lane in 0..Self::LANES {
+                    unsafe { core::hint::assert_unchecked(lane < Self::LANES); }
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        // SAFETY: `unpack!` emits $idx = row * LANES + lane with
+                        // row < T/8 and lane < LANES, so $idx < 1024 for all
+                        // supported T ∈ {u8, u16, u32, u64}.
+                        unsafe { core::hint::assert_unchecked($idx < 1024); }
+                        unsafe { core::hint::assert_unchecked($idx >> 6 < 16); }
+                        let pred = u64::from(f(V::as_unpacked($elem), other));
+                        output[$idx / 64] |= pred << ($idx % 64);
+                    });
                 }
             }
 
@@ -160,6 +145,15 @@ mod tests {
     fn test_unpack_eq_u8() {
         type T = u8;
         const W: usize = 5;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
+    }
+
+    #[test]
+    fn test_unpack_eq_u8_w7() {
+        type T = u8;
+        const W: usize = 7;
         const B: usize = 1024 * W / T::T;
 
         assert_unpack_eq::<T, W, B>();
