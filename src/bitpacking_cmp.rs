@@ -55,28 +55,18 @@ macro_rules! impl_packing_compare {
 
                 if <$T>::T == 8 {
                     // u8 (LANES == 128). Split 128 lanes into two halves of 64
-                    // so the outer dimension of `output[2*row + half]` becomes
-                    // loop-invariant inside each half, which is what the
-                    // vectorizer needs to widen the 64-lane reduction.
+                    // so `output[2*row + half]` is loop-invariant per half —
+                    // the condition LLVM's vectorizer needs to widen the
+                    // 64-lane reduction.
                     let mut output_local = [0u64; 16];
 
                     for half in 0..2usize {
-                        // SAFETY: outer loop bound.
-                        unsafe { core::hint::assert_unchecked(half < 2); }
                         let mut row_words = [0u64; 8];
 
                         for lane_in_half in 0..64usize {
-                            // SAFETY: inner loop bound.
-                            unsafe { core::hint::assert_unchecked(lane_in_half < 64); }
                             let lane = half * 64 + lane_in_half;
-                            unsafe { core::hint::assert_unchecked(lane < 128); }
                             unpack!($T, W, input, lane, |$idx, $elem| {
-                                // SAFETY: for u8, unpack! emits
-                                // $idx = row * 128 + lane with row < 8, so
-                                // $idx < 1024 and $idx / 128 < 8.
-                                unsafe { core::hint::assert_unchecked($idx < 1024); }
                                 let row = $idx / 128;
-                                unsafe { core::hint::assert_unchecked(row < 8); }
                                 let pred = u64::from(f(V::as_unpacked($elem), other));
                                 row_words[row] |= pred << lane_in_half;
                             });
