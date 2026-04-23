@@ -54,26 +54,31 @@ macro_rules! impl_packing_compare {
                 }
 
                 if <$T>::T == 8 {
-                    // u8 (LANES == 128). Split 128 lanes into two halves of 64
-                    // so `output[2*row + half]` is loop-invariant per half —
-                    // the condition LLVM's vectorizer needs to widen the
-                    // 64-lane reduction.
+                    // u8 (LANES == 128). Stage 0xFF/0x00 byte predicates per
+                    // row, per half, then reduce with the canonical movemask
+                    // pattern LLVM recognizes as `vpmovmskb`.
                     let mut output_local = [0u64; 16];
 
                     for half in 0..2usize {
-                        let mut row_words = [0u64; 8];
+                        let mut row_bytes: [[u8; 64]; 8] = [[0; 64]; 8];
 
+                        #[allow(clippy::cast_lossless)]
                         for lane_in_half in 0..64usize {
                             let lane = half * 64 + lane_in_half;
                             unpack!($T, W, input, lane, |$idx, $elem| {
                                 let row = $idx / 128;
-                                let pred = u64::from(f(V::as_unpacked($elem), other));
-                                row_words[row] |= pred << lane_in_half;
+                                row_bytes[row][lane_in_half] =
+                                    (f(V::as_unpacked($elem), other) as u8) *  u8::MAX;
                             });
                         }
 
                         for row in 0..8 {
-                            output_local[2 * row + half] = row_words[row];
+                            let bytes: &[u8; 64] = &row_bytes[row];
+                            let mut mask = 0u64;
+                            for i in 0..64 {
+                                mask |= ((bytes[i] as u64) >> 7) << i;
+                            }
+                            output_local[2 * row + half] = mask;
                         }
                     }
 
