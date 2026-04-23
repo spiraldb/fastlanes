@@ -53,14 +53,35 @@ macro_rules! impl_packing_compare {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                output.fill(0);
+                if Self::LANES > 64 {
+                    // For `u8`, staging byte predicates keeps the unpack/compare loop in a shape
+                    // LLVM can still vectorize, then we pack them into the final 1024-bit mask.
+                    let mut predicates = [0u8; 1024];
 
-                for lane in (0..Self::LANES) {
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        output[$idx / 64] |=
-                            u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
+                    for lane in 0..Self::LANES {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            predicates[$idx] = u8::from(f(V::as_unpacked($elem), other));
+                        });
+                    }
 
-                    });
+                    for (output_word, chunk) in output.iter_mut().zip(predicates.chunks_exact(64)) {
+                        let mut word = 0u64;
+
+                        for (bit, &predicate) in chunk.iter().enumerate() {
+                            word |= u64::from(predicate) << bit;
+                        }
+
+                        *output_word = word;
+                    }
+                } else {
+                    output.fill(0);
+
+                    for lane in 0..Self::LANES {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            output[$idx / 64] |=
+                                u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
+                        });
+                    }
                 }
             }
 
@@ -108,32 +129,49 @@ mod tests {
     use super::*;
     use crate::BitPacking;
     use core::array;
+    use num_traits::FromPrimitive;
 
-    #[test]
-    fn test_unpack_eq() {
-        type T = u32;
-        const W: usize = 10;
-        const B: usize = 1024 * W / T::T;
+    fn assert_unpack_eq<T, const W: usize, const B: usize>()
+    where
+        T: BitPackingCompare + BitPacking + FastLanesComparable<Bitpacked = T> + FromPrimitive,
+    {
+        let values = array::from_fn(|i| T::from_usize(i % (1 << W)).unwrap());
 
-        let values = array::from_fn(|i| i as T % (1 << W));
-
-        let mut packed = [0; (128 * W) / size_of::<T>()];
+        let mut packed = [T::zero(); B];
         T::pack::<W, B>(&values, &mut packed);
 
-        // Check equality against every value of the vector
-        for v in 0..1024 {
+        for v in 0..(1 << W) {
+            let expected_value = T::from_usize(v).unwrap();
             let cmp = {
                 let mut output = [0u64; 16];
-                T::unpack_cmp::<W, B, _, _>(&packed, &mut output, |a, b| a == b, v);
+                T::unpack_cmp::<W, B, _, _>(&packed, &mut output, |a, b| a == b, expected_value);
                 output
             };
 
             let mut expected = [0u64; 16];
             for (idx, &value) in values.iter().enumerate() {
-                expected[idx / 64] |= u64::from(value == v) << (idx % 64);
+                expected[idx / 64] |= u64::from(value == expected_value) << (idx % 64);
             }
 
             assert_eq!(cmp, expected, "Failed == {v}");
         }
+    }
+
+    #[test]
+    fn test_unpack_eq_u8() {
+        type T = u8;
+        const W: usize = 5;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
+    }
+
+    #[test]
+    fn test_unpack_eq_u32() {
+        type T = u32;
+        const W: usize = 10;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
     }
 }
