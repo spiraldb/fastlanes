@@ -4,7 +4,6 @@ fn main() {
     divan::main();
 }
 
-#[cfg(not(codspeed))]
 mod bench {
     use divan::Bencher;
     use fastlanes::{BitPacking, BitPackingCompare, FastLanesComparable};
