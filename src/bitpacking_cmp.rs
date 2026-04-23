@@ -53,34 +53,13 @@ macro_rules! impl_packing_compare {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                if Self::LANES > 64 {
-                    // For `u8`, staging byte predicates keeps the unpack/compare loop in a shape
-                    // LLVM can still vectorize, then we pack them into the final 1024-bit mask.
-                    let mut predicates = [0u8; 1024];
+                output.fill(0);
 
-                    #[allow(clippy::cast_lossless)]
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            predicates[$idx] = (f(V::as_unpacked($elem), other)) as u8;
-                        });
-                    }
-
-                    for (output_word, chunk) in output.iter_mut().zip(predicates.chunks_exact(64)) {
-                        *output_word = 0;
-
-                        for (bit, &predicate) in chunk.iter().enumerate() {
-                            *output_word |= u64::from(predicate) << bit;
-                        }
-                    }
-                } else {
-                    output.fill(0);
-
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            output[$idx / 64] |=
-                                u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
-                        });
-                    }
+                for lane in 0..Self::LANES {
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        output[$idx / 64] |=
+                            u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
+                    });
                 }
             }
 
