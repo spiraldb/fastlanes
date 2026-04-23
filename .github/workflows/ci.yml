@@ -46,7 +46,7 @@ jobs:
     name: Benchmark with Codspeed
     runs-on:
       - runs-on=${{ github.run_id }}
-      - family=c6id.8xlarge
+      - family=c7i.8xlarge
       - image=ubuntu24-full-x64
       - tag=bench-codspeed
 
@@ -60,7 +60,7 @@ jobs:
 
       - name: Build benchmarks
         env:
-          RUSTFLAGS: "-C target-feature=+avx2"
+          RUSTFLAGS: "-C target-cpu=+avx2"
         run: |
           cargo codspeed build --profile bench
 
