@@ -1,6 +1,7 @@
 use crate::seq_t;
 use crate::unpack;
 use crate::{supported_bit_width, FastLanes, FastLanesComparable};
+use core::mem::MaybeUninit;
 use paste::paste;
 
 pub trait BitPackingCompare: FastLanes {
@@ -56,18 +57,23 @@ macro_rules! impl_packing_compare {
                 if Self::LANES > 64 {
                     // For `u8`, staging byte predicates keeps the unpack/compare loop in a shape
                     // LLVM can still vectorize, then we pack them into the final 1024-bit mask.
-                    let mut predicates = [0u8; 1024];
+                    let mut predicates = [const { MaybeUninit::<$T>::uninit() }; 1024];
 
+
+                    #[allow(clippy::cast_lossless)]
                     for lane in 0..Self::LANES {
                         unpack!($T, W, input, lane, |$idx, $elem| {
-                            predicates[$idx] = u8::from(f(V::as_unpacked($elem), other));
+                            let predicate = (f(V::as_unpacked($elem), other)) as $T;
+                            predicates[$idx].write(predicate);
                         });
                     }
 
-                    for (output_word, chunk) in output.iter_mut().zip(predicates.chunks_exact(64)) {
+                    for (word_idx, output_word) in output.iter_mut().enumerate() {
+                        let base = word_idx * 64;
                         let mut word = 0u64;
 
-                        for (bit, &predicate) in chunk.iter().enumerate() {
+                        for bit in 0..64 {
+                            let predicate = unsafe { predicates[base + bit].assume_init() };
                             word |= u64::from(predicate) << bit;
                         }
 
