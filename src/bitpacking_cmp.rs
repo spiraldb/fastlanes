@@ -66,13 +66,11 @@ macro_rules! impl_packing_compare {
                     }
 
                     for (output_word, chunk) in output.iter_mut().zip(predicates.chunks_exact(64)) {
-                        let mut word = 0u64;
+                        *output_word = 0;
 
                         for (bit, &predicate) in chunk.iter().enumerate() {
-                            word |= u64::from(predicate) << bit;
+                            *output_word |= u64::from(predicate) << bit;
                         }
-
-                        *output_word = word;
                     }
                 } else {
                     output.fill(0);
