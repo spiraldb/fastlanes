@@ -79,22 +79,15 @@ macro_rules! impl_packing_compare {
 
                     *output = output_local;
                 } else {
-                    // LANES == 64 (u16), 32 (u32), or 16 (u64).
-                    // `$idx / 64` is a compile-time constant per unrolled row
-                    // and is loop-invariant across `lane`, so a stack-local
-                    // `[u64; 16]` lets LLVM promote the 16 accumulators into
-                    // SIMD registers and fold the lane loop into a
-                    // movemask-style reduction.
-                    let mut row_words = [0u64; 16];
+                    output.fill(0);
 
                     for lane in 0..Self::LANES {
                         unpack!($T, W, input, lane, |$idx, $elem| {
-                            row_words[$idx / 64] |=
+                            unsafe { core::hint::assert_unchecked($idx < 1024); }
+                            output[$idx / 64] |=
                                 u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
                         });
                     }
-
-                    *output = row_words;
                 }
             }
 
