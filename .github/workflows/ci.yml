@@ -60,9 +60,8 @@ jobs:
 
       - name: Build benchmarks
         env:
-          RUSTFLAGS: "-C target-cpu=x86-64-v3"
+          RUSTFLAGS: "-C target-feature=+avx2"
         run: |
-          lscpu | grep -E "Model name|Flags"
           cargo codspeed build --profile bench
 
       - name: Run benchmarks
