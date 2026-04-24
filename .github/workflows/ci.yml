@@ -60,7 +60,7 @@ jobs:
 
       - name: Build benchmarks
         env:
-          RUSTFLAGS: "-C target-feature=+avx2"
+          RUSTFLAGS: "-C target-cpu=cascadelake"
         run: |
           lscpu | grep -E "Model name|Flags"
           cargo codspeed build --profile bench
