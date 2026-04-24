@@ -52,26 +52,22 @@ mod bench {
     // a single crate API. This combines the exposed `BitPacking::unchecked_unpack`
     // entry point with a benchmark-local helper that compares unpacked values and
     // packs the results into the same `[u64; 16]` mask format as the fused API.
-    #[divan::bench(types=[u8, u16, u32, u64], args = ALL_WIDTHS, sample_count = 10000)]
-    fn bitpacking_cmp_seq<T>(bencher: Bencher, width: usize)
+    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
+    fn bitpacking_cmp_seq<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
     {
-        if width >= T::T {
-            return;
-        }
-
         let value = T::from_usize(1).expect("");
         let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = vec![T::zero(); 128 * width / size_of::<T>()];
+        let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
-        unsafe { T::unchecked_pack(width, &values, &mut packed) };
+        unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
         let mut unpacked = [T::zero(); 1024];
         let mut bools = [0u64; 16];
 
         bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(black_box(width), black_box(&packed), &mut unpacked) };
+            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
             collect_bool_cmp(&unpacked, &black_box(value), black_box(&mut bools));
             black_box(bools);
         });
