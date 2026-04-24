@@ -49,7 +49,7 @@ macro_rules! impl_packing_compare {
                 F: Fn(V, V) -> bool
             {
                 const {
-                    assert!(supported_bit_width(W, Self::T));
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
                     assert!(B == 1024 * W / Self::T);
                 }
 
