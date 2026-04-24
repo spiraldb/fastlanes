@@ -79,15 +79,22 @@ macro_rules! impl_packing_compare {
 
                     *output = output_local;
                 } else {
-                    output.fill(0);
+                    // LANES == 64 (u16), 32 (u32), or 16 (u64).
+                    // `$idx / 64` is a compile-time constant per unrolled row
+                    // and is loop-invariant across `lane`, so a stack-local
+                    // `[u64; 16]` lets LLVM promote the 16 accumulators into
+                    // SIMD registers and fold the lane loop into a
+                    // movemask-style reduction.
+                    let mut row_words = [0u64; 16];
 
                     for lane in 0..Self::LANES {
                         unpack!($T, W, input, lane, |$idx, $elem| {
-                            unsafe { core::hint::assert_unchecked($idx < 1024); }
-                            output[$idx / 64] |=
+                            row_words[$idx / 64] |=
                                 u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
                         });
                     }
+
+                    *output = row_words;
                 }
             }
 
@@ -146,7 +153,11 @@ mod tests {
         let mut packed = [T::zero(); B];
         T::pack::<W, B>(&values, &mut packed);
 
-        for v in 0..(1 << W) {
+        // Values cycle through [0, min(1024, 1 << W)); cap the search range so
+        // the test stays fast for larger W while still covering both match and
+        // no-match cases.
+        let search_limit = core::cmp::min(1usize << W, 2048);
+        for v in 0..search_limit {
             let expected_value = T::from_usize(v).unwrap();
             let cmp = {
                 let mut output = [0u64; 16];
@@ -185,6 +196,33 @@ mod tests {
     fn test_unpack_eq_u32() {
         type T = u32;
         const W: usize = 10;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
+    }
+
+    #[test]
+    fn test_unpack_eq_u16_w11() {
+        type T = u16;
+        const W: usize = 11;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
+    }
+
+    #[test]
+    fn test_unpack_eq_u32_w31() {
+        type T = u32;
+        const W: usize = 31;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
+    }
+
+    #[test]
+    fn test_unpack_eq_u64_w33() {
+        type T = u64;
+        const W: usize = 33;
         const B: usize = 1024 * W / T::T;
 
         assert_unpack_eq::<T, W, B>();
