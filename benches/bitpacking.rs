@@ -36,7 +36,7 @@ fn pack_16_to_3_stack(bencher: Bencher) {
 
     bencher.bench_local(|| {
         BitPacking::pack::<WIDTH, B>(black_box(&values), &mut packed);
-        black_box(packed);
+        black_box(&packed);
     });
 }
 
@@ -51,8 +51,8 @@ fn unpack_16_from_3_stack(bencher: Bencher) {
     let mut unpacked = [0u16; 1024];
 
     bencher.bench_local(|| {
-        BitPacking::unpack::<WIDTH, B>(&black_box(packed), &mut unpacked);
-        black_box(unpacked);
+        BitPacking::unpack::<WIDTH, B>(black_box(&packed), &mut unpacked);
+        black_box(&unpacked);
     });
 }
 
@@ -67,8 +67,8 @@ fn unchecked_unpack_16_from_3_stack(bencher: Bencher) {
     let mut unpacked = [0u16; 1024];
 
     bencher.bench_local(|| {
-        unsafe { BitPacking::unchecked_unpack(WIDTH, &black_box(packed), &mut unpacked) };
-        black_box(unpacked);
+        unsafe { BitPacking::unchecked_unpack(WIDTH, black_box(&packed), &mut unpacked) };
+        black_box(&unpacked);
     });
 }
 
