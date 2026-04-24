@@ -43,7 +43,7 @@ mod bench {
                     |a, b| a == b,
                     black_box(value),
                 );
-                black_box(&unpacked)
+                black_box(unpacked)
             };
         });
     }
@@ -69,7 +69,7 @@ mod bench {
         bencher.bench_local(|| {
             unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
             collect_bool_cmp(&unpacked, &black_box(value), black_box(&mut bools));
-            black_box(&bools);
+            black_box(bools);
         });
     }
 
@@ -89,7 +89,7 @@ mod bench {
 
         bencher.bench_local(|| {
             unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
-            black_box(&unpacked);
+            black_box(unpacked);
         });
     }
 

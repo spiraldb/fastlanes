@@ -18,6 +18,6 @@ fn transpose_u16(bencher: Bencher) {
 
     bencher.bench_local(|| {
         Transpose::transpose(black_box(&values), &mut transposed);
-        black_box(&transposed);
+        black_box(transposed);
     });
 }
