@@ -34,7 +34,7 @@ fn delta_u16_fused(bencher: Bencher) {
     with_counter!(bencher, values.len() * std::mem::size_of::<u16>()).bench_local(|| {
         let mut unpacked = [0; 1024];
         Delta::undelta_pack::<LANES, W, B>(black_box(&packed), black_box(&[0; 64]), &mut unpacked);
-        black_box(unpacked);
+        black_box(&unpacked);
     });
 }
 
@@ -62,7 +62,7 @@ fn delta_u16_unfused(bencher: Bencher) {
         BitPacking::unpack::<W, B>(black_box(&packed), &mut unpacked);
         let mut undelta = [0; 1024];
         Delta::undelta(black_box(&unpacked), black_box(&[0; 64]), &mut undelta);
-        black_box(undelta);
+        black_box(&undelta);
     });
 }
 
