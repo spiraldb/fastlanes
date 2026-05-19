@@ -26,26 +26,32 @@ mod bench {
             return;
         }
 
-        let value = T::from_usize(1).expect("");
-        let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = vec![T::zero(); 128 * width / size_of::<T>()];
+        bencher
+            .with_inputs(|| {
+                let value = T::from_usize(1).expect("");
+                let values = [T::from_usize(2).expect(""); 1024];
+                let mut packed = vec![T::zero(); 128 * width / size_of::<T>()];
 
-        unsafe { BitPacking::unchecked_pack(width, &values, &mut packed) };
+                unsafe { BitPacking::unchecked_pack(width, &values, &mut packed) };
 
-        let mut unpacked = [0u64; 16];
-
-        bencher.bench_local(|| {
-            unsafe {
-                BitPackingCompare::unchecked_unpack_cmp(
-                    black_box(width),
-                    black_box(&packed),
-                    &mut unpacked,
-                    |a, b| a == b,
-                    black_box(value),
-                );
-                black_box(unpacked)
-            };
-        });
+                FusedInput {
+                    value,
+                    packed,
+                    output: [0u64; 16],
+                }
+            })
+            .bench_refs(|input| {
+                unsafe {
+                    BitPackingCompare::unchecked_unpack_cmp(
+                        black_box(width),
+                        black_box(input.packed.as_slice()),
+                        &mut input.output,
+                        |a, b| a == b,
+                        black_box(input.value),
+                    );
+                }
+                black_box(&input.output);
+            });
     }
 
     // Baseline for the same logical operation as `bitpacking_cmp_fused`, but not
@@ -57,20 +63,36 @@ mod bench {
     where
         T: BitPacking + FromPrimitive + Copy,
     {
-        let value = T::from_usize(1).expect("");
-        let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
+        bencher
+            .with_inputs(|| {
+                let value = T::from_usize(1).expect("");
+                let values = [T::from_usize(2).expect(""); 1024];
+                let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
-        unsafe { T::unchecked_pack(W, &values, &mut packed) };
+                unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
-        let mut unpacked = [T::zero(); 1024];
-        let mut bools = [0u64; 16];
-
-        bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
-            collect_bool_cmp(&unpacked, &black_box(value), black_box(&mut bools));
-            black_box(bools);
-        });
+                SeqInput {
+                    value,
+                    packed,
+                    unpacked: [T::zero(); 1024],
+                    bools: [0u64; 16],
+                }
+            })
+            .bench_refs(|input| {
+                unsafe {
+                    T::unchecked_unpack(
+                        black_box(W),
+                        black_box(input.packed.as_slice()),
+                        &mut input.unpacked,
+                    )
+                };
+                collect_bool_cmp(
+                    &input.unpacked,
+                    &black_box(input.value),
+                    black_box(&mut input.bools),
+                );
+                black_box(&input.bools);
+            });
     }
 
     // Measures the unpack API exposed by the crate:
@@ -80,17 +102,46 @@ mod bench {
     where
         T: BitPacking + FromPrimitive + Copy,
     {
-        let values = [T::from_usize(2).expect(""); 1024];
-        let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
+        bencher
+            .with_inputs(|| {
+                let values = [T::from_usize(2).expect(""); 1024];
+                let mut packed = vec![T::zero(); 128 * W / size_of::<T>()];
 
-        unsafe { T::unchecked_pack(W, &values, &mut packed) };
+                unsafe { T::unchecked_pack(W, &values, &mut packed) };
 
-        let mut unpacked = [T::zero(); 1024];
+                UnpackInput {
+                    packed,
+                    unpacked: [T::zero(); 1024],
+                }
+            })
+            .bench_refs(|input| {
+                unsafe {
+                    T::unchecked_unpack(
+                        black_box(W),
+                        black_box(input.packed.as_slice()),
+                        &mut input.unpacked,
+                    )
+                };
+                black_box(&input.unpacked);
+            });
+    }
 
-        bencher.bench_local(|| {
-            unsafe { T::unchecked_unpack(black_box(W), black_box(&packed), &mut unpacked) };
-            black_box(unpacked);
-        });
+    struct FusedInput<T> {
+        value: T,
+        packed: Vec<T>,
+        output: [u64; 16],
+    }
+
+    struct SeqInput<T> {
+        value: T,
+        packed: Vec<T>,
+        unpacked: [T; 1024],
+        bools: [u64; 16],
+    }
+
+    struct UnpackInput<T> {
+        packed: Vec<T>,
+        unpacked: [T; 1024],
     }
 
     // Benchmark-only helper for `bitpacking_cmp_seq`.
