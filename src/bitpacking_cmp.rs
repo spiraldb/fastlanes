@@ -113,16 +113,7 @@ pub trait BitPackingCompare: BitPacking {
         output: &mut [bool; 1024],
         value: V,
     ) where
-        V: FastLanesComparable<Bitpacked = Self> + Eq,
-    {
-        let mut unpacked = [Self::zero(); 1024];
-        // SAFETY: This method has the same input and width safety contract as `unchecked_unpack`.
-        unsafe { Self::unchecked_unpack(width, input, &mut unpacked) };
-
-        for (output, unpacked) in output.iter_mut().zip(unpacked) {
-            *output = V::as_unpacked(unpacked) == value;
-        }
-    }
+        V: FastLanesComparable<Bitpacked = Self> + Eq;
 
     /// Runtime-width fused `BitPacking::unpack` and less-than comparison against a constant value.
     ///
@@ -137,16 +128,7 @@ pub trait BitPackingCompare: BitPacking {
         output: &mut [bool; 1024],
         value: V,
     ) where
-        V: FastLanesComparable<Bitpacked = Self> + Ord,
-    {
-        let mut unpacked = [Self::zero(); 1024];
-        // SAFETY: This method has the same input and width safety contract as `unchecked_unpack`.
-        unsafe { Self::unchecked_unpack(width, input, &mut unpacked) };
-
-        for (output, unpacked) in output.iter_mut().zip(unpacked) {
-            *output = V::as_unpacked(unpacked) < value;
-        }
-    }
+        V: FastLanesComparable<Bitpacked = Self> + Ord;
 
     /// Runtime-width fused `BitPacking::unpack` and inequality comparison against a constant value.
     ///
