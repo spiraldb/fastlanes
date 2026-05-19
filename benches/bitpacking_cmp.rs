@@ -84,8 +84,8 @@ mod bench {
                         black_box(W),
                         black_box(input.packed.as_slice()),
                         &mut input.unpacked,
-                    )
-                };
+                    );
+                }
                 collect_bool_cmp(
                     &input.unpacked,
                     &black_box(input.value),
@@ -120,8 +120,8 @@ mod bench {
                         black_box(W),
                         black_box(input.packed.as_slice()),
                         &mut input.unpacked,
-                    )
-                };
+                    );
+                }
                 black_box(&input.unpacked);
             });
     }
