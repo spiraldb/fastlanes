@@ -34,6 +34,18 @@ pub trait BitPackingCompare: FastLanes {
 }
 
 #[inline(always)]
+fn output_byte_index(idx: usize) -> usize {
+    let word = idx / 64;
+    let byte = (idx % 64) / 8;
+
+    if cfg!(target_endian = "little") {
+        word * 8 + byte
+    } else {
+        word * 8 + (7 - byte)
+    }
+}
+
+#[inline(always)]
 fn pack_8_predicates(chunk: u64) -> u64 {
     // Pack the low bit of each byte into the low byte.
     ((chunk & 0x0101_0101_0101_0101).wrapping_mul(0x0102_0408_1020_4080) >> 56) & 0xff
@@ -86,50 +98,31 @@ macro_rules! impl_packing_compare {
                     }
                 }
 
-                #[inline(always)]
-                fn unpack_word_bit<const W: usize, const B: usize>(
-                    input: &[$T; B],
-                    word_idx: usize,
-                    bit_idx: usize,
-                ) -> $T {
-                    let s = word_idx / 2;
-                    let within_base = (word_idx % 2) * 64;
-
-                    if <$T>::LANES > 64 {
-                        unpack_elem::<W, B>(input, s, within_base + bit_idx)
-                    } else {
-                        let row_chunk = bit_idx / <$T>::LANES;
-                        let bit_in_row = bit_idx % <$T>::LANES;
-                        let bit_base = row_chunk * <$T>::LANES;
-                        let fl_order = (within_base + bit_base) / 16;
-                        let row = FL_ORDER[fl_order] * 8 + s;
-
-                        unpack_elem::<W, B>(input, row, bit_in_row)
-                    }
-                }
-
                 const {
                     assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                for (word_idx, output_word) in output.iter_mut().enumerate() {
-                    let mut word = 0u64;
+                let output_bytes = output.as_mut_ptr().cast::<u8>();
 
-                    for group in 0..8 {
-                        let bit_base = group * 8;
+                paste!(seq_t!(row in $T {
+                    let row_idx_base = (FL_ORDER[row / 8] * 16) + ((row % 8) * 128);
+
+                    for lane_base in (0..<$T>::LANES).step_by(8) {
                         let mut predicates = 0u64;
 
                         for bit in 0..8 {
-                            let elem = unpack_word_bit::<W, B>(input, word_idx, bit_base + bit);
+                            let lane = lane_base + bit;
+                            let elem = unpack_elem::<W, B>(input, row, lane);
                             predicates |= u64::from(f(V::as_unpacked(elem), other)) << (bit * 8);
                         }
 
-                        word |= pack_8_predicates(predicates) << bit_base;
+                        unsafe {
+                            *output_bytes.add(output_byte_index(row_idx_base + lane_base)) =
+                                pack_8_predicates(predicates) as u8;
+                        }
                     }
-
-                    *output_word = word;
-                }
+                }));
             }
 
             unsafe fn unchecked_unpack_cmp<V, F>(
