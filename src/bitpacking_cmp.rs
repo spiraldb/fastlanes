@@ -34,6 +34,18 @@ pub trait BitPackingCompare: FastLanes {
         F: Fn(V, V) -> bool;
 }
 
+#[inline(always)]
+fn output_byte_index(idx: usize) -> usize {
+    let word = idx / 64;
+    let byte = (idx % 64) / 8;
+
+    if cfg!(target_endian = "little") {
+        word * 8 + byte
+    } else {
+        word * 8 + (7 - byte)
+    }
+}
+
 macro_rules! impl_packing_compare {
     ($T:ty) => {
         impl BitPackingCompare for $T {
@@ -53,43 +65,16 @@ macro_rules! impl_packing_compare {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                if <$T>::T == 8 {
-                    // u8 (LANES == 128). Split 128 lanes into two halves of 64
-                    // so `output[2*row + half]` is loop-invariant per half —
-                    // the condition LLVM's vectorizer needs to widen the
-                    // 64-lane reduction.
-                    let mut output_local = [0u64; 16];
+                output.fill(0);
+                let output_bytes = output.as_mut_ptr().cast::<u8>();
 
-                    for half in 0..2usize {
-                        let mut row_words = [0u64; 8];
-
-                        for lane_in_half in 0..64usize {
-                            let lane = half * 64 + lane_in_half;
-                            unpack!($T, W, input, lane, |$idx, $elem| {
-                                let row = $idx / 128;
-                                let pred = u64::from(f(V::as_unpacked($elem), other));
-                                row_words[row] |= pred << lane_in_half;
-                            });
+                for lane in 0..Self::LANES {
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        unsafe {
+                            let byte = output_bytes.add(output_byte_index($idx));
+                            *byte |= u8::from(f(V::as_unpacked($elem), other)) << ($idx % 8);
                         }
-
-                        for row in 0..8 {
-                            output_local[2 * row + half] = row_words[row];
-                        }
-                    }
-
-                    *output = output_local;
-                } else {
-                    output.fill(0);
-
-                    for lane in 0..Self::LANES {
-                        unpack!($T, W, input, lane, |$idx, $elem| {
-                            unsafe {
-                                *output.get_unchecked_mut($idx / 64) |=
-                                    u64::from(f(V::as_unpacked($elem), other)) << ($idx % 64);
-                            }
-
-                        });
-                    }
+                    });
                 }
             }
 
