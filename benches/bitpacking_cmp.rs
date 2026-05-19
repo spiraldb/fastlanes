@@ -38,11 +38,10 @@ mod bench {
 
         bencher.bench_local(|| {
             unsafe {
-                BitPackingCompare::unchecked_unpack_cmp(
+                BitPackingCompare::unchecked_unpack_cmp_eq(
                     black_box(width),
                     black_box(&packed),
                     &mut unpacked,
-                    |a, b| a == b,
                     black_box(value),
                 );
                 black_box(&unpacked);
