@@ -33,19 +33,21 @@ pub trait BitPackingCompare: FastLanes {
         F: Fn(V, V) -> bool;
 }
 
-#[inline(always)]
-fn output_byte_index(idx: usize) -> usize {
+#[inline]
+fn output_byte_index(row: usize, lane: usize) -> usize {
+    let o = row / 8;
+    let s = row % 8;
+    let idx = (FL_ORDER[o] * 16) + (s * 128) + lane;
     let word = idx / 64;
     let byte = (idx % 64) / 8;
 
-    if cfg!(target_endian = "little") {
-        word * 8 + byte
-    } else {
-        word * 8 + (7 - byte)
-    }
+    #[cfg(target_endian = "little")]
+    return word * 8 + byte;
+    #[cfg(not(target_endian = "little"))]
+    return word * 8 + (7 - byte);
 }
 
-#[inline(always)]
+#[inline]
 fn pack_8_predicates(chunk: u64) -> u64 {
     // Pack the low bit of each byte into the low byte.
     ((chunk & 0x0101_0101_0101_0101).wrapping_mul(0x0102_0408_1020_4080) >> 56) & 0xff
@@ -66,35 +68,16 @@ macro_rules! impl_packing_compare {
                 F: Fn(V, V) -> bool
             {
                 #[inline(always)]
-                fn unpack_elem<const W: usize, const B: usize>(
-                    input: &[$T; B],
-                    row: usize,
-                    lane: usize,
-                ) -> $T {
-                    #[inline(always)]
-                    fn input_word<const B: usize>(input: &[$T; B], word: usize, lane: usize) -> $T {
-                        unsafe { *input.get_unchecked(<$T>::LANES * word + lane) }
-                    }
+                fn input_word<const B: usize>(input: &[$T; B], word: usize, lane: usize) -> $T {
+                    unsafe { *input.get_unchecked(<$T>::LANES * word + lane) }
+                }
 
-                    if W == 0 {
-                        return 0;
-                    }
-
-                    if W == <$T>::T {
-                        return input_word(input, row, lane);
-                    }
-
-                    let mask = <$T>::MAX >> (<$T>::T - W);
-                    let start_bit = row * W;
-                    let start_word = start_bit / <$T>::T;
-                    let shift = start_bit % <$T>::T;
-
-                    let lo = input_word(input, start_word, lane) >> shift;
-                    if shift + W <= <$T>::T {
-                        lo & mask
+                #[inline(always)]
+                fn low_mask(width: usize) -> $T {
+                    if width == 0 {
+                        0
                     } else {
-                        let hi = input_word(input, start_word + 1, lane) << (<$T>::T - shift);
-                        (lo | hi) & mask
+                        <$T>::MAX >> (<$T>::T - width)
                     }
                 }
 
@@ -105,24 +88,69 @@ macro_rules! impl_packing_compare {
 
                 let output_bytes = output.as_mut_ptr().cast::<u8>();
 
-                paste!(seq_t!(row in $T {
-                    let row_idx_base = (FL_ORDER[row / 8] * 16) + ((row % 8) * 128);
+                for lane_base in (0..<$T>::LANES).step_by(8) {
+                    if W == 0 {
+                        let byte = if f(V::as_unpacked(0), other) { 0xff } else { 0 };
+                        for row in 0..<$T>::T {
+                            unsafe {
+                                *output_bytes.add(output_byte_index(row, lane_base)) = byte;
+                            }
+                        }
+                        continue;
+                    }
 
-                    for lane_base in (0..<$T>::LANES).step_by(8) {
+                    let mut srcs = [0 as $T; 8];
+                    for bit in 0..8 {
+                        srcs[bit] = input_word(input, 0, lane_base + bit);
+                    }
+
+                    for row in 0..<$T>::T {
                         let mut predicates = 0u64;
 
-                        for bit in 0..8 {
-                            let lane = lane_base + bit;
-                            let elem = unpack_elem::<W, B>(input, row, lane);
-                            predicates |= u64::from(f(V::as_unpacked(elem), other)) << (bit * 8);
+                        if W == <$T>::T {
+                            for bit in 0..8 {
+                                let lane = lane_base + bit;
+                                let elem = input_word(input, row, lane);
+                                predicates |=
+                                    u64::from(f(V::as_unpacked(elem), other)) << (bit * 8);
+                            }
+                        } else {
+                            let mask = low_mask(W);
+                            let curr_word = (row * W) / <$T>::T;
+                            let next_word = ((row + 1) * W) / <$T>::T;
+                            let shift = (row * W) % <$T>::T;
+
+                            for bit in 0..8 {
+                                let src = srcs[bit];
+                                let mut elem = src >> shift;
+
+                                if next_word > curr_word {
+                                    let remaining_bits = ((row + 1) * W) % <$T>::T;
+                                    let current_bits = W - remaining_bits;
+                                    elem &= low_mask(current_bits);
+
+                                    if next_word < W {
+                                        let lane = lane_base + bit;
+                                        let next_src = input_word(input, next_word, lane);
+                                        srcs[bit] = next_src;
+                                        elem |=
+                                            (next_src & low_mask(remaining_bits)) << current_bits;
+                                    }
+                                } else {
+                                    elem &= mask;
+                                }
+
+                                predicates |=
+                                    u64::from(f(V::as_unpacked(elem), other)) << (bit * 8);
+                            }
                         }
 
                         unsafe {
-                            *output_bytes.add(output_byte_index(row_idx_base + lane_base)) =
+                            *output_bytes.add(output_byte_index(row, lane_base)) =
                                 pack_8_predicates(predicates) as u8;
                         }
                     }
-                }));
+                }
             }
 
             unsafe fn unchecked_unpack_cmp<V, F>(
@@ -211,6 +239,15 @@ mod tests {
 
             assert_eq!(cmp, expected, "Failed == {v}");
         }
+    }
+
+    #[test]
+    fn test_unpack_eq_u8_w0() {
+        type T = u8;
+        const W: usize = 0;
+        const B: usize = 1024 * W / T::T;
+
+        assert_unpack_eq::<T, W, B>();
     }
 
     #[test]
