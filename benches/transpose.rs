@@ -3,11 +3,13 @@ use std::hint::black_box;
 
 use fastlanes::Transpose;
 
+mod shared;
+
 fn main() {
     divan::main();
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("transpose_u16"))]
 fn transpose_u16(bencher: Bencher) {
     let mut values: [u16; 1024] = [0; 1024];
     for i in 0..1024 {

@@ -1,5 +1,7 @@
 #![allow(unexpected_cfgs)]
 
+mod shared;
+
 fn main() {
     divan::main();
 }
@@ -18,7 +20,7 @@ mod bench {
         50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
     ];
 
-    #[divan::bench(types=[u8, u16, u32, u64], args=ALL_WIDTHS)]
+    #[divan::bench(name = crate::variant!("bitpacking_cmp_fused"), types=[u8, u16, u32, u64], args=ALL_WIDTHS)]
     fn bitpacking_cmp_fused<T>(bencher: Bencher, width: usize)
     where
         T: BitPacking + FastLanesComparable<Bitpacked = T> + FromPrimitive + Copy,
@@ -50,7 +52,7 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
+    #[divan::bench(name = crate::variant!("bitpacking_cmp_seq"), types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
     fn bitpacking_cmp_seq<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,
@@ -71,7 +73,7 @@ mod bench {
         });
     }
 
-    #[divan::bench(types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
+    #[divan::bench(name = crate::variant!("bitpacking_cmp_unpack"), types=[u8, u16, u32, u64], consts = BENCH_W, sample_count = 10000)]
     fn bitpacking_cmp_unpack<T, const W: usize>(bencher: Bencher)
     where
         T: BitPacking + FromPrimitive + Copy,

@@ -11,7 +11,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("for_pack_16_to_3_heap"), sample_count = 10000)]
 fn for_pack_16_to_3_heap(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -29,7 +29,7 @@ fn for_pack_16_to_3_heap(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("for_pack_16_to_3_stack"), sample_count = 10000)]
 fn for_pack_16_to_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -43,7 +43,7 @@ fn for_pack_16_to_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unfor_pack_16_from_3_stack"), sample_count = 10000)]
 fn unfor_pack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -60,7 +60,7 @@ fn unfor_pack_16_from_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unchecked_unfor_pack_16_from_3_stack"), sample_count = 10000)]
 fn unchecked_unfor_pack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -77,7 +77,7 @@ fn unchecked_unfor_pack_16_from_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_compress"), sample_count = 10000)]
 fn throughput_compress(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -101,7 +101,7 @@ fn throughput_compress(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_decompress"), sample_count = 10000)]
 fn throughput_decompress(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -135,7 +135,7 @@ fn throughput_decompress(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_decompress_unchecked"), sample_count = 10000)]
 fn throughput_decompress_unchecked(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -174,7 +174,7 @@ fn throughput_decompress_unchecked(bencher: Bencher) {
 
 // Benchmarks that separate bitpacking unpack from reference value application
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unpack_then_add_reference_16_from_3_stack"), sample_count = 10000)]
 fn unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -196,7 +196,7 @@ fn unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unchecked_unpack_then_add_reference_16_from_3_stack"), sample_count = 10000)]
 fn unchecked_unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -218,7 +218,7 @@ fn unchecked_unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_decompress_separate_reference"), sample_count = 10000)]
 fn throughput_decompress_separate_reference(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -256,7 +256,7 @@ fn throughput_decompress_separate_reference(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_decompress_unchecked_separate_reference"), sample_count = 10000)]
 fn throughput_decompress_unchecked_separate_reference(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;

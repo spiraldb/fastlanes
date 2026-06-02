@@ -43,12 +43,40 @@ jobs:
         run: cargo msrv verify
 
   bench-codspeed:
-    name: Benchmark with Codspeed
+    name: Bench ${{ matrix.variant.name }} (${{ matrix.mode }})
+    strategy:
+      # Report every variant/mode even if one leg fails.
+      fail-fast: false
+      matrix:
+        # Both CodSpeed measurement modes for every variant: `simulation` is the
+        # deterministic cachegrind-style cycle count (best for cross-variant
+        # comparison), `walltime` is real wall-clock timing on the runner.
+        mode: [ simulation, walltime ]
+        # Each variant compiles with a distinct `target-feature` set and exports
+        # a matching BENCH_VARIANT, so the benchmark names (and therefore the
+        # CodSpeed URIs) are namespaced per CPU feature / arch instead of
+        # colliding. See `variant!` in benches/shared.
+        variant:
+          - name: avx2
+            family: c6id.8xlarge        # x86-64 (Intel Ice Lake)
+            image: ubuntu24-full-x64
+            rustflags: "-C target-feature=+avx2"
+          - name: avx512
+            family: c6id.8xlarge        # same silicon, AVX-512 enabled
+            image: ubuntu24-full-x64
+            rustflags: "-C target-feature=+avx512f,+avx512bw,+avx512cd,+avx512dq,+avx512vl"
+          - name: sve
+            family: c7g.8xlarge         # aarch64 (Graviton3, SVE)
+            image: ubuntu24-full-arm64
+            rustflags: "-C target-feature=+sve"
     runs-on:
       - runs-on=${{ github.run_id }}
-      - family=c6id.8xlarge
-      - image=ubuntu24-full-x64
-      - tag=bench-codspeed
+      - family=${{ matrix.variant.family }}
+      - image=${{ matrix.variant.image }}
+      - tag=bench-${{ matrix.variant.name }}-${{ matrix.mode }}
+    env:
+      # Baked into the benchmark names at build time via env!() (see variant!).
+      BENCH_VARIANT: ${{ matrix.variant.name }}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -60,13 +88,13 @@ jobs:
 
       - name: Build benchmarks
         env:
-          RUSTFLAGS: "-C target-feature=+avx2"
+          RUSTFLAGS: ${{ matrix.variant.rustflags }}
         run: |
-          cargo codspeed build --profile bench
+          cargo codspeed build --measurement-mode ${{ matrix.mode }} --profile bench
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@3194d9a39c4d46684cb44bf7207fc56626aad8fd # v4
         with:
-          run: cargo codspeed run
+          run: cargo codspeed run --measurement-mode ${{ matrix.mode }}
           token: ${{ secrets.CODSPEED_TOKEN }}
-          mode: simulation
+          mode: ${{ matrix.mode }}

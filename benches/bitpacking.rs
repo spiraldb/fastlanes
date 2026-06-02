@@ -11,7 +11,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("pack_16_to_3_heap"), sample_count = 10000)]
 fn pack_16_to_3_heap(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -27,7 +27,7 @@ fn pack_16_to_3_heap(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("pack_16_to_3_stack"), sample_count = 10000)]
 fn pack_16_to_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -40,7 +40,7 @@ fn pack_16_to_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unpack_16_from_3_stack"), sample_count = 10000)]
 fn unpack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -56,7 +56,7 @@ fn unpack_16_from_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unchecked_unpack_16_from_3_stack"), sample_count = 10000)]
 fn unchecked_unpack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -72,7 +72,7 @@ fn unchecked_unpack_16_from_3_stack(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("unpack_single_16_from_3"), sample_count = 10000)]
 fn unpack_single_16_from_3(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -90,7 +90,7 @@ fn unpack_single_16_from_3(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_compress"), sample_count = 10000)]
 fn throughput_compress(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -112,7 +112,7 @@ fn throughput_compress(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 10000)]
+#[divan::bench(name = variant!("throughput_decompress"), sample_count = 10000)]
 fn throughput_decompress(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;

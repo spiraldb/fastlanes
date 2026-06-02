@@ -1,0 +1,5 @@
+# Default CPU/arch variant tag for benchmark names. CI overrides this per
+# matrix leg (avx2 / avx512 / sve) via the BENCH_VARIANT environment variable,
+# which takes precedence over this default. See `variant!` in benches/shared.
+[env]
+BENCH_VARIANT = "local"

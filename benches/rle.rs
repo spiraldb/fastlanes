@@ -9,7 +9,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("rle_encode_u32"))]
 fn rle_encode_u32(bencher: Bencher) {
     let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
     let mut rle_vals = [0u32; 1024];
@@ -21,7 +21,7 @@ fn rle_encode_u32(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("rle_decode_u32"))]
 fn rle_decode_u32(bencher: Bencher) {
     let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
     let mut rle_vals = [0u32; 1024];
@@ -40,7 +40,7 @@ fn rle_decode_u32(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("rle_throughput_encode_32"))]
 fn rle_throughput_encode_32(bencher: Bencher) {
     const NUM_BATCHES: usize = 1024;
     const N: usize = 1024 * NUM_BATCHES;
@@ -60,7 +60,7 @@ fn rle_throughput_encode_32(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("rle_throughput_decode_32"))]
 fn rle_throughput_decode_32(bencher: Bencher) {
     const NUM_BATCHES: usize = 1024;
     const N: usize = 1024 * NUM_BATCHES;

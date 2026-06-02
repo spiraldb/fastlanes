@@ -11,7 +11,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("delta_u16_fused"))]
 fn delta_u16_fused(bencher: Bencher) {
     const W: usize = 9;
     const B: usize = 1024 * W / <u16 as FastLanes>::T;
@@ -38,7 +38,7 @@ fn delta_u16_fused(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("delta_u16_unfused"))]
 fn delta_u16_unfused(bencher: Bencher) {
     const W: usize = 9;
     const B: usize = 1024 * W / <u16 as FastLanes>::T;
@@ -66,7 +66,7 @@ fn delta_u16_unfused(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("delta_throughput_compress"))]
 fn delta_throughput_compress(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
@@ -88,7 +88,7 @@ fn delta_throughput_compress(bencher: Bencher) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(name = variant!("delta_throughput_decompress"))]
 fn delta_throughput_decompress(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
