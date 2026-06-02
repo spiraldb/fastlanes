@@ -1,9 +1,13 @@
 #![allow(unused_assignments)]
 
+#[cfg(feature = "unstable")]
 use arrayref::{array_mut_ref, array_ref};
+#[cfg(feature = "unstable")]
 use paste::paste;
 
-use crate::{iterate, seq_t, supported_bit_width, unpack, BitPacking, FastLanes};
+#[cfg(feature = "unstable")]
+use crate::seq_t;
+use crate::{iterate, supported_bit_width, unpack, BitPacking, FastLanes};
 
 pub trait Delta: BitPacking {
     fn delta<const LANES: usize>(
@@ -30,6 +34,9 @@ pub trait Delta: BitPacking {
     /// frame-of-reference `reference` (inverting `FoR`), then accumulates the result against the
     /// running per-lane `base` (inverting delta encoding). This fuses what would otherwise be three
     /// passes — `unpack`, `unfor`, and `undelta` — into one, avoiding two intermediate buffers.
+    ///
+    /// Available only with the `unstable` feature; the API is not yet covered by semver guarantees.
+    #[cfg(feature = "unstable")]
     fn unfor_undelta_pack<const LANES: usize, const W: usize, const B: usize>(
         input: &[Self; B],
         reference: Self,
@@ -44,6 +51,9 @@ pub trait Delta: BitPacking {
     /// `input` must have length `1024 * width / T` (where `T` is the bit-width of `Self`), `base`
     /// must have length `Self::LANES`, and `output` must have length exactly 1024. These lengths are
     /// checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// Available only with the `unstable` feature; the API is not yet covered by semver guarantees.
+    #[cfg(feature = "unstable")]
     unsafe fn unchecked_unfor_undelta_pack(
         width: usize,
         input: &[Self],
@@ -117,6 +127,7 @@ macro_rules! impl_delta {
                 }
             }
 
+            #[cfg(feature = "unstable")]
             #[inline(never)]
             fn unfor_undelta_pack<const LANES: usize, const W: usize, const B: usize>(
                 input: &[Self; B],
@@ -140,6 +151,7 @@ macro_rules! impl_delta {
                 }
             }
 
+            #[cfg(feature = "unstable")]
             unsafe fn unchecked_unfor_undelta_pack(
                 width: usize,
                 input: &[Self],
@@ -228,6 +240,7 @@ mod test {
         assert_eq!(transposed, undelta);
     }
 
+    #[cfg(feature = "unstable")]
     #[test]
     fn test_unfor_undelta() {
         const LANES: usize = u16::LANES;
