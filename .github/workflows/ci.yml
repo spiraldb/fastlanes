@@ -53,19 +53,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Deterministic instruction-count benchmarks for every suite, under Valgrind.
-          # Built without a SIMD target-feature, so only the baseline bit-transpose
-          # benches (scalar / dispatch) compile here; the BMI2 / VBMI tiers live on the
-          # walltime runners below (and Valgrind can't execute AVX-512 anyway).
+          # Deterministic instruction-count benchmarks under Valgrind, for every suite
+          # EXCEPT bit_transpose (which is measured per-tier in walltime below, so it has
+          # a single home runner). Keep this list in sync with the [[bench]] targets.
           - name: simulation
             mode: simulation
             tag: bench-codspeed
             rustflags: "-C target-feature=+avx2"
-            build-args: ""
-          # Real wall-clock timings per Intel feature tier. Each tier is built with its
-          # own -C target-feature flag and the bit-transpose benches are #[cfg]-gated on
-          # that feature, so each one compiles (and runs) on exactly one runner. Measured
-          # on runs-on x86 (c8i / Granite Rapids) since CodSpeed's macro runners are ARM64.
+            build-args: "--bench bitpacking --bench ffor --bench bitpacking_cmp --bench delta --bench transpose --bench rle"
+          # Real wall-clock timings, one runner per Intel feature tier. Each tier is built
+          # with its own -C target-feature flag, and the bit_transpose benches are gated on
+          # that feature via #[bench(<tier>)], so each one compiles — and runs — on exactly
+          # one runner. Measured on runs-on x86 (c8i / Granite Rapids) since CodSpeed's
+          # macro runners are ARM64 and can't execute the x86 paths.
+          - name: walltime-baseline
+            mode: walltime
+            tag: bench-walltime
+            rustflags: ""
+            build-args: "--bench bit_transpose"
           - name: walltime-bmi2
             mode: walltime
             tag: bench-walltime

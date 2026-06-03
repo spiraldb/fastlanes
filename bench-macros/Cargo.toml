@@ -1,0 +1,10 @@
+# Dev-only proc-macro crate for the benchmarks. Excluded from the fastlanes
+# workspace and never published (it's only a `[dev-dependencies]` path dep).
+[package]
+name = "bench-macros"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+proc-macro = true
