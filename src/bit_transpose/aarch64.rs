@@ -1,11 +1,10 @@
 //! `AArch64` NEON transpose implementation using TBL-based gather/scatter.
-#![cfg(target_arch = "aarch64")]
 
 use core::arch::aarch64::uint64x2_t;
 use core::arch::aarch64::vandq_u64;
 use core::arch::aarch64::vdupq_n_u64;
+use core::arch::aarch64::vdupq_n_u8;
 use core::arch::aarch64::veorq_u64;
-use core::arch::aarch64::vgetq_lane_u64;
 use core::arch::aarch64::vld1q_u8;
 use core::arch::aarch64::vld1q_u8_x4;
 use core::arch::aarch64::vorrq_u8;
@@ -15,14 +14,15 @@ use core::arch::aarch64::vreinterpretq_u8_u64;
 use core::arch::aarch64::vshlq_n_u64;
 use core::arch::aarch64::vshrq_n_u64;
 use core::arch::aarch64::vst1q_u8;
+use core::arch::aarch64::vsubq_u8;
 
 use crate::bit_transpose::as_byte_array;
 use crate::bit_transpose::as_byte_array_mut;
-use crate::bit_transpose::BASE_PATTERN_FIRST;
-use crate::bit_transpose::BASE_PATTERN_SECOND;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
+use crate::FastLanes;
+use crate::FL_ORDER;
 
 /// Gather indices for the first half from input[0..64] (low 4 bytes of each group).
 static GATHER_FIRST_LO: [[u8; 16]; 4] = [
@@ -172,44 +172,113 @@ pub unsafe fn transpose_bits_neon(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose one 1024-bit block using NEON with TBL-based gather and scatter.
+/// Byte-gather indices that pull the 8 bytes of every group into contiguous group-major order
+/// for an element width of `tb` bits. Group `g = lhi * (tb/8) + hi` collects byte `llo` of its
+/// lane words from input byte `lhi*tb + hi + llo*(tb/8)`. See [`crate::scalar::untranspose_bits`].
+const fn gather_indices(tb: usize) -> [u8; 128] {
+    let bytes = tb / 8;
+    let mut idx = [0u8; 128];
+    let mut g = 0;
+    while g < 16 {
+        let lhi = g / bytes;
+        let hi = g % bytes;
+        let gather_base = lhi * tb + hi;
+        let mut llo = 0;
+        while llo < 8 {
+            idx[g * 8 + llo] = (gather_base + llo * bytes) as u8;
+            llo += 1;
+        }
+        g += 1;
+    }
+    idx
+}
+
+/// Byte-scatter indices applied after the per-group 8x8 transpose: transposed byte `g*8 + lo`
+/// lands at logical byte `FL_ORDER[hi]*2 + lhi + lo*16`. Expressed as a gather table for
+/// [`permute_128`]: `idx[logical_byte] = g*8 + lo`.
+const fn scatter_indices(tb: usize) -> [u8; 128] {
+    let bytes = tb / 8;
+    let mut idx = [0u8; 128];
+    let mut g = 0;
+    while g < 16 {
+        let lhi = g / bytes;
+        let hi = g % bytes;
+        let scatter_base = FL_ORDER[hi] * 2 + lhi;
+        let mut lo = 0;
+        while lo < 8 {
+            idx[scatter_base + lo * 16] = (g * 8 + lo) as u8;
+            lo += 1;
+        }
+        g += 1;
+    }
+    idx
+}
+
+static GATHER_8: [u8; 128] = gather_indices(8);
+static GATHER_16: [u8; 128] = gather_indices(16);
+static GATHER_32: [u8; 128] = gather_indices(32);
+static GATHER_64: [u8; 128] = gather_indices(64);
+
+static SCATTER_8: [u8; 128] = scatter_indices(8);
+static SCATTER_16: [u8; 128] = scatter_indices(16);
+static SCATTER_32: [u8; 128] = scatter_indices(32);
+static SCATTER_64: [u8; 128] = scatter_indices(64);
+
+/// Apply an arbitrary 128-byte gather permutation (`out[k] = src[idx[k]]`) using NEON TBL.
+///
+/// `vqtbl4q_u8` only addresses 64 source bytes, returning 0 for indices `>= 64`. We split `src`
+/// into its low and high 64 bytes and OR the two table lookups: high indices select from `hi`
+/// (after subtracting 64), low indices wrap past 64 in the `hi` lookup and so contribute 0.
+#[inline]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn permute_128(src: &[u8; 128], idx: &[u8; 128]) -> [u8; 128] {
+    let lo = vld1q_u8_x4(src.as_ptr());
+    let hi = vld1q_u8_x4(src.as_ptr().add(64));
+    let bias = vdupq_n_u8(64);
+
+    let mut out = [0u8; 128];
+    for k in 0..8 {
+        let want = vld1q_u8(idx.as_ptr().add(k * 16));
+        let want_hi = vsubq_u8(want, bias);
+        let from_lo = vqtbl4q_u8(lo, want);
+        let from_hi = vqtbl4q_u8(hi, want_hi);
+        vst1q_u8(out.as_mut_ptr().add(k * 16), vorrq_u8(from_lo, from_hi));
+    }
+    out
+}
+
+/// Untranspose a `T`-width comparison mask into logical row order using NEON.
+///
+/// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
+/// bit transpose (see [`crate::scalar::untranspose_bits`]). We TBL-gather the groups into
+/// group-major order, run the per-group 8x8 transpose, then TBL-scatter to logical positions.
 ///
 /// # Safety
 /// Requires `AArch64` with NEON (always available on `AArch64`).
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn untranspose_bits_neon(input: &[u64; 16], output: &mut [u64; 16]) {
-    let input = as_byte_array(input);
-    let output = as_byte_array_mut(output);
+pub unsafe fn untranspose_bits_neon<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+    let (gather_idx, scatter_idx): (&[u8; 128], &[u8; 128]) = match T::T {
+        8 => (&GATHER_8, &SCATTER_8),
+        16 => (&GATHER_16, &SCATTER_16),
+        32 => (&GATHER_32, &SCATTER_32),
+        _ => (&GATHER_64, &SCATTER_64),
+    };
 
-    let scatter0 = vld1q_u8(SCATTER_8X8_NEON[0].as_ptr());
-    let scatter1 = vld1q_u8(SCATTER_8X8_NEON[1].as_ptr());
-    let scatter2 = vld1q_u8(SCATTER_8X8_NEON[2].as_ptr());
-    let scatter3 = vld1q_u8(SCATTER_8X8_NEON[3].as_ptr());
+    // Gather the 16 groups into contiguous group-major order.
+    let gathered = permute_128(as_byte_array(input), gather_idx);
 
-    let mut buf = [0u8; 64];
-    for (i, base_pattern) in [BASE_PATTERN_FIRST, BASE_PATTERN_SECOND].iter().enumerate() {
-        let in_tbl = vld1q_u8_x4(input.as_ptr().add(i * 64));
-        vst1q_u8(buf.as_mut_ptr(), vqtbl4q_u8(in_tbl, scatter0));
-        vst1q_u8(buf.as_mut_ptr().add(16), vqtbl4q_u8(in_tbl, scatter1));
-        vst1q_u8(buf.as_mut_ptr().add(32), vqtbl4q_u8(in_tbl, scatter2));
-        vst1q_u8(buf.as_mut_ptr().add(48), vqtbl4q_u8(in_tbl, scatter3));
-
-        for pair in 0..4 {
-            let gathered = vld1q_u8(buf.as_ptr().add(pair * 16));
-            let v = bit_transpose_8x8_neon(vreinterpretq_u64_u8(gathered));
-
-            let result_0 = vgetq_lane_u64::<0>(v);
-            let result_1 = vgetq_lane_u64::<1>(v);
-
-            let out_base_0 = base_pattern[pair * 2];
-            let out_base_1 = base_pattern[pair * 2 + 1];
-            for row in 0..8 {
-                output[out_base_0 + row * 16] = (result_0 >> (row * 8)) as u8;
-                output[out_base_1 + row * 16] = (result_1 >> (row * 8)) as u8;
-            }
-        }
+    // 8x8 bit-transpose each group; a `uint64x2_t` covers two consecutive groups (16 bytes).
+    let mut transposed = [0u8; 128];
+    for r in 0..8 {
+        let v = bit_transpose_8x8_neon(vreinterpretq_u64_u8(vld1q_u8(
+            gathered.as_ptr().add(r * 16),
+        )));
+        vst1q_u8(transposed.as_mut_ptr().add(r * 16), vreinterpretq_u8_u64(v));
     }
+
+    // Scatter the transposed groups to their logical byte positions.
+    *as_byte_array_mut(output) = permute_128(&transposed, scatter_idx);
 }
 
 #[cfg(test)]
@@ -247,7 +316,7 @@ mod tests {
             // SAFETY: NEON is always available on aarch64.
             unsafe {
                 transpose_bits_neon(&input, &mut transposed);
-                untranspose_bits_neon(&transposed, &mut roundtrip);
+                untranspose_bits_neon::<u64>(&transposed, &mut roundtrip);
             }
 
             assert_eq!(input, roundtrip, "NEON roundtrip failed for seed {seed}");
@@ -261,14 +330,42 @@ mod tests {
             let mut baseline_out = [0u64; 16];
             let mut tbl_out = [0u64; 16];
 
-            untranspose_bits_baseline(&input, &mut baseline_out);
+            untranspose_bits_baseline::<u64>(&input, &mut baseline_out);
             // SAFETY: NEON is always available on aarch64.
-            unsafe { untranspose_bits_neon(&input, &mut tbl_out) };
+            unsafe { untranspose_bits_neon::<u64>(&input, &mut tbl_out) };
 
             assert_eq!(
                 baseline_out, tbl_out,
                 "NEON untranspose doesn't match baseline for seed {seed}"
             );
         }
+    }
+
+    /// The generic NEON untranspose must match the width-parameterized baseline for every
+    /// element width.
+    #[test]
+    fn test_untranspose_neon_all_widths_match_baseline() {
+        fn check<T: FastLanes>() {
+            for seed in [0, 42, 123, 255] {
+                let input = generate_test_data(seed);
+                let mut baseline_out = [0u64; 16];
+                let mut tbl_out = [0u64; 16];
+
+                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
+                // SAFETY: NEON is always available on aarch64.
+                unsafe { untranspose_bits_neon::<T>(&input, &mut tbl_out) };
+
+                assert_eq!(
+                    baseline_out,
+                    tbl_out,
+                    "NEON untranspose != baseline for type={} seed={seed}",
+                    core::any::type_name::<T>()
+                );
+            }
+        }
+        check::<u8>();
+        check::<u16>();
+        check::<u32>();
+        check::<u64>();
     }
 }

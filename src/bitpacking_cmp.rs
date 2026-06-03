@@ -76,9 +76,10 @@ macro_rules! impl_packing_compare {
                 // a single contiguous (vectorizable) write per lane -- no `[bool; 1024]`
                 // (or `[Self; 1024]`) materialization, no cross-lane shuffles.
                 //
-                // LSB-first ordering makes the per-lane words coincide with the canonical FastLanes
-                // transpose for `u64` (`Self::LANES == 16`), so [`untranspose_cmp_mask`] can reuse
-                // the fast SIMD [`crate::bit_transpose::untranspose_bits`] there.
+                // For `u64` (`Self::LANES == 16`) this LSB-first ordering coincides with the
+                // canonical FastLanes transpose; for narrower widths it is the per-width packing
+                // that [`crate::bit_transpose::untranspose_bits::<Self>`] inverts. Either way that
+                // is what [`untranspose_cmp_mask`] uses to recover logical row order.
                 //
                 // SAFETY: `[u64; 16]` and `[Self; LANES]` are both exactly 128 bytes, and `u64`'s
                 // alignment (8) is >= `Self`'s alignment, so the reinterpret is sound.
@@ -245,7 +246,7 @@ mod tests {
                     // Untransposing the mask must yield logical row order: bit `i` is the
                     // comparison for logical value `i` (i.e. `collect_bool` semantics).
                     let mut logical = [0u64; 16];
-                    untranspose_bits(&output, &mut logical);
+                    untranspose_bits::<T>(&output, &mut logical);
                     let mut expected_logical = [0u64; 16];
                     for i in 0..1024 {
                         if f(T::as_unpacked(unpacked[i]), other) {

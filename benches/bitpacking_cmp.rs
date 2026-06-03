@@ -7,8 +7,7 @@ fn main() {
 mod bench {
     use divan::Bencher;
     use fastlanes::{
-        transpose_bits, untranspose_bits, BitPacking, BitPackingCompare, FastLanes,
-        FastLanesComparable,
+        untranspose_bits, BitPacking, BitPackingCompare, FastLanes, FastLanesComparable,
     };
     use num_traits::FromPrimitive;
     use std::hint::black_box;
@@ -112,7 +111,7 @@ mod bench {
                     black_box(value),
                 );
             }
-            untranspose_bits(black_box(&transposed), &mut logical);
+            untranspose_bits::<T>(black_box(&transposed), &mut logical);
             black_box(&logical);
         });
     }

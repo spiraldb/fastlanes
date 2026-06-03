@@ -13,6 +13,8 @@ use crate::bit_transpose::BASE_PATTERN_SECOND;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
+use crate::FastLanes;
+use crate::FL_ORDER;
 
 /// The two halves of the `FastLanes` byte-group ordering.
 const HALVES: [[usize; 8]; 2] = [BASE_PATTERN_FIRST, BASE_PATTERN_SECOND];
@@ -64,19 +66,39 @@ pub fn transpose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose one 1024-bit block using the scalar implementation.
+/// Untranspose a `T`-width comparison mask into logical row order, scalar implementation.
+///
+/// The mask produced by `unpack_cmp` for an element width of `T::T` bits is laid out as
+/// `T::LANES` words of `T::T` bits (LSB-first per lane); the bit at position
+/// `lane * T::T + row` holds the comparison for logical index `index(row, lane)` (see the
+/// `unpack!` macro). This is the inverse of that permutation.
+///
+/// Regardless of width the 128 bytes always factor into exactly 16 groups of 8 bytes, each
+/// group being an independent 8x8 bit transpose. The width only changes which input bytes form
+/// a group (the gather stride) and where the transposed bytes land (the scatter base). For
+/// `T = u64` this reduces to the canonical `FastLanes` bit untranspose.
 #[inline]
-pub fn untranspose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
+pub fn untranspose_bits<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
-    for (half, groups) in HALVES.iter().enumerate() {
-        for (group, &base) in groups.iter().enumerate() {
-            // Gather the 8 consecutive bytes of this group from the transposed layout.
+
+    // `bytes` = bytes per lane word (T::T / 8); `lhi_count` = lanes / 8 (= 128 / T::T). Their
+    // product is always 16 groups.
+    let bytes = T::T / 8;
+    let lhi_count = 128 / T::T;
+    for lhi in 0..lhi_count {
+        for hi in 0..bytes {
+            // Gather the 8 bytes of group `(lhi, hi)`: byte `llo` of the lane word for the lanes
+            // sharing this group sits at stride `bytes`.
+            let gather_base = lhi * T::T + hi;
             let mut packed = 0u64;
-            for bit in 0..8 {
-                packed |= u64::from(input[half * 64 + bit * 8 + group]) << (bit * 8);
+            for llo in 0..8 {
+                packed |= u64::from(input[gather_base + llo * bytes]) << (llo * 8);
             }
-            scatter(output, base, transpose_8x8(packed));
+            // After the 8x8 transpose the byte index is the comparison row's low bits, scattered
+            // at stride 16; the FL_ORDER permutation of `hi` picks the base byte.
+            let scatter_base = FL_ORDER[hi] * 2 + lhi;
+            scatter(output, scatter_base, transpose_8x8(packed));
         }
     }
 }
@@ -86,6 +108,7 @@ mod tests {
     use super::*;
     use crate::bit_transpose::generate_test_data;
     use crate::bit_transpose::transpose_bits_baseline;
+    use crate::bit_transpose::untranspose_bits_baseline;
 
     #[test]
     fn test_scalar_matches_baseline() {
@@ -112,7 +135,7 @@ mod tests {
             let mut roundtrip = [0u64; 16];
 
             transpose_bits(&input, &mut transposed);
-            untranspose_bits(&transposed, &mut roundtrip);
+            untranspose_bits::<u64>(&transposed, &mut roundtrip);
 
             assert_eq!(input, roundtrip, "scalar roundtrip failed for seed {seed}");
         }
@@ -126,7 +149,7 @@ mod tests {
         transpose_bits(&input, &mut output);
         assert_eq!(output, [0u64; 16]);
 
-        untranspose_bits(&input, &mut output);
+        untranspose_bits::<u64>(&input, &mut output);
         assert_eq!(output, [0u64; 16]);
     }
 
@@ -138,7 +161,33 @@ mod tests {
         transpose_bits(&input, &mut output);
         assert_eq!(output, [u64::MAX; 16]);
 
-        untranspose_bits(&input, &mut output);
+        untranspose_bits::<u64>(&input, &mut output);
         assert_eq!(output, [u64::MAX; 16]);
+    }
+
+    /// The generic untranspose must match the width-parameterized baseline for every element
+    /// width, not just `u64`.
+    #[test]
+    fn test_untranspose_all_widths_match_baseline() {
+        fn check<T: FastLanes>() {
+            for seed in [0, 42, 123, 255] {
+                let input = generate_test_data(seed);
+                let mut baseline_out = [0u64; 16];
+                let mut scalar_out = [0u64; 16];
+
+                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
+                untranspose_bits::<T>(&input, &mut scalar_out);
+
+                assert_eq!(
+                    baseline_out, scalar_out,
+                    "scalar untranspose != baseline for type={} seed={seed}",
+                    core::any::type_name::<T>()
+                );
+            }
+        }
+        check::<u8>();
+        check::<u16>();
+        check::<u32>();
+        check::<u64>();
     }
 }
