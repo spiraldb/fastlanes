@@ -46,7 +46,7 @@ jobs:
     name: Benchmark with Codspeed (${{ matrix.mode }})
     runs-on:
       - runs-on=${{ github.run_id }}
-      - family=c6id.8xlarge
+      - family=${{ matrix.family }}
       - image=ubuntu24-full-x64
       - tag=${{ matrix.tag }}
     strategy:
@@ -55,16 +55,20 @@ jobs:
         include:
           # Deterministic instruction-count benchmarks for every suite, run under
           # Valgrind. Valgrind has no AVX-512, so the bit-transpose VBMI tier is a
-          # no-op here and is covered by the walltime entry below.
+          # no-op here and is covered by the walltime entry below. Instruction
+          # counting is machine-independent, so an older instance is fine.
           - mode: simulation
             tag: bench-codspeed
+            family: c6id.8xlarge
             build-args: ""
           # Real wall-clock timings for the bit-transpose Intel feature tiers
           # (scalar / BMI2 / AVX-512 VBMI). Measured on the runs-on x86 instance
           # rather than CodSpeed's ARM64 macro runners, which can't execute the
-          # x86 paths.
+          # x86 paths. Uses the newest-generation Intel instance (c8i: Xeon 6 /
+          # Granite Rapids), which still has AVX-512 VBMI.
           - mode: walltime
             tag: bench-walltime
+            family: c8i.8xlarge
             build-args: "--bench bit_transpose"
 
     steps:
