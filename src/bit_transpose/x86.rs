@@ -211,11 +211,15 @@ pub unsafe fn transpose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
 
 /// Untranspose a `T`-width comparison mask (1024 bits) using AVX-512 VBMI.
 ///
-/// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
-/// bit transpose. The `T = 64` block keeps the original kernel (gather within each 64-byte half
-/// with `vpermb`, then scatter); narrower widths use the width-generic [`untranspose_bits_vbmi_lt64`]
-/// kernel whose groups span both halves. For `T = u64` this is the canonical `FastLanes` bit
-/// untranspose.
+/// Single width-generic kernel mirroring the NEON one: `vpermi2b` gathers the 16 eight-byte
+/// groups into group-major order across two ZMM registers (each 64-bit lane is one group), every
+/// lane is 8x8 bit-transposed in parallel, then a second pair of `vpermi2b` scatters the
+/// transposed groups to their logical byte positions. Only the per-width gather/scatter tables
+/// vary. For `T = u64` this is the canonical `FastLanes` bit untranspose.
+///
+/// Unlike the staged BMI2 branch in PR #145 this uses the uniform `vpermi2b` path for `u64` too
+/// (a group's 8 bytes happen to stay within one 64-byte half at this width, so the second source
+/// is unused, but the two-source form keeps a single code path).
 ///
 /// # Safety
 /// Requires AVX-512F, AVX-512BW, and AVX-512VBMI support. Check with [`has_vbmi`].
@@ -223,50 +227,6 @@ pub unsafe fn transpose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
 #[inline]
 #[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
 pub unsafe fn untranspose_bits_vbmi<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
-    // `T::T` is a compile-time constant, so this branch is resolved at monomorphization and the
-    // unused arm is eliminated. The `u64` arm is kept byte-identical to the original kernel.
-    if T::T != 64 {
-        untranspose_bits_vbmi_lt64::<T>(input, output);
-        return;
-    }
-
-    let input = as_byte_array(input);
-    let output = as_byte_array_mut(output);
-
-    // In the transposed layout the 8 bytes of a group are consecutive; this gather
-    // collects them into the eight u64 lanes of a ZMM register.
-    let gather_indices: [u8; 64] = SCATTER_8X8;
-    let idx = _mm512_loadu_si512(gather_indices.as_ptr().cast::<__m512i>());
-
-    for (half, groups) in [BASE_PATTERN_FIRST, BASE_PATTERN_SECOND].iter().enumerate() {
-        let in_half = _mm512_loadu_si512(input.as_ptr().add(half * 64).cast::<__m512i>());
-        let gathered = _mm512_permutexvar_epi8(idx, in_half);
-        let transposed = bit_transpose_8x8_zmm(gathered);
-
-        let mut lanes = [0u64; 8];
-        _mm512_storeu_si512(lanes.as_mut_ptr().cast::<__m512i>(), transposed);
-        for (group, &base) in groups.iter().enumerate() {
-            for row in 0..8 {
-                output[base + row * 16] = (lanes[group] >> (row * 8)) as u8;
-            }
-        }
-    }
-}
-
-/// Width-generic (`T::T < 64`) VBMI untranspose for the narrow comparison-mask widths.
-///
-/// Mirrors the width-generic NEON kernel: `vpermi2b` gathers the 16 eight-byte groups into
-/// group-major order across two ZMM registers (each 64-bit lane is one group), every lane is
-/// 8x8 bit-transposed in parallel, then a second pair of `vpermi2b` scatters the transposed
-/// groups to their logical byte positions. For these widths a group spans both 64-byte halves,
-/// so the two-source `vpermi2b` is required (unlike the single-source `vpermb` in the `u64` path).
-///
-/// # Safety
-/// Requires AVX-512F, AVX-512BW, and AVX-512VBMI support. Check with [`has_vbmi`].
-#[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512vbmi")]
-#[inline]
-#[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
-unsafe fn untranspose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
     let (gather_idx, scatter_idx) = group_tables::<T>();
