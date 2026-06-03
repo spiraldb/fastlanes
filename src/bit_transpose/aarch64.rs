@@ -18,11 +18,11 @@ use core::arch::aarch64::vsubq_u8;
 
 use crate::bit_transpose::as_byte_array;
 use crate::bit_transpose::as_byte_array_mut;
+use crate::bit_transpose::group_tables;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
 use crate::FastLanes;
-use crate::FL_ORDER;
 
 /// Gather indices for the first half from input[0..64] (low 4 bytes of each group).
 static GATHER_FIRST_LO: [[u8; 16]; 4] = [
@@ -172,58 +172,6 @@ pub unsafe fn transpose_bits_neon(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Byte-gather indices that pull the 8 bytes of every group into contiguous group-major order
-/// for an element width of `tb` bits. Group `g = lhi * (tb/8) + hi` collects byte `llo` of its
-/// lane words from input byte `lhi*tb + hi + llo*(tb/8)`. See [`crate::scalar::untranspose_bits`].
-const fn gather_indices(tb: usize) -> [u8; 128] {
-    let bytes = tb / 8;
-    let mut idx = [0u8; 128];
-    let mut g = 0;
-    while g < 16 {
-        let lhi = g / bytes;
-        let hi = g % bytes;
-        let gather_base = lhi * tb + hi;
-        let mut llo = 0;
-        while llo < 8 {
-            idx[g * 8 + llo] = (gather_base + llo * bytes) as u8;
-            llo += 1;
-        }
-        g += 1;
-    }
-    idx
-}
-
-/// Byte-scatter indices applied after the per-group 8x8 transpose: transposed byte `g*8 + lo`
-/// lands at logical byte `FL_ORDER[hi]*2 + lhi + lo*16`. Expressed as a gather table for
-/// [`permute_128`]: `idx[logical_byte] = g*8 + lo`.
-const fn scatter_indices(tb: usize) -> [u8; 128] {
-    let bytes = tb / 8;
-    let mut idx = [0u8; 128];
-    let mut g = 0;
-    while g < 16 {
-        let lhi = g / bytes;
-        let hi = g % bytes;
-        let scatter_base = FL_ORDER[hi] * 2 + lhi;
-        let mut lo = 0;
-        while lo < 8 {
-            idx[scatter_base + lo * 16] = (g * 8 + lo) as u8;
-            lo += 1;
-        }
-        g += 1;
-    }
-    idx
-}
-
-static GATHER_8: [u8; 128] = gather_indices(8);
-static GATHER_16: [u8; 128] = gather_indices(16);
-static GATHER_32: [u8; 128] = gather_indices(32);
-static GATHER_64: [u8; 128] = gather_indices(64);
-
-static SCATTER_8: [u8; 128] = scatter_indices(8);
-static SCATTER_16: [u8; 128] = scatter_indices(16);
-static SCATTER_32: [u8; 128] = scatter_indices(32);
-static SCATTER_64: [u8; 128] = scatter_indices(64);
-
 /// Apply an arbitrary 128-byte gather permutation (`out[k] = src[idx[k]]`) using NEON TBL.
 ///
 /// `vqtbl4q_u8` only addresses 64 source bytes, returning 0 for indices `>= 64`. We split `src`
@@ -258,12 +206,7 @@ unsafe fn permute_128(src: &[u8; 128], idx: &[u8; 128]) -> [u8; 128] {
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
 pub unsafe fn untranspose_bits_neon<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
-    let (gather_idx, scatter_idx): (&[u8; 128], &[u8; 128]) = match T::T {
-        8 => (&GATHER_8, &SCATTER_8),
-        16 => (&GATHER_16, &SCATTER_16),
-        32 => (&GATHER_32, &SCATTER_32),
-        _ => (&GATHER_64, &SCATTER_64),
-    };
+    let (gather_idx, scatter_idx) = group_tables::<T>();
 
     // Gather the 16 groups into contiguous group-major order.
     let gathered = permute_128(as_byte_array(input), gather_idx);

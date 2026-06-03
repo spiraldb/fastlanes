@@ -16,11 +16,14 @@ use core::arch::x86_64::_pext_u64;
 
 use crate::bit_transpose::as_byte_array;
 use crate::bit_transpose::as_byte_array_mut;
+use crate::bit_transpose::group_tables;
 use crate::bit_transpose::BASE_PATTERN_FIRST;
 use crate::bit_transpose::BASE_PATTERN_SECOND;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
+use crate::FastLanes;
+use crate::FL_ORDER;
 
 /// Check if BMI2 is available (requires the `std` feature for runtime detection).
 #[cfg(feature = "std")]
@@ -75,28 +78,36 @@ pub unsafe fn transpose_bits_bmi2(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose 1024 bits using BMI2 `PDEP`.
+/// Untranspose a `T`-width comparison mask (1024 bits) using BMI2 `PDEP`.
 ///
-/// For each output group of 8 bytes at stride 16, `PDEP` deposits the 8 input bytes
-/// into their respective bit positions, then the group is scattered out at once.
+/// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
+/// bit transpose (see [`crate::bit_transpose::scalar::untranspose_bits`]). The width only changes
+/// the gather stride and the scatter base. For each group we gather its 8 bytes (at stride
+/// `T::T / 8`) and use `PDEP` to deposit byte `llo` into bit-position `llo` of all 8 packed
+/// output bytes — which is exactly the 8x8 bit transpose — then scatter the group at stride 16.
+/// For `T = u64` this is the canonical `FastLanes` bit untranspose.
 ///
 /// # Safety
 /// Requires BMI2 support. Check with [`has_bmi2`] before calling.
 #[target_feature(enable = "bmi2")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn untranspose_bits_bmi2(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn untranspose_bits_bmi2<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
-    for (half, groups) in [BASE_PATTERN_FIRST, BASE_PATTERN_SECOND].iter().enumerate() {
-        for (group, &base) in groups.iter().enumerate() {
+    let bytes = T::T / 8;
+    let lhi_count = 128 / T::T;
+    for lhi in 0..lhi_count {
+        for hi in 0..bytes {
+            let gather_base = lhi * T::T + hi;
             let mut v = 0u64;
-            for (bit, &mask) in BIT_MASKS.iter().enumerate() {
-                v |= _pdep_u64(u64::from(input[half * 64 + bit * 8 + group]), mask);
+            for (llo, &mask) in BIT_MASKS.iter().enumerate() {
+                v |= _pdep_u64(u64::from(input[gather_base + llo * bytes]), mask);
             }
+            let scatter_base = FL_ORDER[hi] * 2 + lhi;
             for row in 0..8 {
-                output[base + row * 16] = (v >> (row * 8)) as u8;
+                output[scatter_base + row * 16] = (v >> (row * 8)) as u8;
             }
         }
     }
@@ -198,14 +209,27 @@ pub unsafe fn transpose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose 1024 bits using AVX-512 VBMI for vectorized gather.
+/// Untranspose a `T`-width comparison mask (1024 bits) using AVX-512 VBMI.
+///
+/// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
+/// bit transpose. The `T = 64` block keeps the original kernel (gather within each 64-byte half
+/// with `vpermb`, then scatter); narrower widths use the width-generic [`untranspose_bits_vbmi_lt64`]
+/// kernel whose groups span both halves. For `T = u64` this is the canonical `FastLanes` bit
+/// untranspose.
 ///
 /// # Safety
 /// Requires AVX-512F, AVX-512BW, and AVX-512VBMI support. Check with [`has_vbmi`].
 #[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512vbmi")]
 #[inline]
 #[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
-pub unsafe fn untranspose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn untranspose_bits_vbmi<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+    // `T::T` is a compile-time constant, so this branch is resolved at monomorphization and the
+    // unused arm is eliminated. The `u64` arm is kept byte-identical to the original kernel.
+    if T::T != 64 {
+        untranspose_bits_vbmi_lt64::<T>(input, output);
+        return;
+    }
+
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
@@ -229,6 +253,51 @@ pub unsafe fn untranspose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
+/// Width-generic (`T::T < 64`) VBMI untranspose for the narrow comparison-mask widths.
+///
+/// Mirrors the width-generic NEON kernel: `vpermi2b` gathers the 16 eight-byte groups into
+/// group-major order across two ZMM registers (each 64-bit lane is one group), every lane is
+/// 8x8 bit-transposed in parallel, then a second pair of `vpermi2b` scatters the transposed
+/// groups to their logical byte positions. For these widths a group spans both 64-byte halves,
+/// so the two-source `vpermi2b` is required (unlike the single-source `vpermb` in the `u64` path).
+///
+/// # Safety
+/// Requires AVX-512F, AVX-512BW, and AVX-512VBMI support. Check with [`has_vbmi`].
+#[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512vbmi")]
+#[inline]
+#[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
+unsafe fn untranspose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+    let input = as_byte_array(input);
+    let output = as_byte_array_mut(output);
+    let (gather_idx, scatter_idx) = group_tables::<T>();
+
+    let in_lo = _mm512_loadu_si512(input.as_ptr().cast::<__m512i>());
+    let in_hi = _mm512_loadu_si512(input.as_ptr().add(64).cast::<__m512i>());
+
+    // Gather the 16 groups (8 bytes each) into group-major order: groups 0..7 in `grp0`,
+    // groups 8..15 in `grp1`. Each 64-bit lane holds one group's 8 bytes.
+    let g_lo = _mm512_loadu_si512(gather_idx.as_ptr().cast::<__m512i>());
+    let g_hi = _mm512_loadu_si512(gather_idx.as_ptr().add(64).cast::<__m512i>());
+    let grp0 = _mm512_permutex2var_epi8(in_lo, g_lo, in_hi);
+    let grp1 = _mm512_permutex2var_epi8(in_lo, g_hi, in_hi);
+
+    // 8x8 bit-transpose every group (all 8 lanes of each register in parallel).
+    let t0 = bit_transpose_8x8_zmm(grp0);
+    let t1 = bit_transpose_8x8_zmm(grp1);
+
+    // Scatter the transposed groups to their logical byte positions.
+    let s_lo = _mm512_loadu_si512(scatter_idx.as_ptr().cast::<__m512i>());
+    let s_hi = _mm512_loadu_si512(scatter_idx.as_ptr().add(64).cast::<__m512i>());
+    _mm512_storeu_si512(
+        output.as_mut_ptr().cast::<__m512i>(),
+        _mm512_permutex2var_epi8(t0, s_lo, t1),
+    );
+    _mm512_storeu_si512(
+        output.as_mut_ptr().add(64).cast::<__m512i>(),
+        _mm512_permutex2var_epi8(t0, s_hi, t1),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "std")]
@@ -237,6 +306,8 @@ mod tests {
     use crate::bit_transpose::generate_test_data;
     #[cfg(feature = "std")]
     use crate::bit_transpose::transpose_bits_baseline;
+    #[cfg(feature = "std")]
+    use crate::bit_transpose::untranspose_bits_baseline;
 
     #[cfg(feature = "std")]
     #[test]
@@ -274,11 +345,43 @@ mod tests {
             // SAFETY: guarded by `has_bmi2`.
             unsafe {
                 transpose_bits_bmi2(&input, &mut transposed);
-                untranspose_bits_bmi2(&transposed, &mut roundtrip);
+                untranspose_bits_bmi2::<u64>(&transposed, &mut roundtrip);
             }
 
             assert_eq!(input, roundtrip, "BMI2 roundtrip failed for seed {seed}");
         }
+    }
+
+    /// The width-generic BMI2 untranspose must match the width-parameterized baseline for every
+    /// element width.
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_bmi2_untranspose_all_widths_match_baseline() {
+        fn check<T: FastLanes>() {
+            for seed in [0, 42, 123, 255] {
+                let input = generate_test_data(seed);
+                let mut baseline_out = [0u64; 16];
+                let mut bmi2_out = [0u64; 16];
+
+                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
+                // SAFETY: guarded by `has_bmi2`.
+                unsafe { untranspose_bits_bmi2::<T>(&input, &mut bmi2_out) };
+
+                assert_eq!(
+                    baseline_out,
+                    bmi2_out,
+                    "BMI2 untranspose != baseline for type={} seed={seed}",
+                    core::any::type_name::<T>()
+                );
+            }
+        }
+        if !has_bmi2() {
+            return;
+        }
+        check::<u8>();
+        check::<u16>();
+        check::<u32>();
+        check::<u64>();
     }
 
     #[cfg(feature = "std")]
@@ -317,10 +420,42 @@ mod tests {
             // SAFETY: guarded by `has_vbmi`.
             unsafe {
                 transpose_bits_vbmi(&input, &mut transposed);
-                untranspose_bits_vbmi(&transposed, &mut roundtrip);
+                untranspose_bits_vbmi::<u64>(&transposed, &mut roundtrip);
             }
 
             assert_eq!(input, roundtrip, "VBMI roundtrip failed for seed {seed}");
         }
+    }
+
+    /// The width-generic VBMI untranspose must match the width-parameterized baseline for every
+    /// element width.
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_vbmi_untranspose_all_widths_match_baseline() {
+        fn check<T: FastLanes>() {
+            for seed in [0, 42, 123, 255] {
+                let input = generate_test_data(seed);
+                let mut baseline_out = [0u64; 16];
+                let mut vbmi_out = [0u64; 16];
+
+                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
+                // SAFETY: guarded by `has_vbmi`.
+                unsafe { untranspose_bits_vbmi::<T>(&input, &mut vbmi_out) };
+
+                assert_eq!(
+                    baseline_out,
+                    vbmi_out,
+                    "VBMI untranspose != baseline for type={} seed={seed}",
+                    core::any::type_name::<T>()
+                );
+            }
+        }
+        if !has_vbmi() {
+            return;
+        }
+        check::<u8>();
+        check::<u16>();
+        check::<u32>();
+        check::<u64>();
     }
 }
