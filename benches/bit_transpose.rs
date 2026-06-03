@@ -4,6 +4,7 @@ use arrayref::array_mut_ref;
 use arrayref::array_ref;
 use divan::counter::BytesCount;
 use divan::Bencher;
+use fastlanes::FastLanes;
 
 fn main() {
     divan::main();
@@ -53,9 +54,12 @@ fn scalar_transpose(bencher: Bencher) {
     bench_blocks(bencher, fastlanes::scalar::transpose_bits);
 }
 
-#[divan::bench]
-fn scalar_untranspose(bencher: Bencher) {
-    bench_blocks(bencher, fastlanes::scalar::untranspose_bits);
+/// Untranspose is generic over the element width `T`; benchmark each width separately. The mask
+/// always factors into 16 groups of 8 bytes regardless of `T`, so per-arch the widths should be
+/// within noise of one another (only the gather/scatter index tables differ).
+#[divan::bench(types = [u8, u16, u32, u64])]
+fn scalar_untranspose<T: FastLanes>(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::scalar::untranspose_bits::<T>);
 }
 
 #[divan::bench]
@@ -63,9 +67,9 @@ fn dispatch_transpose(bencher: Bencher) {
     bench_blocks(bencher, fastlanes::transpose_bits);
 }
 
-#[divan::bench]
-fn dispatch_untranspose(bencher: Bencher) {
-    bench_blocks(bencher, fastlanes::untranspose_bits);
+#[divan::bench(types = [u8, u16, u32, u64])]
+fn dispatch_untranspose<T: FastLanes>(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::untranspose_bits::<T>);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -98,6 +102,7 @@ mod x86 {
 mod aarch64 {
     use super::{bench_blocks, Bencher};
     use fastlanes::aarch64;
+    use fastlanes::FastLanes;
 
     #[divan::bench]
     fn neon_transpose(bencher: Bencher) {
@@ -107,11 +112,11 @@ mod aarch64 {
         });
     }
 
-    #[divan::bench]
-    fn neon_untranspose(bencher: Bencher) {
+    #[divan::bench(types = [u8, u16, u32, u64])]
+    fn neon_untranspose<T: FastLanes>(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
         bench_blocks(bencher, |i, o| unsafe {
-            aarch64::untranspose_bits_neon(i, o)
+            aarch64::untranspose_bits_neon::<T>(i, o)
         });
     }
 }

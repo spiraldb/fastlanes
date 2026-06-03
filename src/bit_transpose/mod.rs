@@ -120,34 +120,42 @@ pub fn transpose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
     #[cfg(target_arch = "aarch64")]
     // SAFETY: NEON is always available on aarch64.
     unsafe {
-        aarch64::transpose_bits_neon(input, output)
+        aarch64::transpose_bits_neon(input, output);
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     scalar::transpose_bits(input, output);
 }
 
-/// Untranspose 1024 bits from `FastLanes` layout, dispatching to the best implementation.
+/// Untranspose a `T`-width comparison mask (1024 bits) from `FastLanes` layout into logical row
+/// order, dispatching to the best implementation. For `T = u64` this is the canonical `FastLanes`
+/// bit untranspose; narrower `T` undo the per-lane packing produced by `unpack_cmp` for that width.
 #[inline]
-pub fn untranspose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
+pub fn untranspose_bits<T: crate::FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     #[cfg(target_arch = "x86_64")]
     {
-        if detect_vbmi() {
+        // The BMI2/VBMI kernels currently only implement the `u64` (16-lane) transpose; other
+        // widths fall back to scalar.
+        //
+        // TODO(x86): add width-generic `untranspose_bits_{bmi2,vbmi}::<T>` kernels (mirroring the
+        // NEON `permute_128` + per-group 8x8 transpose approach in `aarch64.rs`) and route u8/u16/
+        // u32 through them here instead of the scalar fallback.
+        if T::T == 64 && detect_vbmi() {
             // SAFETY: guarded by `detect_vbmi`.
             unsafe { x86::untranspose_bits_vbmi(input, output) }
-        } else if detect_bmi2() {
+        } else if T::T == 64 && detect_bmi2() {
             // SAFETY: guarded by `detect_bmi2`.
             unsafe { x86::untranspose_bits_bmi2(input, output) }
         } else {
-            scalar::untranspose_bits(input, output);
+            scalar::untranspose_bits::<T>(input, output);
         }
     }
     #[cfg(target_arch = "aarch64")]
     // SAFETY: NEON is always available on aarch64.
     unsafe {
-        aarch64::untranspose_bits_neon(input, output)
+        aarch64::untranspose_bits_neon::<T>(input, output);
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    scalar::untranspose_bits(input, output);
+    scalar::untranspose_bits::<T>(input, output);
 }
 
 #[cfg(test)]
@@ -172,16 +180,25 @@ pub(crate) fn transpose_bits_baseline(input: &[u64; 16], output: &mut [u64; 16])
     }
 }
 
-/// Reference untranspose: the inverse permutation of [`transpose_bits_baseline`].
+/// Reference untranspose for a `T`-width comparison mask, one bit at a time.
+///
+/// Mask bit `b = lane * T::T + row` holds the comparison for logical index `index(row, lane)`
+/// (the `unpack!` macro's formula), so we scatter each mask bit to its logical position. For
+/// `T = u64` this is exactly the inverse permutation of [`transpose_bits_baseline`].
 #[cfg(test)]
-pub(crate) fn untranspose_bits_baseline(input: &[u64; 16], output: &mut [u64; 16]) {
+pub(crate) fn untranspose_bits_baseline<T: crate::FastLanes>(
+    input: &[u64; 16],
+    output: &mut [u64; 16],
+) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
     *output = [0u8; 128];
-    for out_bit in 0..1024 {
-        let in_bit = crate::transpose(out_bit);
-        let bit_val = (input[in_bit / 8] >> (in_bit % 8)) & 1;
-        output[out_bit / 8] |= bit_val << (out_bit % 8);
+    for b in 0..1024 {
+        let lane = b / T::T;
+        let row = b % T::T;
+        let logical = crate::FL_ORDER[row / 8] * 16 + (row % 8) * 128 + lane;
+        let bit_val = (input[b / 8] >> (b % 8)) & 1;
+        output[logical / 8] |= bit_val << (logical % 8);
     }
 }
 
@@ -196,7 +213,7 @@ mod tests {
         let mut roundtrip = [0u64; 16];
 
         transpose_bits_baseline(&input, &mut transposed);
-        untranspose_bits_baseline(&transposed, &mut roundtrip);
+        untranspose_bits_baseline::<u64>(&transposed, &mut roundtrip);
 
         assert_eq!(input, roundtrip);
     }
@@ -225,8 +242,8 @@ mod tests {
             let mut baseline_out = [0u64; 16];
             let mut out = [0u64; 16];
 
-            untranspose_bits_baseline(&input, &mut baseline_out);
-            untranspose_bits(&input, &mut out);
+            untranspose_bits_baseline::<u64>(&input, &mut baseline_out);
+            untranspose_bits::<u64>(&input, &mut out);
 
             assert_eq!(
                 baseline_out, out,
@@ -243,7 +260,7 @@ mod tests {
             let mut roundtrip = [0u64; 16];
 
             transpose_bits(&input, &mut transposed);
-            untranspose_bits(&transposed, &mut roundtrip);
+            untranspose_bits::<u64>(&transposed, &mut roundtrip);
 
             assert_eq!(
                 input, roundtrip,
