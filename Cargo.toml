@@ -11,6 +11,13 @@ edition = "2021"
 rust-version = "1.91"
 exclude = [".github/*", "renovate.json"]
 
+[features]
+default = []
+# Enables runtime CPU feature detection for `transpose_bits`/`untranspose_bits`
+# dispatch. Without it, the dispatch is resolved at compile time from the enabled
+# `target_feature`s, keeping the crate `no_std`.
+std = []
+
 [dependencies]
 arrayref = "0.3.7"
 const_for = "0.1.4"
@@ -64,6 +71,11 @@ harness = false
 [[bench]]
 name = "transpose"
 harness = false
+
+[[bench]]
+name = "bit_transpose"
+harness = false
+required-features = ["std"]
 
 [[bench]]
 name = "rle"
