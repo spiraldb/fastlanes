@@ -43,12 +43,44 @@ jobs:
         run: cargo msrv verify
 
   bench-codspeed:
-    name: Benchmark with Codspeed
+    name: Benchmark with Codspeed (${{ matrix.name }})
     runs-on:
       - runs-on=${{ github.run_id }}
-      - family=c6id.8xlarge
+      - family=c8i.8xlarge
       - image=ubuntu24-full-x64
-      - tag=bench-codspeed
+      - tag=${{ matrix.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Deterministic instruction-count benchmarks under Valgrind, for every suite
+          # EXCEPT bit_transpose (which is measured per-tier in walltime below, so it has
+          # a single home runner). Keep this list in sync with the [[bench]] targets.
+          - name: simulation
+            mode: simulation
+            tag: bench-codspeed
+            rustflags: "-C target-feature=+avx2"
+            build-args: "--bench bitpacking --bench ffor --bench bitpacking_cmp --bench delta --bench transpose --bench rle"
+          # Real wall-clock timings, one runner per Intel feature tier. Each tier is built
+          # with its own -C target-feature flag, and the bit_transpose benches are gated on
+          # that feature via #[bench(<tier>)], so each one compiles — and runs — on exactly
+          # one runner. Measured on runs-on x86 (c8i / Granite Rapids) since CodSpeed's
+          # macro runners are ARM64 and can't execute the x86 paths.
+          - name: walltime-baseline
+            mode: walltime
+            tag: bench-walltime
+            rustflags: ""
+            build-args: "--bench bit_transpose"
+          - name: walltime-bmi2
+            mode: walltime
+            tag: bench-walltime
+            rustflags: "-C target-feature=+bmi2"
+            build-args: "--bench bit_transpose"
+          - name: walltime-avx512
+            mode: walltime
+            tag: bench-walltime
+            rustflags: "-C target-feature=+avx512f,+avx512bw,+avx512vbmi"
+            build-args: "--bench bit_transpose"
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -60,13 +92,13 @@ jobs:
 
       - name: Build benchmarks
         env:
-          RUSTFLAGS: "-C target-feature=+avx2"
+          RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
-          cargo codspeed build --profile bench --features std
+          cargo codspeed build ${{ matrix.build-args }} --profile bench --features std -m ${{ matrix.mode }}
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@3194d9a39c4d46684cb44bf7207fc56626aad8fd # v4
         with:
-          run: cargo codspeed run
+          run: cargo codspeed run -m ${{ matrix.mode }}
           token: ${{ secrets.CODSPEED_TOKEN }}
-          mode: simulation
+          mode: ${{ matrix.mode }}
