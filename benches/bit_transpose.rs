@@ -4,7 +4,6 @@ use arrayref::array_mut_ref;
 use arrayref::array_ref;
 use divan::counter::BytesCount;
 use divan::Bencher;
-use fastlanes::FastLanes;
 
 fn main() {
     divan::main();
@@ -36,19 +35,17 @@ fn bench_blocks(bencher: Bencher, op: impl Fn(&[u64; 16], &mut [u64; 16])) {
     });
 }
 
-/// Drive an unsafe, runtime-gated implementation: skip the benchmark when the
-/// CPU feature is unavailable, otherwise hand the call to [`bench_blocks`]. This
-/// is the only thing the per-tier benchmarks don't share, so it's all the macro
-/// hides — the `#[divan::bench]` functions themselves stay spelled out below.
-macro_rules! gated_bench {
-    ($bencher:expr, $supported:expr, $op:path) => {
-        if $supported {
-            // SAFETY: guarded by the `$supported` check above.
-            bench_blocks($bencher, |i, o| unsafe { $op(i, o) });
-        }
-    };
-}
+// Each benchmark is gated on the `target_feature` of its tier, so it compiles —
+// and therefore runs — only in the CI matrix entry built with that
+// `-C target-feature` flag. The gates are mutually exclusive, so every benchmark
+// has exactly one home runner:
+//   * baseline (scalar / dispatch) → the `simulation` job (no SIMD feature)
+//   * bmi2                         → the `walltime-bmi2` runner
+//   * avx512 vbmi                  → the `walltime-avx512` runner
+// Locally, `cargo bench` builds the baseline tier; pass the matching
+// `RUSTFLAGS="-C target-feature=+…"` (or `-C target-cpu=native`) to run a SIMD tier.
 
+#[cfg(not(any(target_feature = "bmi2", target_feature = "avx512vbmi")))]
 #[divan::bench]
 fn scalar_transpose(bencher: Bencher) {
     bench_blocks(bencher, fastlanes::scalar::transpose_bits);
@@ -57,44 +54,58 @@ fn scalar_transpose(bencher: Bencher) {
 /// Untranspose is generic over the element width `T`; benchmark each width separately. The mask
 /// always factors into 16 groups of 8 bytes regardless of `T`, so per-arch the widths should be
 /// within noise of one another (only the gather/scatter index tables differ).
+#[cfg(not(any(target_feature = "bmi2", target_feature = "avx512vbmi")))]
 #[divan::bench(types = [u8, u16, u32, u64])]
-fn scalar_untranspose<T: FastLanes>(bencher: Bencher) {
+fn scalar_untranspose<T: fastlanes::FastLanes>(bencher: Bencher) {
     bench_blocks(bencher, fastlanes::scalar::untranspose_bits::<T>);
 }
 
+#[cfg(not(any(target_feature = "bmi2", target_feature = "avx512vbmi")))]
 #[divan::bench]
 fn dispatch_transpose(bencher: Bencher) {
     bench_blocks(bencher, fastlanes::transpose_bits);
 }
 
+#[cfg(not(any(target_feature = "bmi2", target_feature = "avx512vbmi")))]
 #[divan::bench(types = [u8, u16, u32, u64])]
-fn dispatch_untranspose<T: FastLanes>(bencher: Bencher) {
+fn dispatch_untranspose<T: fastlanes::FastLanes>(bencher: Bencher) {
     bench_blocks(bencher, fastlanes::untranspose_bits::<T>);
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(target_feature = "bmi2", target_feature = "avx512vbmi")
+))]
 mod x86 {
     use super::{bench_blocks, Bencher};
     use fastlanes::x86;
 
+    #[cfg(all(target_feature = "bmi2", not(target_feature = "avx512vbmi")))]
     #[divan::bench]
     fn bmi2_transpose(bencher: Bencher) {
-        gated_bench!(bencher, x86::has_bmi2(), x86::transpose_bits_bmi2);
+        // SAFETY: this benchmark only compiles with `+bmi2`.
+        bench_blocks(bencher, |i, o| unsafe { x86::transpose_bits_bmi2(i, o) });
     }
 
+    #[cfg(all(target_feature = "bmi2", not(target_feature = "avx512vbmi")))]
     #[divan::bench]
     fn bmi2_untranspose(bencher: Bencher) {
-        gated_bench!(bencher, x86::has_bmi2(), x86::untranspose_bits_bmi2);
+        // SAFETY: this benchmark only compiles with `+bmi2`.
+        bench_blocks(bencher, |i, o| unsafe { x86::untranspose_bits_bmi2(i, o) });
     }
 
+    #[cfg(target_feature = "avx512vbmi")]
     #[divan::bench]
     fn vbmi_transpose(bencher: Bencher) {
-        gated_bench!(bencher, x86::has_vbmi(), x86::transpose_bits_vbmi);
+        // SAFETY: this benchmark only compiles with `+avx512vbmi`.
+        bench_blocks(bencher, |i, o| unsafe { x86::transpose_bits_vbmi(i, o) });
     }
 
+    #[cfg(target_feature = "avx512vbmi")]
     #[divan::bench]
     fn vbmi_untranspose(bencher: Bencher) {
-        gated_bench!(bencher, x86::has_vbmi(), x86::untranspose_bits_vbmi);
+        // SAFETY: this benchmark only compiles with `+avx512vbmi`.
+        bench_blocks(bencher, |i, o| unsafe { x86::untranspose_bits_vbmi(i, o) });
     }
 }
 
@@ -102,7 +113,6 @@ mod x86 {
 mod aarch64 {
     use super::{bench_blocks, Bencher};
     use fastlanes::aarch64;
-    use fastlanes::FastLanes;
 
     #[divan::bench]
     fn neon_transpose(bencher: Bencher) {
@@ -113,7 +123,7 @@ mod aarch64 {
     }
 
     #[divan::bench(types = [u8, u16, u32, u64])]
-    fn neon_untranspose<T: FastLanes>(bencher: Bencher) {
+    fn neon_untranspose<T: fastlanes::FastLanes>(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
         bench_blocks(bencher, |i, o| unsafe {
             aarch64::untranspose_bits_neon::<T>(i, o)
