@@ -46,79 +46,72 @@ pub(crate) const TRANSPOSE_2X2: u64 = 0x00AA_00AA_00AA_00AA;
 pub(crate) const TRANSPOSE_4X4: u64 = 0x0000_CCCC_0000_CCCC;
 pub(crate) const TRANSPOSE_8X8: u64 = 0x0000_0000_F0F0_F0F0;
 
-/// Byte-gather indices that pull the 8 bytes of every group into contiguous group-major order
-/// for an element width of `tb` bits. Group `g = lhi * (tb/8) + hi` collects byte `llo` of its
-/// lane words from input byte `lhi*tb + hi + llo*(tb/8)`. See [`crate::bit_transpose::scalar::untranspose_bits`].
+/// Group-major gather/scatter permutation tables shared by the SIMD width-generic untranspose
+/// kernels (NEON and AVX-512 VBMI). Only built for the architectures that have such a kernel.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) const fn gather_indices(tb: usize) -> [u8; 128] {
-    let bytes = tb / 8;
-    let mut idx = [0u8; 128];
-    let mut g = 0;
-    while g < 16 {
-        let lhi = g / bytes;
-        let hi = g % bytes;
-        let gather_base = lhi * tb + hi;
-        let mut llo = 0;
-        while llo < 8 {
-            idx[g * 8 + llo] = (gather_base + llo * bytes) as u8;
-            llo += 1;
+pub(crate) mod group_perm {
+    /// Byte-gather indices that pull the 8 bytes of every group into contiguous group-major order
+    /// for an element width of `tb` bits. Group `g = lhi * (tb/8) + hi` collects byte `llo` of its
+    /// lane words from input byte `lhi*tb + hi + llo*(tb/8)`. See
+    /// [`crate::bit_transpose::scalar::untranspose_bits`].
+    const fn gather_indices(tb: usize) -> [u8; 128] {
+        let bytes = tb / 8;
+        let mut idx = [0u8; 128];
+        let mut g = 0;
+        while g < 16 {
+            let lhi = g / bytes;
+            let hi = g % bytes;
+            let gather_base = lhi * tb + hi;
+            let mut llo = 0;
+            while llo < 8 {
+                idx[g * 8 + llo] = (gather_base + llo * bytes) as u8;
+                llo += 1;
+            }
+            g += 1;
         }
-        g += 1;
+        idx
     }
-    idx
-}
 
-/// Byte-scatter indices applied after the per-group 8x8 transpose: transposed byte `g*8 + lo`
-/// lands at logical byte `FL_ORDER[hi]*2 + lhi + lo*16`. Expressed as a gather table:
-/// `idx[logical_byte] = g*8 + lo`.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) const fn scatter_indices(tb: usize) -> [u8; 128] {
-    let bytes = tb / 8;
-    let mut idx = [0u8; 128];
-    let mut g = 0;
-    while g < 16 {
-        let lhi = g / bytes;
-        let hi = g % bytes;
-        let scatter_base = crate::FL_ORDER[hi] * 2 + lhi;
-        let mut lo = 0;
-        while lo < 8 {
-            idx[scatter_base + lo * 16] = (g * 8 + lo) as u8;
-            lo += 1;
+    /// Byte-scatter indices applied after the per-group 8x8 transpose: transposed byte `g*8 + lo`
+    /// lands at logical byte `FL_ORDER[hi]*2 + lhi + lo*16`. Expressed as a gather table:
+    /// `idx[logical_byte] = g*8 + lo`.
+    const fn scatter_indices(tb: usize) -> [u8; 128] {
+        let bytes = tb / 8;
+        let mut idx = [0u8; 128];
+        let mut g = 0;
+        while g < 16 {
+            let lhi = g / bytes;
+            let hi = g % bytes;
+            let scatter_base = crate::FL_ORDER[hi] * 2 + lhi;
+            let mut lo = 0;
+            while lo < 8 {
+                idx[scatter_base + lo * 16] = (g * 8 + lo) as u8;
+                lo += 1;
+            }
+            g += 1;
         }
-        g += 1;
+        idx
     }
-    idx
-}
 
-/// Group-major gather tables, indexed by element width (bits). Shared by the NEON and AVX-512
-/// VBMI width-generic untranspose kernels.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static GATHER_8: [u8; 128] = gather_indices(8);
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static GATHER_16: [u8; 128] = gather_indices(16);
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static GATHER_32: [u8; 128] = gather_indices(32);
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static GATHER_64: [u8; 128] = gather_indices(64);
+    static GATHER_8: [u8; 128] = gather_indices(8);
+    static GATHER_16: [u8; 128] = gather_indices(16);
+    static GATHER_32: [u8; 128] = gather_indices(32);
+    static GATHER_64: [u8; 128] = gather_indices(64);
 
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static SCATTER_8: [u8; 128] = scatter_indices(8);
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static SCATTER_16: [u8; 128] = scatter_indices(16);
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static SCATTER_32: [u8; 128] = scatter_indices(32);
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub(crate) static SCATTER_64: [u8; 128] = scatter_indices(64);
+    static SCATTER_8: [u8; 128] = scatter_indices(8);
+    static SCATTER_16: [u8; 128] = scatter_indices(16);
+    static SCATTER_32: [u8; 128] = scatter_indices(32);
+    static SCATTER_64: [u8; 128] = scatter_indices(64);
 
-/// Select the `(gather, scatter)` group-major permutation tables for an element width.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-#[inline]
-pub(crate) fn group_tables<T: crate::FastLanes>() -> (&'static [u8; 128], &'static [u8; 128]) {
-    match T::T {
-        8 => (&GATHER_8, &SCATTER_8),
-        16 => (&GATHER_16, &SCATTER_16),
-        32 => (&GATHER_32, &SCATTER_32),
-        _ => (&GATHER_64, &SCATTER_64),
+    /// Select the `(gather, scatter)` group-major permutation tables for an element width.
+    #[inline]
+    pub(crate) fn group_tables<T: crate::FastLanes>() -> (&'static [u8; 128], &'static [u8; 128]) {
+        match T::T {
+            8 => (&GATHER_8, &SCATTER_8),
+            16 => (&GATHER_16, &SCATTER_16),
+            32 => (&GATHER_32, &SCATTER_32),
+            _ => (&GATHER_64, &SCATTER_64),
+        }
     }
 }
 

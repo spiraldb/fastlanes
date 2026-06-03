@@ -18,7 +18,7 @@ use core::arch::aarch64::vsubq_u8;
 
 use crate::bit_transpose::as_byte_array;
 use crate::bit_transpose::as_byte_array_mut;
-use crate::bit_transpose::group_tables;
+use crate::bit_transpose::group_perm::group_tables;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
