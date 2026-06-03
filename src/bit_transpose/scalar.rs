@@ -179,7 +179,8 @@ mod tests {
                 untranspose_bits::<T>(&input, &mut scalar_out);
 
                 assert_eq!(
-                    baseline_out, scalar_out,
+                    baseline_out,
+                    scalar_out,
                     "scalar untranspose != baseline for type={} seed={seed}",
                     core::any::type_name::<T>()
                 );
