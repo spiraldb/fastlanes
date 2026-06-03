@@ -1,0 +1,254 @@
+//! Fast implementations of the `FastLanes` 1024-bit transpose.
+//!
+//! The `FastLanes` transpose is a fixed permutation of 1024 bits (16 × `u64`,
+//! i.e. 128 bytes) that enables SIMD parallelism for encodings like delta and
+//! RLE, and for transposing validity bitmaps. This module provides architecture
+//! specific implementations of both the transpose and its inverse.
+//!
+//! The key insight is that each output byte is formed by extracting the SAME bit
+//! position from 8 different input bytes at stride 16. The input byte groups follow
+//! the [`crate::FL_ORDER`] permutation pattern.
+//!
+//! # Choosing an implementation
+//!
+//! [`transpose_bits`] / [`untranspose_bits`] dispatch to the fastest available
+//! implementation. When the crate is built with the `std` feature this dispatch
+//! is performed at runtime via CPU feature detection; otherwise it is resolved at
+//! compile time from the enabled `target_feature`s, falling back to the portable
+//! scalar implementation.
+//!
+//! Every implementation is also exposed directly so that a downstream crate can
+//! select one explicitly even in a `no_std` build: [`scalar`], [`x86`]
+//! (`bmi2` / `avx512vbmi`), and [`aarch64`] (`neon`).
+//!
+//! All entry points operate over `[u64; 16]` (one 1024-bit block); bytes are
+//! interpreted in little-endian order.
+
+pub mod scalar;
+
+#[cfg(target_arch = "x86_64")]
+pub mod x86;
+
+#[cfg(target_arch = "aarch64")]
+pub mod aarch64;
+
+/// Base indices for the first 64 output bytes (lanes 0-7).
+/// Each entry indicates the starting input byte index for that output byte group.
+/// Pattern: `[0*2, 4*2, 2*2, 6*2, 1*2, 5*2, 3*2, 7*2]` = `[0, 8, 4, 12, 2, 10, 6, 14]`
+pub(crate) const BASE_PATTERN_FIRST: [usize; 8] = [0, 8, 4, 12, 2, 10, 6, 14];
+
+/// Base indices for the second 64 output bytes (lanes 8-15).
+/// Pattern: first pattern + 1 = `[1, 9, 5, 13, 3, 11, 7, 15]`
+pub(crate) const BASE_PATTERN_SECOND: [usize; 8] = [1, 9, 5, 13, 3, 11, 7, 15];
+
+/// Masks for transposing 8x8 bit blocks.
+pub(crate) const TRANSPOSE_2X2: u64 = 0x00AA_00AA_00AA_00AA;
+pub(crate) const TRANSPOSE_4X4: u64 = 0x0000_CCCC_0000_CCCC;
+pub(crate) const TRANSPOSE_8X8: u64 = 0x0000_0000_F0F0_F0F0;
+
+/// Reinterpret a 1024-bit block (`[u64; 16]`) as its 128 little-endian bytes.
+#[inline]
+#[must_use]
+pub(crate) fn as_byte_array(block: &[u64; 16]) -> &[u8; 128] {
+    // SAFETY: `[u64; 16]` and `[u8; 128]` have identical size (128 bytes). Every bit
+    // pattern is a valid `u8`, and the source is over-aligned for a `u8` array.
+    unsafe { &*block.as_ptr().cast::<[u8; 128]>() }
+}
+
+/// Reinterpret a mutable 1024-bit block (`[u64; 16]`) as its 128 little-endian bytes.
+#[inline]
+#[must_use]
+pub(crate) fn as_byte_array_mut(block: &mut [u64; 16]) -> &mut [u8; 128] {
+    // SAFETY: `[u64; 16]` and `[u8; 128]` have identical size (128 bytes). Every bit
+    // pattern is a valid `u8`, and the source is over-aligned for a `u8` array.
+    unsafe { &mut *block.as_mut_ptr().cast::<[u8; 128]>() }
+}
+
+/// Whether the AVX-512 VBMI implementation should be used.
+///
+/// Resolved at runtime with the `std` feature, otherwise at compile time.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn detect_vbmi() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std::is_x86_feature_detected!("avx512vbmi")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512f")
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        cfg!(all(
+            target_feature = "avx512vbmi",
+            target_feature = "avx512bw",
+            target_feature = "avx512f"
+        ))
+    }
+}
+
+/// Whether the BMI2 implementation should be used.
+///
+/// Resolved at runtime with the `std` feature, otherwise at compile time.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn detect_bmi2() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std::is_x86_feature_detected!("bmi2")
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        cfg!(target_feature = "bmi2")
+    }
+}
+
+/// Transpose 1024 bits into `FastLanes` layout, dispatching to the best implementation.
+#[inline]
+pub fn transpose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if detect_vbmi() {
+            // SAFETY: guarded by `detect_vbmi`.
+            unsafe { x86::transpose_bits_vbmi(input, output) }
+        } else if detect_bmi2() {
+            // SAFETY: guarded by `detect_bmi2`.
+            unsafe { x86::transpose_bits_bmi2(input, output) }
+        } else {
+            scalar::transpose_bits(input, output);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: NEON is always available on aarch64.
+    unsafe {
+        aarch64::transpose_bits_neon(input, output)
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    scalar::transpose_bits(input, output);
+}
+
+/// Untranspose 1024 bits from `FastLanes` layout, dispatching to the best implementation.
+#[inline]
+pub fn untranspose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if detect_vbmi() {
+            // SAFETY: guarded by `detect_vbmi`.
+            unsafe { x86::untranspose_bits_vbmi(input, output) }
+        } else if detect_bmi2() {
+            // SAFETY: guarded by `detect_bmi2`.
+            unsafe { x86::untranspose_bits_bmi2(input, output) }
+        } else {
+            scalar::untranspose_bits(input, output);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: NEON is always available on aarch64.
+    unsafe {
+        aarch64::untranspose_bits_neon(input, output)
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    scalar::untranspose_bits(input, output);
+}
+
+#[cfg(test)]
+pub(crate) fn generate_test_data(seed: u8) -> [u64; 16] {
+    let mut data = [0u64; 16];
+    for (i, byte) in as_byte_array_mut(&mut data).iter_mut().enumerate() {
+        *byte = seed.wrapping_mul(17).wrapping_add(i as u8).wrapping_mul(31);
+    }
+    data
+}
+
+/// Reference transpose built directly on top of [`crate::transpose`], one bit at a time.
+#[cfg(test)]
+pub(crate) fn transpose_bits_baseline(input: &[u64; 16], output: &mut [u64; 16]) {
+    let input = as_byte_array(input);
+    let output = as_byte_array_mut(output);
+    *output = [0u8; 128];
+    for in_bit in 0..1024 {
+        let out_bit = crate::transpose(in_bit);
+        let bit_val = (input[in_bit / 8] >> (in_bit % 8)) & 1;
+        output[out_bit / 8] |= bit_val << (out_bit % 8);
+    }
+}
+
+/// Reference untranspose: the inverse permutation of [`transpose_bits_baseline`].
+#[cfg(test)]
+pub(crate) fn untranspose_bits_baseline(input: &[u64; 16], output: &mut [u64; 16]) {
+    let input = as_byte_array(input);
+    let output = as_byte_array_mut(output);
+    *output = [0u8; 128];
+    for out_bit in 0..1024 {
+        let in_bit = crate::transpose(out_bit);
+        let bit_val = (input[in_bit / 8] >> (in_bit % 8)) & 1;
+        output[out_bit / 8] |= bit_val << (out_bit % 8);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_baseline_roundtrip() {
+        let input = generate_test_data(42);
+        let mut transposed = [0u64; 16];
+        let mut roundtrip = [0u64; 16];
+
+        transpose_bits_baseline(&input, &mut transposed);
+        untranspose_bits_baseline(&transposed, &mut roundtrip);
+
+        assert_eq!(input, roundtrip);
+    }
+
+    #[test]
+    fn test_dispatch_matches_baseline() {
+        for seed in [0, 42, 123, 255] {
+            let input = generate_test_data(seed);
+            let mut baseline_out = [0u64; 16];
+            let mut out = [0u64; 16];
+
+            transpose_bits_baseline(&input, &mut baseline_out);
+            transpose_bits(&input, &mut out);
+
+            assert_eq!(
+                baseline_out, out,
+                "transpose dispatch doesn't match baseline for seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_untranspose_dispatch_matches_baseline() {
+        for seed in [0, 42, 123, 255] {
+            let input = generate_test_data(seed);
+            let mut baseline_out = [0u64; 16];
+            let mut out = [0u64; 16];
+
+            untranspose_bits_baseline(&input, &mut baseline_out);
+            untranspose_bits(&input, &mut out);
+
+            assert_eq!(
+                baseline_out, out,
+                "untranspose dispatch doesn't match baseline for seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dispatch_roundtrip() {
+        for seed in [0, 42, 123, 255] {
+            let input = generate_test_data(seed);
+            let mut transposed = [0u64; 16];
+            let mut roundtrip = [0u64; 16];
+
+            transpose_bits(&input, &mut transposed);
+            untranspose_bits(&transposed, &mut roundtrip);
+
+            assert_eq!(
+                input, roundtrip,
+                "dispatch roundtrip failed for seed {seed}"
+            );
+        }
+    }
+}

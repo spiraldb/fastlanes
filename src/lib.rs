@@ -2,10 +2,13 @@
 
 extern crate alloc;
 extern crate core;
+#[cfg(feature = "std")]
+extern crate std;
 
 use core::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
 
+mod bit_transpose;
 mod bitpacking;
 mod bitpacking_cmp;
 mod delta;
@@ -14,6 +17,7 @@ mod macros;
 mod rle;
 mod transpose;
 
+pub use bit_transpose::*;
 pub use bitpacking::*;
 pub use bitpacking_cmp::*;
 pub use delta::*;
