@@ -70,3 +70,36 @@ jobs:
           run: cargo codspeed run
           token: ${{ secrets.CODSPEED_TOKEN }}
           mode: simulation
+
+  bench-bit-transpose-walltime:
+    name: Bit-transpose walltime (Intel feature tiers)
+    # CodSpeed's hosted macro runners are ARM64 and can't execute the x86 BMI2 /
+    # AVX-512 VBMI tiers, and the simulation job above runs under Valgrind (no
+    # AVX-512). So the per-tier numbers are measured here, in walltime, on a
+    # dedicated runs-on x86 instance whose CPU (Ice Lake) has every tier.
+    runs-on:
+      - runs-on=${{ github.run_id }}
+      - family=c6id.8xlarge
+      - image=ubuntu24-full-x64
+      - tag=bench-walltime
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: ./.github/actions/setup-rust
+
+      - name: Install Codspeed
+        shell: bash
+        run: cargo install --force cargo-codspeed --locked
+
+      - name: Build benchmarks
+        env:
+          RUSTFLAGS: "-C target-feature=+avx2"
+        run: |
+          cargo codspeed build --bench bit_transpose --profile bench --features std -m walltime
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@3194d9a39c4d46684cb44bf7207fc56626aad8fd # v4
+        with:
+          run: cargo codspeed run -m walltime
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          mode: walltime
