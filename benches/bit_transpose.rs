@@ -20,7 +20,7 @@ fn make_input() -> Vec<u64> {
         .collect()
 }
 
-/// Run `op` over every 1024-bit block of the buffer.
+/// Shared driver: run `op` over every 1024-bit block of the buffer.
 fn bench_blocks(bencher: Bencher, op: impl Fn(&[u64; 16], &mut [u64; 16])) {
     let input = make_input();
     let mut output = vec![0u64; U64S];
@@ -35,65 +35,63 @@ fn bench_blocks(bencher: Bencher, op: impl Fn(&[u64; 16], &mut [u64; 16])) {
     });
 }
 
-/// Generate a `<feature>_transpose` / `<feature>_untranspose` benchmark pair, one
-/// per CPU feature tier, from a single description.
-///
-/// Each pair runs one transpose implementation over every 1024-bit block. The
-/// optional `guard = <expr>` is evaluated at runtime: when the required CPU
-/// feature is absent the benchmark returns immediately. That keeps the suite
-/// "just works" locally — `cargo bench` exercises whatever the host supports —
-/// while in CI the walltime runner, which has every feature tier, measures them
-/// all. No per-feature wiring is needed beyond this macro.
-macro_rules! bench_feature {
-    ($feature:ident, $transpose:expr, $untranspose:expr $(, guard = $guard:expr)?) => {
-        ::paste::paste! {
-            #[divan::bench]
-            fn [<$feature _transpose>](bencher: Bencher) {
-                $( if !$guard { return; } )?
-                bench_blocks(bencher, $transpose);
-            }
-
-            #[divan::bench]
-            fn [<$feature _untranspose>](bencher: Bencher) {
-                $( if !$guard { return; } )?
-                bench_blocks(bencher, $untranspose);
-            }
+/// Drive an unsafe, runtime-gated implementation: skip the benchmark when the
+/// CPU feature is unavailable, otherwise hand the call to [`bench_blocks`]. This
+/// is the only thing the per-tier benchmarks don't share, so it's all the macro
+/// hides — the `#[divan::bench]` functions themselves stay spelled out below.
+macro_rules! gated_bench {
+    ($bencher:expr, $supported:expr, $op:path) => {
+        if $supported {
+            // SAFETY: guarded by the `$supported` check above.
+            bench_blocks($bencher, |i, o| unsafe { $op(i, o) });
         }
     };
 }
 
-// The portable scalar fallback and the dispatch entry point exist on every
-// target, so they always run.
-bench_feature!(
-    scalar,
-    fastlanes::scalar::transpose_bits,
-    fastlanes::scalar::untranspose_bits
-);
-bench_feature!(
-    dispatch,
-    fastlanes::transpose_bits,
-    fastlanes::untranspose_bits
-);
+#[divan::bench]
+fn scalar_transpose(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::scalar::transpose_bits);
+}
+
+#[divan::bench]
+fn scalar_untranspose(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::scalar::untranspose_bits);
+}
+
+#[divan::bench]
+fn dispatch_transpose(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::transpose_bits);
+}
+
+#[divan::bench]
+fn dispatch_untranspose(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::untranspose_bits);
+}
 
 #[cfg(target_arch = "x86_64")]
 mod x86 {
     use super::{bench_blocks, Bencher};
     use fastlanes::x86;
 
-    bench_feature!(
-        bmi2,
-        // SAFETY: guarded by `has_bmi2`.
-        |i, o| unsafe { x86::transpose_bits_bmi2(i, o) },
-        |i, o| unsafe { x86::untranspose_bits_bmi2(i, o) },
-        guard = x86::has_bmi2()
-    );
-    bench_feature!(
-        vbmi,
-        // SAFETY: guarded by `has_vbmi`.
-        |i, o| unsafe { x86::transpose_bits_vbmi(i, o) },
-        |i, o| unsafe { x86::untranspose_bits_vbmi(i, o) },
-        guard = x86::has_vbmi()
-    );
+    #[divan::bench]
+    fn bmi2_transpose(bencher: Bencher) {
+        gated_bench!(bencher, x86::has_bmi2(), x86::transpose_bits_bmi2);
+    }
+
+    #[divan::bench]
+    fn bmi2_untranspose(bencher: Bencher) {
+        gated_bench!(bencher, x86::has_bmi2(), x86::untranspose_bits_bmi2);
+    }
+
+    #[divan::bench]
+    fn vbmi_transpose(bencher: Bencher) {
+        gated_bench!(bencher, x86::has_vbmi(), x86::transpose_bits_vbmi);
+    }
+
+    #[divan::bench]
+    fn vbmi_untranspose(bencher: Bencher) {
+        gated_bench!(bencher, x86::has_vbmi(), x86::untranspose_bits_vbmi);
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -101,10 +99,19 @@ mod aarch64 {
     use super::{bench_blocks, Bencher};
     use fastlanes::aarch64;
 
-    bench_feature!(
-        neon,
+    #[divan::bench]
+    fn neon_transpose(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
-        |i, o| unsafe { aarch64::transpose_bits_neon(i, o) },
-        |i, o| unsafe { aarch64::untranspose_bits_neon(i, o) }
-    );
+        bench_blocks(bencher, |i, o| unsafe {
+            aarch64::transpose_bits_neon(i, o)
+        });
+    }
+
+    #[divan::bench]
+    fn neon_untranspose(bencher: Bencher) {
+        // SAFETY: NEON is always available on aarch64.
+        bench_blocks(bencher, |i, o| unsafe {
+            aarch64::untranspose_bits_neon(i, o)
+        });
+    }
 }
