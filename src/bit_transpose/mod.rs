@@ -310,7 +310,8 @@ mod tests {
                 untranspose_bits::<T>(&input, &mut out);
 
                 assert_eq!(
-                    baseline_out, out,
+                    baseline_out,
+                    out,
                     "untranspose dispatch doesn't match baseline for type={} seed={seed}",
                     core::any::type_name::<T>()
                 );
