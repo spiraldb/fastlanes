@@ -31,6 +31,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/spiraldb/fastlanes/compare/v0.5.0...v0.5.1) - 2026-06-04
+
+### Added
+
+- Add width-generic x86 BMI2/VBMI untranspose for u8/u16/u32 ([#145](https://github.com/spiraldb/fastlanes/pull/145))
+- Fused bitpacking compare into a 1024-bit mask (+ SIMD bit-untranspose) ([#141](https://github.com/spiraldb/fastlanes/pull/141))
+- Add FastLanes 1024-bit transpose with SIMD implementations ([#142](https://github.com/spiraldb/fastlanes/pull/142))
+
+### Other
+
+- *(deps)* update taiki-e/install-action digest to 25435dc ([#138](https://github.com/spiraldb/fastlanes/pull/138))
+- clean up publish ([#139](https://github.com/spiraldb/fastlanes/pull/139))
+- *(deps)* update marcoieni/release-plz-action digest to 064f4d1 ([#136](https://github.com/spiraldb/fastlanes/pull/136))
+- *(deps)* update taiki-e/install-action digest to b550161 ([#135](https://github.com/spiraldb/fastlanes/pull/135))
+- *(deps)* update codspeedhq/action digest to 3194d9a ([#134](https://github.com/spiraldb/fastlanes/pull/134))
+- *(deps)* pin taiki-e/install-action action to 1329c29 ([#132](https://github.com/spiraldb/fastlanes/pull/132))
+- *(deps)* update mozilla-actions/sccache-action action to v0.0.10 ([#133](https://github.com/spiraldb/fastlanes/pull/133))
+- Reduce copies in benchmarks ([#131](https://github.com/spiraldb/fastlanes/pull/131))
+- Bump toolchain to stable and MSRV to 1.91 while verifying MSRV respected ([#130](https://github.com/spiraldb/fastlanes/pull/130))
+- Benchmark fused comparison for all widths ([#129](https://github.com/spiraldb/fastlanes/pull/129))
+- Remove unused const generics benchmarks ([#128](https://github.com/spiraldb/fastlanes/pull/128))
+- *(deps)* update codspeedhq/action digest to db35df7 ([#127](https://github.com/spiraldb/fastlanes/pull/127))
+- *(deps)* pin dependencies ([#126](https://github.com/spiraldb/fastlanes/pull/126))
+- Move memory allocation out of RLE benchmarks ([#123](https://github.com/spiraldb/fastlanes/pull/123))
+- *(deps)* update codspeedhq/action digest to 1c8ae48 ([#122](https://github.com/spiraldb/fastlanes/pull/122))
+- *(deps)* update swatinem/rust-cache digest to e18b497 ([#121](https://github.com/spiraldb/fastlanes/pull/121))
+- *(deps)* update codspeedhq/action digest to 281164b ([#118](https://github.com/spiraldb/fastlanes/pull/118))
+- *(deps)* update marcoieni/release-plz-action digest to 1528104 ([#119](https://github.com/spiraldb/fastlanes/pull/119))
+- *(deps)* update marcoieni/release-plz-action digest to f708778 ([#115](https://github.com/spiraldb/fastlanes/pull/115))
+- *(deps)* update actions/checkout digest to de0fac2 ([#114](https://github.com/spiraldb/fastlanes/pull/114))
+- *(deps)* update codspeedhq/action digest to 4deb327 ([#113](https://github.com/spiraldb/fastlanes/pull/113))
+- *(deps)* update codspeedhq/action digest to e736f0d ([#111](https://github.com/spiraldb/fastlanes/pull/111))
+- *(deps)* update actions/checkout action to v6 ([#109](https://github.com/spiraldb/fastlanes/pull/109))
+- *(deps)* update swatinem/rust-cache digest to 779680d ([#108](https://github.com/spiraldb/fastlanes/pull/108))
+- *(deps)* update marcoieni/release-plz-action digest to e592230 ([#107](https://github.com/spiraldb/fastlanes/pull/107))
+- *(deps)* update codspeedhq/action digest to 346a2d8 ([#105](https://github.com/spiraldb/fastlanes/pull/105))
+- *(deps)* update actions/checkout digest to 93cb6ef ([#104](https://github.com/spiraldb/fastlanes/pull/104))
+- *(deps)* update codspeedhq/action digest to daf3e64 ([#103](https://github.com/spiraldb/fastlanes/pull/103))
+- clear up safety documentation ([#102](https://github.com/spiraldb/fastlanes/pull/102))
+- *(deps)* update codspeedhq/action digest to bb005fe ([#101](https://github.com/spiraldb/fastlanes/pull/101))
+- *(deps)* update codspeedhq/action digest to c6574d0 ([#99](https://github.com/spiraldb/fastlanes/pull/99))
+
 ## [0.5.0](https://github.com/spiraldb/fastlanes/compare/v0.4.0...v0.5.0) - 2025-10-16
 
 ### Added
