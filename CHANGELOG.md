@@ -33,11 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1](https://github.com/spiraldb/fastlanes/compare/v0.5.0...v0.5.1) - 2026-06-04
 
-### Other
+### Added
 
 - Add width-generic x86 BMI2/VBMI untranspose for u8/u16/u32 ([#145](https://github.com/spiraldb/fastlanes/pull/145))
 - Fused bitpacking compare into a 1024-bit mask (+ SIMD bit-untranspose) ([#141](https://github.com/spiraldb/fastlanes/pull/141))
 - Add FastLanes 1024-bit transpose with SIMD implementations ([#142](https://github.com/spiraldb/fastlanes/pull/142))
+
+### Other
+
 - *(deps)* update taiki-e/install-action digest to 25435dc ([#138](https://github.com/spiraldb/fastlanes/pull/138))
 - clean up publish ([#139](https://github.com/spiraldb/fastlanes/pull/139))
 - *(deps)* update marcoieni/release-plz-action digest to 064f4d1 ([#136](https://github.com/spiraldb/fastlanes/pull/136))
