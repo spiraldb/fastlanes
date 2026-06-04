@@ -63,6 +63,7 @@ fn dispatch_untranspose<T: FastLanes>(bencher: Bencher) {
 mod x86 {
     use super::{bench_blocks, Bencher};
     use fastlanes::x86;
+    use fastlanes::FastLanes;
 
     #[divan::bench]
     fn bmi2_transpose(bencher: Bencher) {
@@ -73,13 +74,15 @@ mod x86 {
         bench_blocks(bencher, |i, o| unsafe { x86::transpose_bits_bmi2(i, o) });
     }
 
-    #[divan::bench]
-    fn bmi2_untranspose(bencher: Bencher) {
+    #[divan::bench(types = [u8, u16, u32, u64])]
+    fn bmi2_untranspose<T: FastLanes>(bencher: Bencher) {
         if !x86::has_bmi2() {
             return;
         }
         // SAFETY: guarded by `has_bmi2`.
-        bench_blocks(bencher, |i, o| unsafe { x86::untranspose_bits_bmi2(i, o) });
+        bench_blocks(bencher, |i, o| unsafe {
+            x86::untranspose_bits_bmi2::<T>(i, o);
+        });
     }
 
     #[divan::bench]
@@ -91,13 +94,15 @@ mod x86 {
         bench_blocks(bencher, |i, o| unsafe { x86::transpose_bits_vbmi(i, o) });
     }
 
-    #[divan::bench]
-    fn vbmi_untranspose(bencher: Bencher) {
+    #[divan::bench(types = [u8, u16, u32, u64])]
+    fn vbmi_untranspose<T: FastLanes>(bencher: Bencher) {
         if !x86::has_vbmi() {
             return;
         }
         // SAFETY: guarded by `has_vbmi`.
-        bench_blocks(bencher, |i, o| unsafe { x86::untranspose_bits_vbmi(i, o) });
+        bench_blocks(bencher, |i, o| unsafe {
+            x86::untranspose_bits_vbmi::<T>(i, o);
+        });
     }
 }
 
@@ -111,7 +116,7 @@ mod aarch64 {
     fn neon_transpose(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
         bench_blocks(bencher, |i, o| unsafe {
-            aarch64::transpose_bits_neon(i, o)
+            aarch64::transpose_bits_neon(i, o);
         });
     }
 
@@ -119,7 +124,7 @@ mod aarch64 {
     fn neon_untranspose<T: FastLanes>(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
         bench_blocks(bencher, |i, o| unsafe {
-            aarch64::untranspose_bits_neon::<T>(i, o)
+            aarch64::untranspose_bits_neon::<T>(i, o);
         });
     }
 }
