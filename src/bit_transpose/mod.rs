@@ -300,19 +300,26 @@ mod tests {
 
     #[test]
     fn test_untranspose_dispatch_matches_baseline() {
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut baseline_out = [0u64; 16];
-            let mut out = [0u64; 16];
+        fn check<T: crate::FastLanes>() {
+            for seed in [0, 42, 123, 255] {
+                let input = generate_test_data(seed);
+                let mut baseline_out = [0u64; 16];
+                let mut out = [0u64; 16];
 
-            untranspose_bits_baseline::<u64>(&input, &mut baseline_out);
-            untranspose_bits::<u64>(&input, &mut out);
+                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
+                untranspose_bits::<T>(&input, &mut out);
 
-            assert_eq!(
-                baseline_out, out,
-                "untranspose dispatch doesn't match baseline for seed {seed}"
-            );
+                assert_eq!(
+                    baseline_out, out,
+                    "untranspose dispatch doesn't match baseline for type={} seed={seed}",
+                    core::any::type_name::<T>()
+                );
+            }
         }
+        check::<u8>();
+        check::<u16>();
+        check::<u32>();
+        check::<u64>();
     }
 
     #[test]
@@ -329,6 +336,116 @@ mod tests {
                 input, roundtrip,
                 "dispatch roundtrip failed for seed {seed}"
             );
+        }
+    }
+
+    /// The shared `group_perm` gather/scatter tables are consumed only by the SIMD kernels
+    /// (NEON on `aarch64`, VBMI on `x86_64`) — so on a given host most of them are never executed
+    /// (e.g. on an x86 CI runner without AVX-512VBMI nothing touches them, since BMI2 computes
+    /// its indices inline). These two tests exercise the tables directly, on every architecture,
+    /// independent of any SIMD support.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    mod group_perm_tables {
+        use super::*;
+
+        /// Portable scalar re-implementation of the SIMD width-generic untranspose, driven purely
+        /// by the shared tables: gather the 16 byte-groups into group-major order, 8x8-transpose
+        /// each group, then scatter back. Equivalent to the NEON/VBMI kernels but in plain Rust,
+        /// so it validates the table *data* against the bit-level baseline on any host.
+        fn untranspose_via_tables<T: crate::FastLanes>(input: &[u64; 16]) -> [u64; 16] {
+            fn transpose_8x8(mut x: u64) -> u64 {
+                let t = (x ^ (x >> 7)) & TRANSPOSE_2X2;
+                x = x ^ t ^ (t << 7);
+                let t = (x ^ (x >> 14)) & TRANSPOSE_4X4;
+                x = x ^ t ^ (t << 14);
+                let t = (x ^ (x >> 28)) & TRANSPOSE_8X8;
+                x ^ t ^ (t << 28)
+            }
+
+            let (gather, scatter) = group_perm::group_tables::<T>();
+            let src = as_byte_array(input);
+
+            // Gather: group-major order, `grouped[k] = src[gather[k]]`.
+            let mut grouped = [0u8; 128];
+            for k in 0..128 {
+                grouped[k] = src[gather[k] as usize];
+            }
+
+            // 8x8 bit-transpose each of the 16 groups (8 bytes each).
+            let mut transposed = [0u8; 128];
+            for g in 0..16 {
+                let mut word = 0u64;
+                for b in 0..8 {
+                    word |= u64::from(grouped[g * 8 + b]) << (b * 8);
+                }
+                let w = transpose_8x8(word);
+                for b in 0..8 {
+                    transposed[g * 8 + b] = (w >> (b * 8)) as u8;
+                }
+            }
+
+            // Scatter: `out[k] = transposed[scatter[k]]`.
+            let mut out = [0u64; 16];
+            let dst = as_byte_array_mut(&mut out);
+            for k in 0..128 {
+                dst[k] = transposed[scatter[k] as usize];
+            }
+            out
+        }
+
+        #[test]
+        fn tables_match_baseline_all_widths() {
+            fn check<T: crate::FastLanes>() {
+                for seed in [0, 1, 42, 123, 200, 255] {
+                    let input = generate_test_data(seed);
+                    let mut baseline = [0u64; 16];
+                    untranspose_bits_baseline::<T>(&input, &mut baseline);
+                    assert_eq!(
+                        untranspose_via_tables::<T>(&input),
+                        baseline,
+                        "group_perm tables != baseline for type={} seed={seed}",
+                        core::any::type_name::<T>()
+                    );
+                }
+            }
+            check::<u8>();
+            check::<u16>();
+            check::<u32>();
+            check::<u64>();
+        }
+
+        /// Both tables must be permutations of `0..128` — every input byte is read exactly once
+        /// (gather) and every output byte is written exactly once (scatter). A duplicated or
+        /// dropped index would silently corrupt data, so assert bijectivity for every width.
+        #[test]
+        fn tables_are_permutations() {
+            fn is_permutation(t: &[u8; 128]) -> bool {
+                let mut seen = [false; 128];
+                for &i in t {
+                    if i as usize >= 128 || seen[i as usize] {
+                        return false;
+                    }
+                    seen[i as usize] = true;
+                }
+                seen.iter().all(|&b| b)
+            }
+            fn check<T: crate::FastLanes>() {
+                let (gather, scatter) = group_perm::group_tables::<T>();
+                assert!(
+                    is_permutation(gather),
+                    "gather table for {} is not a permutation",
+                    core::any::type_name::<T>()
+                );
+                assert!(
+                    is_permutation(scatter),
+                    "scatter table for {} is not a permutation",
+                    core::any::type_name::<T>()
+                );
+            }
+            check::<u8>();
+            check::<u16>();
+            check::<u32>();
+            check::<u64>();
         }
     }
 }
