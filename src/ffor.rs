@@ -1,5 +1,4 @@
 use crate::{pack, seq_t, supported_bit_width, unpack, BitPacking, FastLanes};
-use arrayref::{array_mut_ref, array_ref};
 use paste::paste;
 
 pub trait FoR: BitPacking {
@@ -80,9 +79,9 @@ macro_rules! impl_for {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::unfor_pack::<W, B>(
-                                array_ref![input, 0, B],
+                                unsafe { crate::as_array_unchecked(input) },
                                 reference,
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },)*
                         // seq_t has exclusive upper bound
@@ -90,9 +89,9 @@ macro_rules! impl_for {
                             const W: usize = <$T>::T;
                             const B: usize = 1024;
                             Self::unfor_pack::<W, B>(
-                                array_ref![input, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
                                 reference,
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)

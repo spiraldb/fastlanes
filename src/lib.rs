@@ -37,6 +37,30 @@ impl FastLanes for u16 {}
 impl FastLanes for u32 {}
 impl FastLanes for u64 {}
 
+/// Reinterprets the first `N` elements of `slice` as a fixed-size array reference.
+///
+/// # Safety
+/// `slice.len()` must be at least `N`. This is checked only with `debug_assert!`.
+#[inline]
+pub(crate) unsafe fn as_array_unchecked<T, const N: usize>(slice: &[T]) -> &[T; N] {
+    debug_assert!(slice.len() >= N);
+    // SAFETY: the caller guarantees `slice` has at least `N` elements, and `[T; N]`
+    // has the same alignment as `T`.
+    unsafe { &*slice.as_ptr().cast::<[T; N]>() }
+}
+
+/// Reinterprets the first `N` elements of `slice` as a mutable fixed-size array reference.
+///
+/// # Safety
+/// `slice.len()` must be at least `N`. This is checked only with `debug_assert!`.
+#[inline]
+pub(crate) unsafe fn as_array_mut_unchecked<T, const N: usize>(slice: &mut [T]) -> &mut [T; N] {
+    debug_assert!(slice.len() >= N);
+    // SAFETY: the caller guarantees `slice` has at least `N` elements, and `[T; N]`
+    // has the same alignment as `T`.
+    unsafe { &mut *slice.as_mut_ptr().cast::<[T; N]>() }
+}
+
 // Macro for repeating a code block bit_size_of::<T> times.
 #[macro_export]
 macro_rules! seq_t {

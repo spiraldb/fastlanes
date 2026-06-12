@@ -1,4 +1,3 @@
-use arrayref::{array_mut_ref, array_ref};
 use const_for::const_for;
 use core::mem::size_of;
 use paste::paste;
@@ -89,8 +88,8 @@ macro_rules! impl_packing {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::pack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, B],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },)*
                         // seq_t has exclusive upper bound
@@ -99,8 +98,8 @@ macro_rules! impl_packing {
                             const W: usize = <$T>::T;
                             const B: usize = 1024;
                             Self::pack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)
@@ -137,8 +136,8 @@ macro_rules! impl_packing {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::unpack::<W, B>(
-                                array_ref![input, 0, B],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },)*
                         // seq_t has exclusive upper bound
@@ -146,8 +145,8 @@ macro_rules! impl_packing {
                             const W: usize = <$T>::T;
                             const B: usize = 1024;
                             Self::unpack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)
@@ -219,13 +218,13 @@ macro_rules! impl_packing {
                     match width {
                         #(W => {
                             const B: usize = 1024 * W / T;
-                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, B], index);
+                            return <$T>::unpack_single::<W, B>(unsafe { crate::as_array_unchecked(packed) }, index);
                         },)*
                         // seq_t has exclusive upper bound
                         T => {
                             const W: usize = T;
                             const B: usize = 1024;
-                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, 1024], index);
+                            return <$T>::unpack_single::<W, B>(unsafe { crate::as_array_unchecked(packed) }, index);
                         },
                         _ => unreachable!("Unsupported width: {}", width)
                     }
