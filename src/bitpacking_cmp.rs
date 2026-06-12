@@ -119,7 +119,7 @@ macro_rules! impl_packing_compare {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::unpack_cmp::<W, B, V, F>(
-                                arrayref::array_ref![input, 0, 1024 * W / <$T>::T],
+                                unsafe { crate::as_array_unchecked(input) },
                                 output,
                                 comparison,
                                 value

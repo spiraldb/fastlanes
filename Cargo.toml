@@ -19,7 +19,6 @@ default = []
 std = []
 
 [dependencies]
-arrayref = "0.3.7"
 const_for = "0.1.4"
 core_detect = "1.0.0"
 num-traits = "0.2.19"
