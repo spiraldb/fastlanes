@@ -54,6 +54,11 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: ./.github/actions/setup-rust
 
+      - name: Install libc debug symbols
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc6-dbg
+
       - name: Install Codspeed
         shell: bash
         run: cargo install --force cargo-codspeed --locked
