@@ -2,8 +2,8 @@ use std::hint::black_box;
 
 use arrayref::array_mut_ref;
 use arrayref::array_ref;
-use divan::counter::BytesCount;
 use divan::Bencher;
+use divan::counter::BytesCount;
 use fastlanes::FastLanes;
 
 fn main() {
@@ -61,9 +61,9 @@ fn dispatch_untranspose<T: FastLanes>(bencher: Bencher) {
 
 #[cfg(target_arch = "x86_64")]
 mod x86 {
-    use super::{bench_blocks, Bencher};
-    use fastlanes::x86;
+    use super::{Bencher, bench_blocks};
     use fastlanes::FastLanes;
+    use fastlanes::x86;
 
     #[divan::bench]
     fn bmi2_transpose(bencher: Bencher) {
@@ -108,9 +108,9 @@ mod x86 {
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64 {
-    use super::{bench_blocks, Bencher};
-    use fastlanes::aarch64;
+    use super::{Bencher, bench_blocks};
     use fastlanes::FastLanes;
+    use fastlanes::aarch64;
 
     #[divan::bench]
     fn neon_transpose(bencher: Bencher) {

@@ -14,7 +14,7 @@ macro_rules! iterate {
         macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
         {
             use $crate::{seq_t, FL_ORDER};
-            use paste::paste;
+            use pastey::paste;
 
             #[inline(always)]
             fn index(row: usize, lane: usize) -> usize {
@@ -37,7 +37,7 @@ macro_rules! pack {
         macro_rules! __kernel__ {( $_1 $idx:ident ) => ( $($body)* )}
         {
             use $crate::{seq_t, FL_ORDER};
-            use paste::paste;
+            use pastey::paste;
 
             // The number of bits of T.
             const T: usize = <$T>::T;
@@ -103,7 +103,7 @@ macro_rules! unpack {
         macro_rules! __kernel__ {( $_1 $idx:ident, $_2 $elem:ident ) => ( $($body)* )}
         {
             use $crate::{seq_t, FL_ORDER};
-            use paste::paste;
+            use pastey::paste;
 
             // The number of bits of T.
             const T: usize = <$T>::T;

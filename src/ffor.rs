@@ -1,5 +1,5 @@
-use crate::{pack, seq_t, supported_bit_width, unpack, BitPacking, FastLanes};
-use paste::paste;
+use crate::{BitPacking, FastLanes, pack, seq_t, supported_bit_width, unpack};
+use pastey::paste;
 
 pub trait FoR: BitPacking {
     fn for_pack<const W: usize, const B: usize>(
