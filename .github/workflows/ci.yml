@@ -35,7 +35,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
 
       - name: Install cargo-msrv
-        uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2
+        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
         with:
           tool: cargo-msrv
 
