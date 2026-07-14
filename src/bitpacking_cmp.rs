@@ -4,6 +4,21 @@ use crate::{supported_bit_width, FastLanes, FastLanesComparable};
 use paste::paste;
 
 pub trait BitPackingCompare: FastLanes {
+    /// Benchmark/reference variant of [`BitPackingCompare::unpack_cmp`] that materializes one
+    /// byte-sized `bool` per logical value instead of producing a packed mask.
+    ///
+    /// This preserves the pre-packed-mask implementation so benchmarks can compare the two
+    /// output strategies using the same decoder and compiler revision.
+    #[doc(hidden)]
+    fn unpack_cmp_byte<const W: usize, const B: usize, V, F>(
+        input: &[Self; B],
+        output: &mut [bool; 1024],
+        comparison: F,
+        value: V,
+    ) where
+        V: FastLanesComparable<Bitpacked = Self>,
+        F: Fn(V, V) -> bool;
+
     /// A fused unpack (see `BitPacking::unpack`) and compare, packing the boolean results into a
     /// bitmask of `1024` bits (`16 x u64`).
     ///
@@ -53,6 +68,28 @@ pub trait BitPackingCompare: FastLanes {
 macro_rules! impl_packing_compare {
     ($T:ty) => {
         impl BitPackingCompare for $T {
+            #[inline(never)]
+            fn unpack_cmp_byte<const W: usize, const B: usize, V, F>(
+                input: &[Self; B],
+                output: &mut [bool; 1024],
+                f: F,
+                other: V,
+            ) where
+                V: FastLanesComparable<Bitpacked = Self>,
+                F: Fn(V, V) -> bool,
+            {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+
+                for lane in 0..Self::LANES {
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        output[$idx] = f(V::as_unpacked($elem), other);
+                    });
+                }
+            }
+
             #[inline(never)]
             fn unpack_cmp<const W: usize, const B: usize, V, F>(
                 input: &[Self; B],
