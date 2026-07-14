@@ -180,6 +180,44 @@ and the `packed+untr` vs `unpack+kmask` columns settle the logical-order ranking
 Note: DRAM-row absolute numbers vary ~±20% between runs on this shared VM (e.g. `cmp_byte`
 150–210 ns across the session); trust within-run ratios over cross-run absolutes.
 
+## Result 5: the "AVX-512 regression" diagnosed and fixed — it's LLVM's `prefer-256-bit` default
+
+Disassembly of `cmp_packed_raw_kernel` from the `-C target-cpu=native` build showed the packed
+kernel compiles to **256-bit ymm** code (LLVM enables `prefer-256-bit` by default for
+Skylake-AVX512 to avoid frequency licensing), but with EVEX **compare-into-k-register +
+masked-merge** for the mask accumulation (`vpcmpeqw → %k1`, then `vpsubw/vmovdqu16 ...{%k1}`).
+On Skylake-X, compare-to-k issues only on port 5 (3-cycle latency) and each masked merge
+extends a serial chain through the accumulator — that is the 50-vs-35 ns regression vs AVX2
+codegen, which gets plain vector compares (ports 0+1) folded with `vpand`/`vpor`.
+
+Two codegen experiments (divan medians ÷ 256, ns/block):
+
+| build | cmp_byte | cmp_packed_raw | unpack_and_cmp |
+|---|---:|---:|---:|
+| native (default, 256-bit + k-masks) | 30.6 | 50.6 | 126.3 |
+| native `-avx512bw,-avx512vl` (VEX compares) | 73.1 | 33.7 | — |
+| **native `-prefer-256-bit` (512-bit zmm)** | **20.7** | **27.2** | **82.9** |
+
+- Removing BW/VL recovers AVX2 speed for the packed kernel (33.7 ns), confirming the k-mask
+  diagnosis — but ruins `cmp_byte`, which needs BW.
+- The real fix: `RUSTFLAGS="-C target-cpu=native -C target-feature=-prefer-256-bit"`. At
+  512 bits the k-mask pattern amortizes (one port-5 compare covers 32 u16 lanes, merge chains
+  halve): packed drops 50.6 → **27.2 ns (1.9×)**, byte 30.6 → 20.7, unpack_and_cmp 126 → 83.
+  Streaming harness with the flag: `cmp_packed` 28.8 ns L1 / 53–59 ns DRAM (from 48/68–78),
+  and `unpack+kmask` 36.9 ns L1 / 59–62 ns DRAM — the fused kernel retakes the L1 and DRAM
+  lead once compiled at full width.
+- Caveat: sustained 512-bit execution downclocks Skylake-X (license-based frequency); a
+  microbenchmark overstates the win under mixed real workloads. Ice Lake+ and Zen 4/5 have
+  little to no such penalty. For the crate, the practical options are documenting the flag or
+  hand-writing zmm kernels (as `cmp_kmask_avx512` does) rather than relying on LLVM's width
+  heuristic.
+
+Estimated VBMI numbers on this class of machine (not measurable here, no VBMI silicon): the
+VBMI untranspose is ~48 mostly-parallel vector µops (2 `vpermi2b` gathers + 2×18-op 8×8
+bit-transposes + 2 `vpermi2b` scatters + 2 stores) ≈ **~8 ns/block**, mostly overlappable.
+Predicted `packed+untr` with VBMI: ~35 ns L1 / ~55–70 ns DRAM (512-bit build) — i.e. tied
+with or slightly ahead of `unpack+kmask` (37/59–62), vs 91–110 ns for the BMI2 fallback.
+
 ## Caveats / open threads for the post
 
 - **No AVX512-VBMI on this machine** — all `untranspose_bits` numbers are the BMI2 fallback,
