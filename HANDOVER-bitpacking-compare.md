@@ -125,6 +125,46 @@ the fused kernel keeps the mask in vector registers, while the plain path is the
 `collect_bool` pattern (as used by Arrow `MutableBuffer::collect_bool` and Vortex
 `BitBufferMut::collect_bool`), which compiles to ~117 ns/block even from L1 with AVX-512.
 
+## Result 4: hand-written AVX-512 k-mask kernels (`vpcmpeqw` → `kmov`)
+
+`cmp_kmask_avx512` in `examples/stream_cmp.rs` compares 32 u16 lanes per `vpcmpeqw` into a
+k-mask register and `kmov`s the mask bits straight into the output words — no `collect_bool`
+loop, and the mask comes out in **logical order** (bit i = value i), not FastLanes-transposed
+order. Two kernels use it:
+
+- `plain+kmask`: raw u16 input → logical mask (the "not bitpacked" path with ideal codegen).
+- `unpack+kmask`: FastLanes `unpack` into a 2 KB stack scratch (L1-resident), then k-mask
+  compare → logical mask, from bitpacked input.
+
+Full run (AVX-512 native, ns/block; two runs agreed within noise):
+
+| blocks | memcpy | cmp_byte | cmp_packed | unpack | cmp_plain | plain+kmask | unpack+kmask |
+|-------:|-------:|---------:|-----------:|-------:|----------:|------------:|-------------:|
+| 8      | 4.3    | 34.4     | 50.8       | 33.5   | 105.4     | 35.5        | 56.8         |
+| 64     | 13.9   | 40.5     | 50.6       | 79.4   | 107.7     | 38.8        | 57.0         |
+| 512    | 14.5   | 42.3     | 50.9       | 110.5  | 111.5     | 57.1        | 57.0         |
+| 2048   | 19.4   | 62.1     | 50.9       | 125.0  | 114.5     | 85.6        | 58.4         |
+| 16384  | 32.7   | 105.3    | 52.8       | 401.5  | 270.4     | 180.3       | 61.2         |
+| 131072 | 61.3   | 185.3    | 80.8       | 546.0  | 310.8     | 249.6       | 87.9         |
+| 524288 | 51.2   | 207.9    | 78.2       | 549.4  | 312.9     | 258.6       | 87.0         |
+
+Findings:
+
+- **The collect_bool floor is codegen, confirmed.** Same input, same output, the intrinsic
+  compare runs 35 ns/block in L1 vs 105–117 ns for the autovectorized bit-accumulate loop —
+  3× faster compute for the plain path.
+- **Better codegen cannot rescue the non-bitpacked path at DRAM.** `plain+kmask` still costs
+  ~250–260 ns streaming vs ~78–90 ns for the bitpacked kernels: it must read 5.33× the input
+  bytes, and bandwidth doesn't care how good the compare instruction is.
+- **`unpack+kmask` is the cheapest logical-order mask on AVX-512.** 57 ns L1 / ~87–90 ns DRAM,
+  vs ~106 ns L1 for `unpack_cmp` + `untranspose_bits` (the current logical-order path), and
+  only ~12% behind the transposed-order-only `unpack_cmp` at DRAM. The 2 KB scratch stays in
+  L1 so it adds no DRAM traffic. For Arrow-order output on AVX-512 hardware, unpack-to-scratch
+  + k-mask compare beats the fused transposed kernel + untranspose.
+
+Note: DRAM-row absolute numbers vary ~±20% between runs on this shared VM (e.g. `cmp_byte`
+150–210 ns across the session); trust within-run ratios over cross-run absolutes.
+
 ## Caveats / open threads for the post
 
 - Cloud-VM single-core DRAM bandwidth (~12–14.6 GB/s) is on the low side; desktop/server parts

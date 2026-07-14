@@ -28,6 +28,26 @@ fn cmp_plain_kernel(input: &[u16; 1024], output: &mut [u64; 16], value: u16) {
     }
 }
 
+/// Hand-written AVX-512 compare: `vpcmpeqw` into k-mask registers, `kmov`ed straight into the
+/// output words. Produces the mask in **logical order** (bit i = input[i]), unlike the
+/// FastLanes-transposed order of `unpack_cmp`. 1024 values = 32 vector compares.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw")]
+fn cmp_kmask_avx512(input: &[u16; 1024], output: &mut [u64; 16], value: u16) {
+    use std::arch::x86_64::*;
+    let needle = _mm512_set1_epi16(value as i16);
+    for (i, word) in output.iter_mut().enumerate() {
+        // SAFETY: i < 16, so i * 64 + 32 + 32 <= 1024.
+        unsafe {
+            let lo = _mm512_loadu_si512(input.as_ptr().add(i * 64).cast());
+            let hi = _mm512_loadu_si512(input.as_ptr().add(i * 64 + 32).cast());
+            let lo = _mm512_cmpeq_epi16_mask(lo, needle) as u64;
+            let hi = _mm512_cmpeq_epi16_mask(hi, needle) as u64;
+            *word = lo | (hi << 32);
+        }
+    }
+}
+
 fn time_ns_per_block(blocks: usize, mut f: impl FnMut()) -> f64 {
     let passes = (TOTAL_BLOCKS / blocks).max(1);
     f(); // warm-up
@@ -43,9 +63,38 @@ fn main() {
     let mut packed_block = [0u16; B];
     <u16 as BitPacking>::pack::<W, B>(&values, &mut packed_block);
 
+    {
+        let mut expected = [0u64; 16];
+        for (i, v) in values.iter().enumerate() {
+            expected[i / 64] |= u64::from(*v == COMPARE_VALUE) << (i % 64);
+        }
+        let mut got = [0u64; 16];
+        // SAFETY: AVX-512BW presence asserted below before any timed use; assert here first.
+        assert!(std::arch::is_x86_feature_detected!("avx512bw"));
+        unsafe { cmp_kmask_avx512(&values, &mut got, COMPARE_VALUE) };
+        assert_eq!(
+            got, expected,
+            "kmask kernel must produce logical-order mask"
+        );
+    }
+
     println!(
-        "{:>10} {:>12} {:>12} | {:>10} {:>12} {:>12} {:>12} {:>12}",
-        "blocks", "in KiB", "out KiB", "memcpy", "cmp_byte", "cmp_packed", "unpack", "cmp_plain"
+        "{:>10} {:>12} {:>12} | {:>10} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12}",
+        "blocks",
+        "in KiB",
+        "out KiB",
+        "memcpy",
+        "cmp_byte",
+        "cmp_packed",
+        "unpack",
+        "cmp_plain",
+        "plain+kmask",
+        "unpack+kmask"
+    );
+    #[cfg(target_arch = "x86_64")]
+    assert!(
+        std::arch::is_x86_feature_detected!("avx512bw"),
+        "kmask kernels need AVX-512BW"
     );
 
     for &blocks in &[8usize, 64, 512, 2048, 16384, 131072, 524288] {
@@ -116,8 +165,33 @@ fn main() {
             black_box(&packed_out);
         });
 
+        let plain_kmask = time_ns_per_block(blocks, || {
+            for (inp, out) in plain_input
+                .chunks_exact(1024)
+                .zip(packed_out.chunks_exact_mut(16))
+            {
+                let inp: &[u16; 1024] = inp.try_into().unwrap();
+                let out: &mut [u64; 16] = out.try_into().unwrap();
+                // SAFETY: AVX-512BW presence asserted at startup.
+                unsafe { cmp_kmask_avx512(black_box(inp), out, COMPARE_VALUE) };
+            }
+            black_box(&packed_out);
+        });
+
+        let mut scratch = [0u16; 1024];
+        let unpack_kmask = time_ns_per_block(blocks, || {
+            for (inp, out) in input.chunks_exact(B).zip(packed_out.chunks_exact_mut(16)) {
+                let inp: &[u16; B] = inp.try_into().unwrap();
+                let out: &mut [u64; 16] = out.try_into().unwrap();
+                <u16 as BitPacking>::unpack::<W, B>(black_box(inp), &mut scratch);
+                // SAFETY: AVX-512BW presence asserted at startup.
+                unsafe { cmp_kmask_avx512(&scratch, out, COMPARE_VALUE) };
+            }
+            black_box(&packed_out);
+        });
+
         println!(
-            "{:>10} {:>12.0} {:>12.0} | {:>8.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns",
+            "{:>10} {:>12.0} {:>12.0} | {:>8.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns",
             blocks,
             (blocks * B * 2) as f64 / 1024.0,
             (blocks * 1024) as f64 / 1024.0,
@@ -126,6 +200,8 @@ fn main() {
             packed,
             unpack,
             plain,
+            plain_kmask,
+            unpack_kmask,
         );
     }
 }
