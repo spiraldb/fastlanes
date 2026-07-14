@@ -66,6 +66,40 @@ fn pack_bools_set_true(input: &[bool; 1024], output: &mut [u64; 16]) {
     }
 }
 
+/// AArch64 NEON equivalent of a movemask for byte booleans. NEON has no direct byte movemask,
+/// so each group of 16 bytes is shifted by repeating bit positions and pairwise-added down to two
+/// bytes. Those bytes are the packed masks for the low and high eight input booleans.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn pack_bools_collect_neon(input: &[bool; 1024], output: &mut [u64; 16]) {
+    use core::arch::aarch64::{
+        vgetq_lane_u64, vld1q_s8, vld1q_u8, vpaddlq_u16, vpaddlq_u32, vpaddlq_u8, vshlq_u8,
+    };
+
+    const SHIFTS: [i8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7];
+    let input = input.as_ptr().cast::<u8>();
+    let output = output.as_mut_ptr().cast::<u8>();
+
+    // SAFETY: the loop reads all 1024 input bytes in 16-byte groups and writes all 128 output
+    // bytes in two-byte groups. Both pointers remain within their respective stack arrays.
+    unsafe {
+        let shifts = vld1q_s8(SHIFTS.as_ptr());
+        for group in 0..64 {
+            let bytes = vld1q_u8(input.add(group * 16));
+            let weighted = vshlq_u8(bytes, shifts);
+            let sums_16 = vpaddlq_u8(weighted);
+            let sums_32 = vpaddlq_u16(sums_16);
+            let sums_64 = vpaddlq_u32(sums_32);
+            output
+                .add(group * 2)
+                .write(vgetq_lane_u64(sums_64, 0) as u8);
+            output
+                .add(group * 2 + 1)
+                .write(vgetq_lane_u64(sums_64, 1) as u8);
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub fn unpack_and_cmp_kernel(
@@ -112,6 +146,19 @@ pub fn cmp_then_set_true_kernel(
 ) {
     cmp_byte_kernel(input, byte_bools, value);
     pack_bools_set_true(byte_bools, output);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub fn collect_bool_kernel(input: &[bool; 1024], output: &mut [u64; 16]) {
+    pack_bools_collect(input, output);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub fn collect_bool_neon_kernel(input: &[bool; 1024], output: &mut [u64; 16]) {
+    pack_bools_collect_neon(input, output);
 }
 
 #[unsafe(no_mangle)]
@@ -209,6 +256,37 @@ fn cmp_then_set_true(bencher: divan::Bencher) {
                 black_box(&mut output),
                 black_box(COMPARE_VALUE),
             );
+        }
+        black_box(&output);
+    });
+}
+
+#[divan::bench(sample_count = 10000)]
+fn collect_bool(bencher: divan::Bencher) {
+    let input = expected_bytes();
+    let mut output = [0u64; 16];
+    collect_bool_kernel(&input, &mut output);
+    assert_eq!(output, expected_packed());
+
+    bencher.bench_local(|| {
+        for _ in 0..BATCH {
+            collect_bool_kernel(black_box(&input), black_box(&mut output));
+        }
+        black_box(&output);
+    });
+}
+
+#[cfg(target_arch = "aarch64")]
+#[divan::bench(sample_count = 10000)]
+fn collect_bool_neon(bencher: divan::Bencher) {
+    let input = expected_bytes();
+    let mut output = [0u64; 16];
+    collect_bool_neon_kernel(&input, &mut output);
+    assert_eq!(output, expected_packed());
+
+    bencher.bench_local(|| {
+        for _ in 0..BATCH {
+            collect_bool_neon_kernel(black_box(&input), black_box(&mut output));
         }
         black_box(&output);
     });
