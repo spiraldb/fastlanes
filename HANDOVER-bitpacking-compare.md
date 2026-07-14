@@ -156,17 +156,27 @@ Findings:
 - **Better codegen cannot rescue the non-bitpacked path at DRAM.** `plain+kmask` still costs
   ~250–260 ns streaming vs ~78–90 ns for the bitpacked kernels: it must read 5.33× the input
   bytes, and bandwidth doesn't care how good the compare instruction is.
-- **`unpack+kmask` is the cheapest logical-order mask on AVX-512.** 57 ns L1 / ~87–90 ns DRAM,
-  vs ~106 ns L1 for `unpack_cmp` + `untranspose_bits` (the current logical-order path), and
-  only ~12% behind the transposed-order-only `unpack_cmp` at DRAM. The 2 KB scratch stays in
-  L1 so it adds no DRAM traffic. For Arrow-order output on AVX-512 hardware, unpack-to-scratch
-  + k-mask compare beats the fused transposed kernel + untranspose.
+- **`unpack+kmask` is the cheapest logical-order mask on this (non-VBMI) AVX-512 machine.**
+  57 ns L1 / ~87–90 ns DRAM, vs ~106 ns L1 for `unpack_cmp` + `untranspose_bits`, and only
+  ~12% behind the transposed-order-only `unpack_cmp` at DRAM. The 2 KB scratch stays in L1 so
+  it adds no DRAM traffic.
+- **IMPORTANT caveat: this CPU has no AVX512-VBMI** (Cascade Lake era: F/BW/DQ/VL/CD/VNNI
+  only), so `untranspose_bits` runtime-dispatched to its **BMI2 fallback** everywhere in this
+  session — the ~55 ns/block untranspose cost (106 − 51) is the BMI2 path, not the SIMD
+  (`vpermb`) kernel. On VBMI hardware (Ice Lake+ / Zen 4+) the SIMD untranspose should cost
+  ~5–10 ns/block, putting `unpack_cmp` + VBMI-untranspose at roughly ~55–60 ns L1 — likely
+  even with or ahead of `unpack+kmask`, in a register-only form. The "kmask wins for logical
+  order" finding is conditional on missing VBMI; re-measure on VBMI hardware before publishing
+  it as a general AVX-512 claim.
 
 Note: DRAM-row absolute numbers vary ~±20% between runs on this shared VM (e.g. `cmp_byte`
 150–210 ns across the session); trust within-run ratios over cross-run absolutes.
 
 ## Caveats / open threads for the post
 
+- **No AVX512-VBMI on this machine** — all `untranspose_bits` numbers are the BMI2 fallback,
+  not the SIMD `vpermb` kernel. The logical-order-path ranking (Result 4) must be re-measured
+  on Ice Lake+ / Zen 4+ before publication.
 - Cloud-VM single-core DRAM bandwidth (~12–14.6 GB/s) is on the low side; desktop/server parts
   with more per-core bandwidth will shift the DRAM crossover but not the qualitative story.
 - The `cmp_packed_raw` AVX-512-vs-AVX2 codegen regression (35 → 50 ns) is unexplained; worth a
