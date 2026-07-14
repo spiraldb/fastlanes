@@ -68,34 +68,46 @@ fn pack_bools_set_true(input: &[bool; 1024], output: &mut [u64; 16]) {
 
 /// AArch64 NEON equivalent of a movemask for byte booleans. NEON has no direct byte movemask,
 /// so each group of 16 bytes is shifted by repeating bit positions and pairwise-added down to two
-/// bytes. Those bytes are the packed masks for the low and high eight input booleans.
+/// bytes. Four groups are narrowed into eight bytes and written with one vector store.
 #[cfg(target_arch = "aarch64")]
 #[inline]
 fn pack_bools_collect_neon(input: &[bool; 1024], output: &mut [u64; 16]) {
     use core::arch::aarch64::{
-        vgetq_lane_u64, vld1q_s8, vld1q_u8, vpaddlq_u16, vpaddlq_u32, vpaddlq_u8, vshlq_u8,
+        int8x16_t, uint64x2_t, vcombine_u16, vcombine_u32, vld1q_s8, vld1q_u8, vmovn_u16,
+        vmovn_u32, vmovn_u64, vpaddlq_u16, vpaddlq_u32, vpaddlq_u8, vshlq_u8, vst1_u8,
     };
+
+    #[inline(always)]
+    unsafe fn pack_16(input: *const u8, shifts: int8x16_t) -> uint64x2_t {
+        // SAFETY: the caller provides a readable 16-byte region.
+        unsafe {
+            let bytes = vld1q_u8(input);
+            let weighted = vshlq_u8(bytes, shifts);
+            let sums_16 = vpaddlq_u8(weighted);
+            let sums_32 = vpaddlq_u16(sums_16);
+            vpaddlq_u32(sums_32)
+        }
+    }
 
     const SHIFTS: [i8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7];
     let input = input.as_ptr().cast::<u8>();
     let output = output.as_mut_ptr().cast::<u8>();
 
-    // SAFETY: the loop reads all 1024 input bytes in 16-byte groups and writes all 128 output
-    // bytes in two-byte groups. Both pointers remain within their respective stack arrays.
+    // SAFETY: the loop reads all 1024 input bytes in 64-byte groups and writes all 128 output
+    // bytes in eight-byte groups. Both pointers remain within their respective stack arrays.
     unsafe {
         let shifts = vld1q_s8(SHIFTS.as_ptr());
-        for group in 0..64 {
-            let bytes = vld1q_u8(input.add(group * 16));
-            let weighted = vshlq_u8(bytes, shifts);
-            let sums_16 = vpaddlq_u8(weighted);
-            let sums_32 = vpaddlq_u16(sums_16);
-            let sums_64 = vpaddlq_u32(sums_32);
-            output
-                .add(group * 2)
-                .write(vgetq_lane_u64(sums_64, 0) as u8);
-            output
-                .add(group * 2 + 1)
-                .write(vgetq_lane_u64(sums_64, 1) as u8);
+        for group in 0..16 {
+            let base = input.add(group * 64);
+            let masks_0 = pack_16(base, shifts);
+            let masks_1 = pack_16(base.add(16), shifts);
+            let masks_2 = pack_16(base.add(32), shifts);
+            let masks_3 = pack_16(base.add(48), shifts);
+
+            let masks_01 = vmovn_u32(vcombine_u32(vmovn_u64(masks_0), vmovn_u64(masks_1)));
+            let masks_23 = vmovn_u32(vcombine_u32(vmovn_u64(masks_2), vmovn_u64(masks_3)));
+            let masks = vmovn_u16(vcombine_u16(masks_01, masks_23));
+            vst1_u8(output.add(group * 8), masks);
         }
     }
 }
