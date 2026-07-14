@@ -6,6 +6,12 @@
 //!
 //! For native code generation use:
 //! `RUSTFLAGS="-C target-cpu=native" cargo bench --bench bitpacking_cmp_stack`.
+//! For the optional dot-product path use nightly and add `--features nightly-dotprod`.
+
+#![cfg_attr(
+    all(target_arch = "aarch64", feature = "nightly-dotprod"),
+    feature(stdarch_neon_dotprod)
+)]
 
 fn main() {
     divan::main();
@@ -112,6 +118,45 @@ fn pack_bools_collect_neon(input: &[bool; 1024], output: &mut [u64; 16]) {
     }
 }
 
+#[cfg(all(target_arch = "aarch64", feature = "nightly-dotprod"))]
+#[target_feature(enable = "dotprod")]
+unsafe fn pack_bools_collect_neon_dotprod(input: &[bool; 1024], output: &mut [u64; 16]) {
+    use core::arch::aarch64::{
+        uint64x2_t, uint8x16_t, vcombine_u16, vcombine_u32, vdotq_u32, vdupq_n_u32, vld1q_u8,
+        vmovn_u16, vmovn_u32, vmovn_u64, vpaddlq_u32, vst1_u8,
+    };
+
+    #[inline(always)]
+    unsafe fn pack_16(input: *const u8, weights: uint8x16_t) -> uint64x2_t {
+        // SAFETY: the caller provides a readable 16-byte region.
+        unsafe {
+            let bytes = vld1q_u8(input);
+            vpaddlq_u32(vdotq_u32(vdupq_n_u32(0), bytes, weights))
+        }
+    }
+
+    const WEIGHTS: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
+    let input = input.as_ptr().cast::<u8>();
+    let output = output.as_mut_ptr().cast::<u8>();
+
+    // SAFETY: the loop reads all 1024 input bytes and writes all 128 output bytes in bounds.
+    unsafe {
+        let weights = vld1q_u8(WEIGHTS.as_ptr());
+        for group in 0..16 {
+            let base = input.add(group * 64);
+            let masks_0 = pack_16(base, weights);
+            let masks_1 = pack_16(base.add(16), weights);
+            let masks_2 = pack_16(base.add(32), weights);
+            let masks_3 = pack_16(base.add(48), weights);
+
+            let masks_01 = vmovn_u32(vcombine_u32(vmovn_u64(masks_0), vmovn_u64(masks_1)));
+            let masks_23 = vmovn_u32(vcombine_u32(vmovn_u64(masks_2), vmovn_u64(masks_3)));
+            let masks = vmovn_u16(vcombine_u16(masks_01, masks_23));
+            vst1_u8(output.add(group * 8), masks);
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub fn unpack_and_cmp_kernel(
@@ -171,6 +216,15 @@ pub fn collect_bool_kernel(input: &[bool; 1024], output: &mut [u64; 16]) {
 #[inline(never)]
 pub fn collect_bool_neon_kernel(input: &[bool; 1024], output: &mut [u64; 16]) {
     pack_bools_collect_neon(input, output);
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "nightly-dotprod"))]
+#[target_feature(enable = "dotprod")]
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub unsafe fn collect_bool_neon_dotprod_kernel(input: &[bool; 1024], output: &mut [u64; 16]) {
+    // SAFETY: this function requires dot-product support from its caller.
+    unsafe { pack_bools_collect_neon_dotprod(input, output) }
 }
 
 #[unsafe(no_mangle)]
@@ -299,6 +353,25 @@ fn collect_bool_neon(bencher: divan::Bencher) {
     bencher.bench_local(|| {
         for _ in 0..BATCH {
             collect_bool_neon_kernel(black_box(&input), black_box(&mut output));
+        }
+        black_box(&output);
+    });
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "nightly-dotprod"))]
+#[divan::bench(sample_count = 10000)]
+fn collect_bool_neon_dotprod(bencher: divan::Bencher) {
+    assert!(std::arch::is_aarch64_feature_detected!("dotprod"));
+    let input = expected_bytes();
+    let mut output = [0u64; 16];
+    // SAFETY: dot-product support was checked above.
+    unsafe { collect_bool_neon_dotprod_kernel(&input, &mut output) };
+    assert_eq!(output, expected_packed());
+
+    bencher.bench_local(|| {
+        for _ in 0..BATCH {
+            // SAFETY: dot-product support was checked before entering the timed loop.
+            unsafe { collect_bool_neon_dotprod_kernel(black_box(&input), black_box(&mut output)) };
         }
         black_box(&output);
     });

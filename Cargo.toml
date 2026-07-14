@@ -17,6 +17,8 @@ default = []
 # dispatch. Without it, the dispatch is resolved at compile time from the enabled
 # `target_feature`s, keeping the crate `no_std`.
 std = []
+# Enables the nightly-only AArch64 dot-product `collect_bool` benchmark.
+nightly-dotprod = []
 
 [dependencies]
 const_for = "0.1.4"
