@@ -15,6 +15,19 @@ const B: usize = 1024 * W / u16::BITS as usize; // 192 u16 = 384 bytes per block
 const COMPARE_VALUE: u16 = 3;
 const TOTAL_BLOCKS: usize = 1 << 21; // ~2M block-iterations per measurement
 
+/// Compare over already-unpacked u16 input, producing the same packed mask. This is the
+/// "not bitpacked" baseline: it reads 2048 B per block instead of 384 B.
+#[inline(never)]
+fn cmp_plain_kernel(input: &[u16; 1024], output: &mut [u64; 16], value: u16) {
+    for (chunk, word) in output.iter_mut().enumerate() {
+        let mut packed = 0u64;
+        for bit in 0..64 {
+            packed |= u64::from(input[chunk * 64 + bit] == value) << bit;
+        }
+        *word = packed;
+    }
+}
+
 fn time_ns_per_block(blocks: usize, mut f: impl FnMut()) -> f64 {
     let passes = (TOTAL_BLOCKS / blocks).max(1);
     f(); // warm-up
@@ -31,8 +44,8 @@ fn main() {
     <u16 as BitPacking>::pack::<W, B>(&values, &mut packed_block);
 
     println!(
-        "{:>10} {:>12} {:>12} | {:>10} {:>12} {:>12} {:>12}",
-        "blocks", "in KiB", "out KiB", "memcpy", "cmp_byte", "cmp_packed", "unpack"
+        "{:>10} {:>12} {:>12} | {:>10} {:>12} {:>12} {:>12} {:>12}",
+        "blocks", "in KiB", "out KiB", "memcpy", "cmp_byte", "cmp_packed", "unpack", "cmp_plain"
     );
 
     for &blocks in &[8usize, 64, 512, 2048, 16384, 131072, 524288] {
@@ -46,6 +59,7 @@ fn main() {
         let mut packed_out = vec![0u64; blocks * 16];
         let mut unpack_out = vec![0u16; blocks * 1024];
         let mut copy_out = vec![0u16; blocks * B];
+        let plain_input: Vec<u16> = values.iter().copied().cycle().take(blocks * 1024).collect();
 
         // Baseline: pure streaming copy of the packed input (384 B/block read + write).
         let memcpy = time_ns_per_block(blocks, || {
@@ -90,8 +104,20 @@ fn main() {
             black_box(&unpack_out);
         });
 
+        let plain = time_ns_per_block(blocks, || {
+            for (inp, out) in plain_input
+                .chunks_exact(1024)
+                .zip(packed_out.chunks_exact_mut(16))
+            {
+                let inp: &[u16; 1024] = inp.try_into().unwrap();
+                let out: &mut [u64; 16] = out.try_into().unwrap();
+                cmp_plain_kernel(black_box(inp), out, COMPARE_VALUE);
+            }
+            black_box(&packed_out);
+        });
+
         println!(
-            "{:>10} {:>12.0} {:>12.0} | {:>8.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns",
+            "{:>10} {:>12.0} {:>12.0} | {:>8.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns",
             blocks,
             (blocks * B * 2) as f64 / 1024.0,
             (blocks * 1024) as f64 / 1024.0,
@@ -99,6 +125,7 @@ fn main() {
             byte,
             packed,
             unpack,
+            plain,
         );
     }
 }
