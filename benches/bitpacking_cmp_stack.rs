@@ -72,6 +72,8 @@ fn pack_bools_set_true(input: &[bool; 1024], output: &mut [u64; 16]) {
     }
 }
 
+// The nightly `udot` variant below is faster on CPUs with FEAT_DotProd, but its Rust intrinsic is
+// still unstable. Keep this stable NEON implementation as the portable AArch64 fallback.
 /// AArch64 NEON equivalent of a movemask for byte booleans. NEON has no direct byte movemask,
 /// so each group of 16 bytes is shifted by repeating bit positions and pairwise-added down to two
 /// bytes. Four groups are narrowed into eight bytes and written with one vector store.
