@@ -169,6 +169,14 @@ Findings:
   order" finding is conditional on missing VBMI; re-measure on VBMI hardware before publishing
   it as a general AVX-512 claim.
 
+The harness now also times the full logical-order path directly (`packed+untr` column =
+`unpack_cmp` + dispatched `untranspose_bits`) and prints which untranspose implementation the
+runtime dispatch selected (`untranspose_bits dispatch: vbmi=... bmi2=...`). On this machine
+(vbmi=false, bmi2=true): 106–115 ns L1 / 122–126 ns DRAM, vs 56–62 / 78–85 ns for
+`unpack+kmask`. **Re-run `cargo run --release --example stream_cmp` (with
+`-C target-cpu=native`) on an Ice Lake+/Zen 4+ box** — the dispatch line will read vbmi=true
+and the `packed+untr` vs `unpack+kmask` columns settle the logical-order ranking directly.
+
 Note: DRAM-row absolute numbers vary ~±20% between runs on this shared VM (e.g. `cmp_byte`
 150–210 ns across the session); trust within-run ratios over cross-run absolutes.
 

@@ -6,7 +6,7 @@
 //!
 //! Run: RUSTFLAGS="-C target-cpu=native" cargo run --release --example stream_cmp
 
-use fastlanes::{BitPacking, BitPackingCompare};
+use fastlanes::{untranspose_bits, BitPacking, BitPackingCompare};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -79,7 +79,7 @@ fn main() {
     }
 
     println!(
-        "{:>10} {:>12} {:>12} | {:>10} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12}",
+        "{:>10} {:>12} {:>12} | {:>10} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12} {:>12}",
         "blocks",
         "in KiB",
         "out KiB",
@@ -89,13 +89,21 @@ fn main() {
         "unpack",
         "cmp_plain",
         "plain+kmask",
-        "unpack+kmask"
+        "unpack+kmask",
+        "packed+untr"
     );
     #[cfg(target_arch = "x86_64")]
-    assert!(
-        std::arch::is_x86_feature_detected!("avx512bw"),
-        "kmask kernels need AVX-512BW"
-    );
+    {
+        assert!(
+            std::arch::is_x86_feature_detected!("avx512bw"),
+            "kmask kernels need AVX-512BW"
+        );
+        eprintln!(
+            "untranspose_bits dispatch: vbmi={} bmi2={}",
+            std::arch::is_x86_feature_detected!("avx512vbmi"),
+            std::arch::is_x86_feature_detected!("bmi2"),
+        );
+    }
 
     for &blocks in &[8usize, 64, 512, 2048, 16384, 131072, 524288] {
         let input: Vec<u16> = packed_block
@@ -190,8 +198,24 @@ fn main() {
             black_box(&packed_out);
         });
 
+        let mut transposed = [0u64; 16];
+        let packed_untr = time_ns_per_block(blocks, || {
+            for (inp, out) in input.chunks_exact(B).zip(packed_out.chunks_exact_mut(16)) {
+                let inp: &[u16; B] = inp.try_into().unwrap();
+                let out: &mut [u64; 16] = out.try_into().unwrap();
+                <u16 as BitPackingCompare>::unpack_cmp::<W, B, _, _>(
+                    black_box(inp),
+                    &mut transposed,
+                    |a, b| a == b,
+                    COMPARE_VALUE,
+                );
+                untranspose_bits::<u16>(&transposed, out);
+            }
+            black_box(&packed_out);
+        });
+
         println!(
-            "{:>10} {:>12.0} {:>12.0} | {:>8.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns",
+            "{:>10} {:>12.0} {:>12.0} | {:>8.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns {:>10.1}ns",
             blocks,
             (blocks * B * 2) as f64 / 1024.0,
             (blocks * 1024) as f64 / 1024.0,
@@ -202,6 +226,7 @@ fn main() {
             plain,
             plain_kmask,
             unpack_kmask,
+            packed_untr,
         );
     }
 }
