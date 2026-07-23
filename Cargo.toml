@@ -25,6 +25,11 @@ num-traits = "0.2.19"
 paste = "1.0.15"
 seq-macro = "0.3.5"
 
+[features]
+# Gates the fused `Delta::unfor_undelta_pack` decode for delta(for(bitpacking)) stacks.
+# No semver stability guarantee yet.
+delta_for_bitpacking = []
+
 [dev-dependencies]
 arrayref = "0.3.9"
 divan = { package = "codspeed-divan-compat", version = "5.0" }
