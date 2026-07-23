@@ -31,11 +31,14 @@ fn rle_decode_u32(bencher: Bencher) {
     let mut output = [0u32; 1024];
 
     bencher.bench_local(|| {
-        u32::decode(
-            black_box(&rle_vals[..unique_count]),
-            black_box(&rle_idxs),
-            &mut output,
-        );
+        // SAFETY: `encode` only writes indices below the returned `unique_count`.
+        unsafe {
+            u32::decode(
+                black_box(&rle_vals[..unique_count]),
+                black_box(&rle_idxs),
+                &mut output,
+            );
+        }
         black_box(&output);
     });
 }
@@ -82,11 +85,14 @@ fn rle_throughput_decode_32(bencher: Bencher) {
     with_counter!(bencher, input_data.len() * std::mem::size_of::<u32>()).bench_local(|| {
         let mut output = [0u32; 1024];
         for (rle_vals, rle_idxs, unique_count) in &encoded_batches {
-            u32::decode(
-                black_box(&rle_vals[..*unique_count]),
-                black_box(rle_idxs),
-                &mut output,
-            );
+            // SAFETY: `encode` only writes indices below the returned `unique_count`.
+            unsafe {
+                u32::decode(
+                    black_box(&rle_vals[..*unique_count]),
+                    black_box(rle_idxs),
+                    &mut output,
+                );
+            }
             black_box(&output);
         }
     });

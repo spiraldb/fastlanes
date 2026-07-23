@@ -15,7 +15,14 @@ pub trait RLE: Sized {
     /// Decode RLE-encoded data back to original values
     ///
     /// Takes the dictionary of run values and indices, reconstructing the original array
-    fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
+    ///
+    /// # Safety
+    ///
+    /// - Every element of `rle_idxs`, converted via `Into<usize>`, must be less than
+    ///   `rle_vals.len()`.
+    ///
+    /// This is checked only with `debug_assert` (i.e., not checked on release builds).
+    unsafe fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
     where
         I: Copy + Into<usize>;
 }
@@ -50,11 +57,13 @@ impl<T: PartialEq + Copy> RLE for T {
     }
 
     #[inline(never)]
-    fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
+    unsafe fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
     where
         I: Copy + Into<usize>,
     {
         for (idx, output) in rle_idxs.iter().zip(output.iter_mut()) {
+            debug_assert!((*idx).into() < rle_vals.len());
+            // SAFETY: the caller guarantees every index is less than `rle_vals.len()`.
             *output = unsafe { *rle_vals.get_unchecked((*idx).into()) };
         }
     }
@@ -149,7 +158,8 @@ mod test {
         let unique_count = u8::encode(&input, &mut rle_vals, &mut rle_idxs);
 
         let mut decoded = [0u8; 1024];
-        u8::decode(&rle_vals[..unique_count], &rle_idxs, &mut decoded);
+        // SAFETY: `encode` only writes indices below the returned `unique_count`.
+        unsafe { u8::decode(&rle_vals[..unique_count], &rle_idxs, &mut decoded) };
         assert_eq!(input, decoded);
     }
 }
