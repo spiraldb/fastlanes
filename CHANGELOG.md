@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/spiraldb/fastlanes/compare/v0.5.2...v0.6.0) - 2026-07-23
+
+### Other
+
+- Update taiki-e/install-action digest to c44f6b0 ([#161](https://github.com/spiraldb/fastlanes/pull/161))
+- Update dtolnay/rust-toolchain digest ([#160](https://github.com/spiraldb/fastlanes/pull/160))
+- Update CodSpeedHQ/action digest to f99becd ([#159](https://github.com/spiraldb/fastlanes/pull/159))
+- Update actions/checkout action to v7 ([#162](https://github.com/spiraldb/fastlanes/pull/162))
+- Mark RLE encode/decode as unsafe due to index bounds requirements ([#163](https://github.com/spiraldb/fastlanes/pull/163))
+
 ## [0.5.2](https://github.com/spiraldb/fastlanes/compare/v0.5.1...v0.5.2) - 2026-06-12
 
 ### Other
