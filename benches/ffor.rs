@@ -7,6 +7,8 @@ use std::hint::black_box;
 
 mod shared;
 
+use shared::Aligned;
+
 fn main() {
     divan::main();
 }
@@ -33,13 +35,13 @@ fn for_pack_16_to_3_heap(bencher: Bencher) {
 fn for_pack_16_to_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [13u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+    let values = Aligned([13u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
     let reference = 10u16;
 
     bencher.bench_local(|| {
-        FoR::for_pack::<WIDTH, B>(black_box(&values), reference, &mut packed);
-        black_box(&packed);
+        FoR::for_pack::<WIDTH, B>(black_box(&values.0), reference, &mut packed.0);
+        black_box(&packed.0);
     });
 }
 
@@ -47,16 +49,16 @@ fn for_pack_16_to_3_stack(bencher: Bencher) {
 fn unfor_pack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [13u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+    let values = Aligned([13u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
     let reference = 10u16;
-    FoR::for_pack::<WIDTH, B>(&values, reference, &mut packed);
+    FoR::for_pack::<WIDTH, B>(&values.0, reference, &mut packed.0);
 
-    let mut unpacked = [0u16; 1024];
+    let mut unpacked = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
-        FoR::unfor_pack::<WIDTH, B>(black_box(&packed), reference, &mut unpacked);
-        black_box(&unpacked);
+        FoR::unfor_pack::<WIDTH, B>(black_box(&packed.0), reference, &mut unpacked.0);
+        black_box(&unpacked.0);
     });
 }
 
@@ -64,16 +66,18 @@ fn unfor_pack_16_from_3_stack(bencher: Bencher) {
 fn unchecked_unfor_pack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [13u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+    let values = Aligned([13u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
     let reference = 10u16;
-    FoR::for_pack::<WIDTH, B>(&values, reference, &mut packed);
+    FoR::for_pack::<WIDTH, B>(&values.0, reference, &mut packed.0);
 
-    let mut unpacked = [0u16; 1024];
+    let mut unpacked = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
-        unsafe { FoR::unchecked_unfor_pack(WIDTH, black_box(&packed), reference, &mut unpacked) };
-        black_box(&unpacked);
+        unsafe {
+            FoR::unchecked_unfor_pack(WIDTH, black_box(&packed.0), reference, &mut unpacked.0);
+        };
+        black_box(&unpacked.0);
     });
 }
 
@@ -178,21 +182,21 @@ fn throughput_decompress_unchecked(bencher: Bencher) {
 fn unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [13u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+    let values = Aligned([13u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
     let reference = 10u16;
-    FoR::for_pack::<WIDTH, B>(&values, reference, &mut packed);
+    FoR::for_pack::<WIDTH, B>(&values.0, reference, &mut packed.0);
 
-    let mut unpacked = [0u16; 1024];
+    let mut unpacked = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
         // First, unpack using bitpacking kernel
-        BitPacking::unpack::<WIDTH, B>(black_box(&packed), &mut unpacked);
+        BitPacking::unpack::<WIDTH, B>(black_box(&packed.0), &mut unpacked.0);
         // Then, apply reference values in a separate loop
         for i in 0..1024 {
-            unpacked[i] = unpacked[i].wrapping_add(reference);
+            unpacked.0[i] = unpacked.0[i].wrapping_add(reference);
         }
-        black_box(&unpacked);
+        black_box(&unpacked.0);
     });
 }
 
@@ -200,21 +204,21 @@ fn unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
 fn unchecked_unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [13u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+    let values = Aligned([13u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
     let reference = 10u16;
-    FoR::for_pack::<WIDTH, B>(&values, reference, &mut packed);
+    FoR::for_pack::<WIDTH, B>(&values.0, reference, &mut packed.0);
 
-    let mut unpacked = [0u16; 1024];
+    let mut unpacked = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
         // First, unpack using unchecked bitpacking kernel
-        unsafe { BitPacking::unchecked_unpack(WIDTH, black_box(&packed), &mut unpacked) };
+        unsafe { BitPacking::unchecked_unpack(WIDTH, black_box(&packed.0), &mut unpacked.0) };
         // Then, apply reference values in a separate loop
         for i in 0..1024 {
-            unpacked[i] = unpacked[i].wrapping_add(reference);
+            unpacked.0[i] = unpacked.0[i].wrapping_add(reference);
         }
-        black_box(&unpacked);
+        black_box(&unpacked.0);
     });
 }
 

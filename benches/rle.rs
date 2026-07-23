@@ -5,38 +5,44 @@ use std::hint::black_box;
 
 mod shared;
 
+use shared::Aligned;
+
 fn main() {
     divan::main();
 }
 
 #[divan::bench]
 fn rle_encode_u32(bencher: Bencher) {
-    let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
-    let mut rle_vals = [0u32; 1024];
-    let mut rle_idxs = [0u16; 1024];
+    let input = Aligned(std::array::from_fn::<u32, 1024, _>(|i| {
+        (i / 100 + 1) as u32
+    }));
+    let mut rle_vals = Aligned([0u32; 1024]);
+    let mut rle_idxs = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
-        let unique_count = u32::encode(black_box(&input), &mut rle_vals, &mut rle_idxs);
+        let unique_count = u32::encode(black_box(&input.0), &mut rle_vals.0, &mut rle_idxs.0);
         black_box(unique_count);
     });
 }
 
 #[divan::bench]
 fn rle_decode_u32(bencher: Bencher) {
-    let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
-    let mut rle_vals = [0u32; 1024];
-    let mut rle_idxs = [0u16; 1024];
-    let unique_count = u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+    let input = Aligned(std::array::from_fn::<u32, 1024, _>(|i| {
+        (i / 100 + 1) as u32
+    }));
+    let mut rle_vals = Aligned([0u32; 1024]);
+    let mut rle_idxs = Aligned([0u16; 1024]);
+    let unique_count = u32::encode(&input.0, &mut rle_vals.0, &mut rle_idxs.0);
 
-    let mut output = [0u32; 1024];
+    let mut output = Aligned([0u32; 1024]);
 
     bencher.bench_local(|| {
         u32::decode(
-            black_box(&rle_vals[..unique_count]),
-            black_box(&rle_idxs),
-            &mut output,
+            black_box(&rle_vals.0[..unique_count]),
+            black_box(&rle_idxs.0),
+            &mut output.0,
         );
-        black_box(&output);
+        black_box(&output.0);
     });
 }
 
@@ -48,13 +54,14 @@ fn rle_throughput_encode_32(bencher: Bencher) {
     let input_data: Vec<u32> = (0..N).map(|i| (i / 100) as u32).collect();
 
     with_counter!(bencher, input_data.len() * std::mem::size_of::<u32>()).bench_local(|| {
-        let mut rle_vals = [0u32; 1024];
-        let mut rle_idxs = [0u16; 1024];
+        let mut rle_vals = Aligned([0u32; 1024]);
+        let mut rle_idxs = Aligned([0u16; 1024]);
         for batch in 0..NUM_BATCHES {
             let batch_start = batch * 1024;
             let input_batch = array_ref![input_data, batch_start, 1024];
 
-            let unique_count = u32::encode(black_box(input_batch), &mut rle_vals, &mut rle_idxs);
+            let unique_count =
+                u32::encode(black_box(input_batch), &mut rle_vals.0, &mut rle_idxs.0);
             black_box(unique_count);
         }
     });
@@ -73,21 +80,21 @@ fn rle_throughput_decode_32(bencher: Bencher) {
         let batch_start = batch * 1024;
         let input_batch: [u32; 1024] = std::array::from_fn(|i| input_data[batch_start + i]);
 
-        let mut rle_vals = [0u32; 1024];
-        let mut rle_idxs = [0u16; 1024];
-        let unique_count = u32::encode(&input_batch, &mut rle_vals, &mut rle_idxs);
+        let mut rle_vals = Aligned([0u32; 1024]);
+        let mut rle_idxs = Aligned([0u16; 1024]);
+        let unique_count = u32::encode(&input_batch, &mut rle_vals.0, &mut rle_idxs.0);
         encoded_batches.push((rle_vals, rle_idxs, unique_count));
     }
 
     with_counter!(bencher, input_data.len() * std::mem::size_of::<u32>()).bench_local(|| {
-        let mut output = [0u32; 1024];
+        let mut output = Aligned([0u32; 1024]);
         for (rle_vals, rle_idxs, unique_count) in &encoded_batches {
             u32::decode(
-                black_box(&rle_vals[..*unique_count]),
-                black_box(rle_idxs),
-                &mut output,
+                black_box(&rle_vals.0[..*unique_count]),
+                black_box(&rle_idxs.0),
+                &mut output.0,
             );
-            black_box(&output);
+            black_box(&output.0);
         }
     });
 }

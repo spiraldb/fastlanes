@@ -1,10 +1,13 @@
 #![allow(unexpected_cfgs)]
 
+mod shared;
+
 fn main() {
     divan::main();
 }
 
 mod bench {
+    use crate::shared::Aligned;
     use divan::Bencher;
     use fastlanes::{
         untranspose_bits, BitPacking, BitPackingCompare, FastLanes, FastLanesComparable,
@@ -34,25 +37,25 @@ mod bench {
             return;
         }
         let value = T::from_usize(1).expect("");
-        let values = [T::from_usize(2).expect(""); 1024];
+        let values = Aligned([T::from_usize(2).expect(""); 1024]);
         let mut packed = vec![T::zero(); 128 * width / size_of::<T>()];
-        unsafe { T::unchecked_pack(width, &values, &mut packed) };
+        unsafe { T::unchecked_pack(width, &values.0, &mut packed) };
 
-        let mut transposed = [0u64; 16];
-        let mut logical = [0u64; 16];
+        let mut transposed = Aligned([0u64; 16]);
+        let mut logical = Aligned([0u64; 16]);
 
         bencher.bench_local(|| {
             unsafe {
                 T::unchecked_unpack_cmp(
                     black_box(width),
                     black_box(&packed),
-                    &mut transposed,
+                    &mut transposed.0,
                     |a, b| a == b,
                     black_box(value),
                 );
             }
-            untranspose_bits::<T>(black_box(&transposed), &mut logical);
-            black_box(&logical);
+            untranspose_bits::<T>(black_box(&transposed.0), &mut logical.0);
+            black_box(&logical.0);
         });
     }
 }
