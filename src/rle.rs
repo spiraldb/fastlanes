@@ -6,7 +6,15 @@ pub trait RLE: Sized {
     ///
     /// # Returns
     /// The number of run values in the dictionary
-    fn encode(
+    ///
+    /// # Safety
+    ///
+    /// - All three arguments must be valid for 1024 elements, as their types already
+    ///   guarantee.
+    ///
+    /// Implementations perform unchecked buffer accesses that rely on these bounds; they are
+    /// checked only with `debug_assert` (i.e., not checked on release builds).
+    unsafe fn encode_unchecked(
         input: &[Self; 1024],
         rle_vals: &mut [Self; 1024],
         rle_idxs: &mut [u16; 1024],
@@ -15,14 +23,24 @@ pub trait RLE: Sized {
     /// Decode RLE-encoded data back to original values
     ///
     /// Takes the dictionary of run values and indices, reconstructing the original array
-    fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
-    where
+    ///
+    /// # Safety
+    ///
+    /// - Every element of `rle_idxs`, converted via `Into<usize>`, must be less than
+    ///   `rle_vals.len()`.
+    ///
+    /// This is checked only with `debug_assert` (i.e., not checked on release builds).
+    unsafe fn decode_unchecked<I>(
+        rle_vals: &[Self],
+        rle_idxs: &[I; 1024],
+        output: &mut [Self; 1024],
+    ) where
         I: Copy + Into<usize>;
 }
 
 impl<T: PartialEq + Copy> RLE for T {
     #[inline(never)]
-    fn encode(
+    unsafe fn encode_unchecked(
         input: &[Self; 1024],
         rle_vals: &mut [Self; 1024],
         rle_idxs: &mut [u16; 1024],
@@ -38,6 +56,9 @@ impl<T: PartialEq + Copy> RLE for T {
         for i in 1..1024 {
             let cur_val = unsafe { *input.get_unchecked(i) };
             if cur_val != prev_val {
+                // SAFETY: `rle_val_idx` increments at most once per element, so it stays
+                // below 1024.
+                debug_assert!(rle_val_idx < rle_vals.len());
                 unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = cur_val };
                 rle_val_idx += 1;
                 pos_val += 1;
@@ -50,11 +71,16 @@ impl<T: PartialEq + Copy> RLE for T {
     }
 
     #[inline(never)]
-    fn decode<I>(rle_vals: &[Self], rle_idxs: &[I; 1024], output: &mut [Self; 1024])
-    where
+    unsafe fn decode_unchecked<I>(
+        rle_vals: &[Self],
+        rle_idxs: &[I; 1024],
+        output: &mut [Self; 1024],
+    ) where
         I: Copy + Into<usize>,
     {
         for (idx, output) in rle_idxs.iter().zip(output.iter_mut()) {
+            debug_assert!((*idx).into() < rle_vals.len());
+            // SAFETY: the caller guarantees every index is less than `rle_vals.len()`.
             *output = unsafe { *rle_vals.get_unchecked((*idx).into()) };
         }
     }
@@ -70,7 +96,8 @@ mod test {
         let mut rle_vals = [0u32; 1024];
         let mut rle_idxs = [0u16; 1024];
 
-        let unique_count = u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count = unsafe { u32::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
         assert_eq!(unique_count, 11);
     }
@@ -81,7 +108,8 @@ mod test {
         let mut rle_vals = [0u32; 1024];
         let mut rle_idxs = [0u16; 1024];
 
-        let unique_count = u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count = unsafe { u32::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
         // Check that RLE values are 1, 2, 3, ..., 11
         for i in 0..unique_count {
@@ -95,7 +123,8 @@ mod test {
         let mut rle_vals = [0u32; 1024];
         let mut rle_idxs = [0u16; 1024];
 
-        u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        unsafe { u32::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
         for i in 0..100 {
             assert_eq!(rle_idxs[i], 0);
@@ -116,7 +145,8 @@ mod test {
         let mut rle_vals = [0u16; 1024];
         let mut rle_idxs = [0u16; 1024];
 
-        let unique_count = u16::encode(&input, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count = unsafe { u16::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
         assert_eq!(unique_count, 1);
         assert_eq!(rle_vals[0], 42);
@@ -133,7 +163,8 @@ mod test {
         let mut rle_vals = [0u8; 1024];
         let mut rle_idxs = [0u16; 1024];
 
-        let unique_count = u8::encode(&input, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count = unsafe { u8::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
         // RLE creates a new dictionary entry every time the value changes,
         // not when we encounter a new unique value.
@@ -146,10 +177,12 @@ mod test {
 
         let mut rle_vals = [0u8; 1024];
         let mut rle_idxs = [0u16; 1024];
-        let unique_count = u8::encode(&input, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count = unsafe { u8::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
         let mut decoded = [0u8; 1024];
-        u8::decode(&rle_vals[..unique_count], &rle_idxs, &mut decoded);
+        // SAFETY: `encode_unchecked` only writes indices below the returned `unique_count`.
+        unsafe { u8::decode_unchecked(&rle_vals[..unique_count], &rle_idxs, &mut decoded) };
         assert_eq!(input, decoded);
     }
 }
