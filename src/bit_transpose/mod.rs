@@ -219,15 +219,6 @@ pub fn untranspose_bits<T: crate::FastLanes>(input: &[u64; 16], output: &mut [u6
     scalar::untranspose_bits::<T>(input, output);
 }
 
-#[cfg(test)]
-pub(crate) fn generate_test_data(seed: u8) -> [u64; 16] {
-    let mut data = [0u64; 16];
-    for (i, byte) in as_byte_array_mut(&mut data).iter_mut().enumerate() {
-        *byte = seed.wrapping_mul(17).wrapping_add(i as u8).wrapping_mul(31);
-    }
-    data
-}
-
 /// Reference transpose built directly on top of [`crate::transpose`], one bit at a time.
 #[cfg(test)]
 pub(crate) fn transpose_bits_baseline(input: &[u64; 16], output: &mut [u64; 16]) {
@@ -266,12 +257,15 @@ pub(crate) fn untranspose_bits_baseline<T: crate::FastLanes>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::{format, string::ToString};
+    use hegel::TestCase;
+    use hegel::generators as gs;
 
-    #[test]
-    fn test_baseline_roundtrip() {
-        let input = generate_test_data(42);
-        let mut transposed = [0u64; 16];
-        let mut roundtrip = [0u64; 16];
+    #[hegel::test]
+    fn test_baseline_roundtrip(tc: TestCase) {
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut transposed = [u64::MAX; 16];
+        let mut roundtrip = [u64::MAX; 16];
 
         transpose_bits_baseline(&input, &mut transposed);
         untranspose_bits_baseline::<u64>(&transposed, &mut roundtrip);
@@ -279,63 +273,51 @@ mod tests {
         assert_eq!(input, roundtrip);
     }
 
-    #[test]
-    fn test_dispatch_matches_baseline() {
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut baseline_out = [0u64; 16];
-            let mut out = [0u64; 16];
+    #[hegel::test]
+    fn test_dispatch_matches_baseline(tc: TestCase) {
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut baseline_out = [u64::MAX; 16];
+        let mut out = [u64::MAX; 16];
 
-            transpose_bits_baseline(&input, &mut baseline_out);
-            transpose_bits(&input, &mut out);
+        transpose_bits_baseline(&input, &mut baseline_out);
+        transpose_bits(&input, &mut out);
 
-            assert_eq!(
-                baseline_out, out,
-                "transpose dispatch doesn't match baseline for seed {seed}"
-            );
-        }
+        assert_eq!(baseline_out, out);
     }
 
-    #[test]
-    fn test_untranspose_dispatch_matches_baseline() {
-        fn check<T: crate::FastLanes>() {
-            for seed in [0, 42, 123, 255] {
-                let input = generate_test_data(seed);
-                let mut baseline_out = [0u64; 16];
-                let mut out = [0u64; 16];
+    #[hegel::test]
+    fn test_untranspose_dispatch_matches_baseline(tc: TestCase) {
+        fn check<T: crate::FastLanes>(input: &[u64; 16]) {
+            let mut baseline_out = [u64::MAX; 16];
+            let mut out = [u64::MAX; 16];
 
-                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
-                untranspose_bits::<T>(&input, &mut out);
-
-                assert_eq!(
-                    baseline_out,
-                    out,
-                    "untranspose dispatch doesn't match baseline for type={} seed={seed}",
-                    core::any::type_name::<T>()
-                );
-            }
-        }
-        check::<u8>();
-        check::<u16>();
-        check::<u32>();
-        check::<u64>();
-    }
-
-    #[test]
-    fn test_dispatch_roundtrip() {
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut transposed = [0u64; 16];
-            let mut roundtrip = [0u64; 16];
-
-            transpose_bits(&input, &mut transposed);
-            untranspose_bits::<u64>(&transposed, &mut roundtrip);
+            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            untranspose_bits::<T>(input, &mut out);
 
             assert_eq!(
-                input, roundtrip,
-                "dispatch roundtrip failed for seed {seed}"
+                baseline_out,
+                out,
+                "untranspose dispatch doesn't match baseline for type={}",
+                core::any::type_name::<T>()
             );
         }
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        check::<u8>(&input);
+        check::<u16>(&input);
+        check::<u32>(&input);
+        check::<u64>(&input);
+    }
+
+    #[hegel::test]
+    fn test_dispatch_roundtrip(tc: TestCase) {
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut transposed = [u64::MAX; 16];
+        let mut roundtrip = [u64::MAX; 16];
+
+        transpose_bits(&input, &mut transposed);
+        untranspose_bits::<u64>(&transposed, &mut roundtrip);
+
+        assert_eq!(input, roundtrip);
     }
 
     /// The shared `group_perm` gather/scatter tables are consumed only by the SIMD kernels
@@ -392,25 +374,23 @@ mod tests {
             out
         }
 
-        #[test]
-        fn tables_match_baseline_all_widths() {
-            fn check<T: crate::FastLanes>() {
-                for seed in [0, 1, 42, 123, 200, 255] {
-                    let input = generate_test_data(seed);
-                    let mut baseline = [0u64; 16];
-                    untranspose_bits_baseline::<T>(&input, &mut baseline);
-                    assert_eq!(
-                        untranspose_via_tables::<T>(&input),
-                        baseline,
-                        "group_perm tables != baseline for type={} seed={seed}",
-                        core::any::type_name::<T>()
-                    );
-                }
+        #[hegel::test]
+        fn tables_match_baseline_all_widths(tc: TestCase) {
+            fn check<T: crate::FastLanes>(input: &[u64; 16]) {
+                let mut baseline = [u64::MAX; 16];
+                untranspose_bits_baseline::<T>(input, &mut baseline);
+                assert_eq!(
+                    untranspose_via_tables::<T>(input),
+                    baseline,
+                    "group_perm tables != baseline for type={}",
+                    core::any::type_name::<T>()
+                );
             }
-            check::<u8>();
-            check::<u16>();
-            check::<u32>();
-            check::<u64>();
+            let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+            check::<u8>(&input);
+            check::<u16>(&input);
+            check::<u32>(&input);
+            check::<u64>(&input);
         }
 
         /// Both tables must be permutations of `0..128` — every input byte is read exactly once

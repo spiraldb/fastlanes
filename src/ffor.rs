@@ -110,7 +110,11 @@ impl_for!(u64);
 #[cfg(test)]
 mod test {
     use super::*;
+    use alloc::{format, string::ToString, vec};
     use core::mem::size_of;
+    use hegel::TestCase;
+    use hegel::generators as gs;
+    use pastey::paste;
 
     #[test]
     fn test_ffor() {
@@ -138,31 +142,88 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_ffor_unchecked() {
-        const W: usize = 15;
-        const B: usize = 1024 * W / u16::T;
+    macro_rules! ffor_property_tests {
+        ($T:ident) => {
+            paste! {
+                #[hegel::test(test_cases = 10)]
+                fn [<test_ffor_matches_wrapping_model_ $T>](tc: TestCase) {
+                    let input: [$T; 1024] =
+                        tc.draw(gs::arrays(gs::integers::<$T>()));
+                    let reference = tc.draw(gs::integers::<$T>());
 
-        let mut values: [u16; 1024] = [0; 1024];
-        for i in 0..1024 {
-            values[i] = (i % (1 << W)) as u16 + 10;
-        }
+                    for width in 0..=<$T>::T {
+                        macro_rules! check_width {
+                            ($W:expr) => {{
+                                const B: usize = 1024 * $W / <$T>::T;
+                                let mut packed = [<$T>::MAX; B];
+                                let mut actual = [<$T>::MAX; 1024];
 
-        let mut packed = [0; 128 * W / size_of::<u16>()];
-        FoR::for_pack::<W, B>(&values, 10, &mut packed);
+                                <$T>::for_pack::<$W, B>(&input, reference, &mut packed);
+                                <$T>::unfor_pack::<$W, B>(&packed, reference, &mut actual);
 
-        let mut unpacked = [0; 1024];
-        unsafe {
-            FoR::unchecked_unfor_pack(W, &packed, 10, &mut unpacked);
-        }
+                                let mask = if $W == 0 {
+                                    0
+                                } else if $W == <$T>::T {
+                                    <$T>::MAX
+                                } else {
+                                    ((1 as $T) << $W) - 1
+                                };
+                                let expected = core::array::from_fn(|i| {
+                                    reference.wrapping_add(
+                                        input[i].wrapping_sub(reference) & mask
+                                    )
+                                });
+                                assert_eq!(actual, expected);
+                            }};
+                        }
 
-        for (i, (a, b)) in values.iter().zip(unpacked.iter()).enumerate() {
-            assert_eq!(
-                // Check that the unpacked array is 10 less than the original (modulo 2^15)
-                *a,
-                *b,
-                "Mismatch at index {i}"
-            );
-        }
+                        paste!(crate::seq_t!(W in $T {
+                            match width {
+                                #(W => check_width!(W),)*
+                                <$T>::T => check_width!({ <$T>::T }),
+                                _ => unreachable!("unsupported width {width}"),
+                            }
+                        }));
+                    }
+                }
+
+                #[hegel::test(test_cases = 10)]
+                fn [<test_unchecked_unfor_pack_matches_unfused_ $T>](tc: TestCase) {
+                    let packed_source: [$T; 1024] =
+                        tc.draw(gs::arrays(gs::integers::<$T>()));
+                    let reference = tc.draw(gs::integers::<$T>());
+
+                    for width in 0..=<$T>::T {
+                        let packed_len = 1024 * width / <$T>::T;
+                        let mut packed = vec![<$T>::MAX; packed_len];
+                        unsafe {
+                            <$T>::unchecked_pack(width, &packed_source, &mut packed);
+                        }
+
+                        let mut unpacked = [<$T>::MAX; 1024];
+                        unsafe { <$T>::unchecked_unpack(width, &packed, &mut unpacked) };
+                        let expected =
+                            unpacked.map(|value| value.wrapping_add(reference));
+
+                        let mut actual = [<$T>::MAX; 1024];
+                        unsafe {
+                            <$T>::unchecked_unfor_pack(
+                                width,
+                                &packed,
+                                reference,
+                                &mut actual,
+                            );
+                        }
+
+                        assert_eq!(actual, expected);
+                    }
+                }
+            }
+        };
     }
+
+    ffor_property_tests!(u8);
+    ffor_property_tests!(u16);
+    ffor_property_tests!(u32);
+    ffor_property_tests!(u64);
 }
