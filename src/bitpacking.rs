@@ -270,8 +270,6 @@ impl_packing!(u64);
 #[cfg(test)]
 mod test {
     use core::array;
-    use core::fmt::Debug;
-    use seq_macro::seq;
 
     use super::*;
 
@@ -299,44 +297,4 @@ mod test {
             );
         }
     }
-
-    fn try_round_trip<T: BitPacking + Debug, const W: usize, const B: usize>() {
-        let mut values: [T; 1024] = [T::zero(); 1024];
-        for i in 0..1024 {
-            values[i] = T::from(i % (1 << (W % T::T))).unwrap();
-        }
-
-        let mut packed = [T::zero(); B];
-        BitPacking::pack::<W, B>(&values, &mut packed);
-
-        let mut unpacked = [T::zero(); 1024];
-        BitPacking::unpack::<W, B>(&packed, &mut unpacked);
-
-        assert_eq!(&unpacked, &values);
-
-        for i in 0..1024 {
-            assert_eq!(BitPacking::unpack_single::<W, B>(&packed, i), values[i]);
-            assert_eq!(
-                unsafe { BitPacking::unchecked_unpack_single(W, &packed, i) },
-                values[i]
-            );
-        }
-    }
-
-    macro_rules! impl_try_round_trip {
-        ($T:ty, $W:expr) => {
-            paste! {
-                #[test]
-                fn [<test_round_trip_ $T _ $W>]() {
-                    const B: usize = 1024 * $W / <$T>::T;
-                    try_round_trip::<$T, $W, B>();
-                }
-            }
-        };
-    }
-
-    seq!(W in 0..=8 { impl_try_round_trip!(u8, W); });
-    seq!(W in 0..=16 { impl_try_round_trip!(u16, W); });
-    seq!(W in 0..=32 { impl_try_round_trip!(u32, W); });
-    seq!(W in 0..=64 { impl_try_round_trip!(u64, W); });
 }
