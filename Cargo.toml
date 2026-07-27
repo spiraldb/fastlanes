@@ -7,9 +7,9 @@ homepage = "https://github.com/spiraldb/fastlanes"
 repository = "https://github.com/spiraldb/fastlanes"
 authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec", "encoding", "lightweight"]
-edition = "2021"
+edition = "2024"
 rust-version = "1.91"
-exclude = [".github/*", "renovate.json"]
+exclude = [".github/*", "renovate.json", ".git/*"]
 
 [features]
 default = []
@@ -19,14 +19,13 @@ default = []
 std = []
 
 [dependencies]
-const_for = "0.1.4"
-core_detect = "1.0.0"
-num-traits = "0.2.19"
-paste = "1.0.15"
-seq-macro = "0.3.5"
+const_for = "0.1"
+num-traits = "0.2"
+pastey = "0.2"
+seq-macro = "0.3"
 
 [dev-dependencies]
-arrayref = "0.3.9"
+arrayref = "0.3"
 divan = { package = "codspeed-divan-compat", version = "5.0" }
 
 [lints.rust]

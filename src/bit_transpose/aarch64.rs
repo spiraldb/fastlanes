@@ -2,27 +2,27 @@
 
 use core::arch::aarch64::uint64x2_t;
 use core::arch::aarch64::vandq_u64;
-use core::arch::aarch64::vdupq_n_u64;
 use core::arch::aarch64::vdupq_n_u8;
+use core::arch::aarch64::vdupq_n_u64;
 use core::arch::aarch64::veorq_u64;
 use core::arch::aarch64::vld1q_u8;
 use core::arch::aarch64::vld1q_u8_x4;
 use core::arch::aarch64::vorrq_u8;
 use core::arch::aarch64::vqtbl4q_u8;
-use core::arch::aarch64::vreinterpretq_u64_u8;
 use core::arch::aarch64::vreinterpretq_u8_u64;
+use core::arch::aarch64::vreinterpretq_u64_u8;
 use core::arch::aarch64::vshlq_n_u64;
 use core::arch::aarch64::vshrq_n_u64;
 use core::arch::aarch64::vst1q_u8;
 use core::arch::aarch64::vsubq_u8;
 
-use crate::bit_transpose::as_byte_array;
-use crate::bit_transpose::as_byte_array_mut;
-use crate::bit_transpose::group_perm::group_tables;
+use crate::FastLanes;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
-use crate::FastLanes;
+use crate::bit_transpose::as_byte_array;
+use crate::bit_transpose::as_byte_array_mut;
+use crate::bit_transpose::group_perm::group_tables;
 
 /// Gather indices for the first half from input[0..64] (low 4 bytes of each group).
 static GATHER_FIRST_LO: [[u8; 16]; 4] = [

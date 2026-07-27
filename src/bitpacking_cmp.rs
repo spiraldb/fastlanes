@@ -1,7 +1,7 @@
 use crate::seq_t;
 use crate::unpack;
-use crate::{supported_bit_width, FastLanes, FastLanesComparable};
-use paste::paste;
+use crate::{FastLanes, FastLanesComparable, supported_bit_width};
+use pastey::paste;
 
 pub trait BitPackingCompare: FastLanes {
     /// A fused unpack (see `BitPacking::unpack`) and compare, packing the boolean results into a
@@ -141,7 +141,7 @@ impl_packing_compare!(u64);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{untranspose_bits, BitPacking};
+    use crate::{BitPacking, untranspose_bits};
     use alloc::vec::Vec;
     use core::array;
 

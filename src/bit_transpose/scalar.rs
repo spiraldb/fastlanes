@@ -6,15 +6,15 @@
 //! kernels do eight groups at once in a single register; the scalar code does them one
 //! at a time and relies on the compiler to unroll the fixed-length loops.
 
-use crate::bit_transpose::as_byte_array;
-use crate::bit_transpose::as_byte_array_mut;
+use crate::FL_ORDER;
+use crate::FastLanes;
 use crate::bit_transpose::BASE_PATTERN_FIRST;
 use crate::bit_transpose::BASE_PATTERN_SECOND;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
-use crate::FastLanes;
-use crate::FL_ORDER;
+use crate::bit_transpose::as_byte_array;
+use crate::bit_transpose::as_byte_array_mut;
 
 /// The two halves of the `FastLanes` byte-group ordering.
 const HALVES: [[usize; 8]; 2] = [BASE_PATTERN_FIRST, BASE_PATTERN_SECOND];

@@ -7,7 +7,7 @@ fn main() {
 mod bench {
     use divan::Bencher;
     use fastlanes::{
-        untranspose_bits, BitPacking, BitPackingCompare, FastLanes, FastLanesComparable,
+        BitPacking, BitPackingCompare, FastLanes, FastLanesComparable, untranspose_bits,
     };
     use num_traits::FromPrimitive;
     use std::hint::black_box;

@@ -1,5 +1,5 @@
-use crate::{FastLanes, FL_ORDER};
-use seq_macro::seq;
+use crate::{FL_ORDER, FastLanes};
+use const_for::const_for;
 
 pub trait Transpose: FastLanes {
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]);
@@ -9,14 +9,14 @@ pub trait Transpose: FastLanes {
 impl<T: FastLanes> Transpose for T {
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        seq!(i in 0..1024 {
+        const_for!(i in 0..1024 => {
             output[i] = input[transpose(i)];
         });
     }
 
     #[inline(never)]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        seq!(i in 0..1024 {
+        const_for!(i in 0..1024 => {
             output[transpose(i)] = input[i];
         });
     }
