@@ -125,6 +125,16 @@ macro_rules! impl_packing_compare {
                                 value
                             )
                         },)*
+                        // seq_t has exclusive upper bound
+                        Self::T => {
+                           const W: usize = <$T>::T;
+                           Self::unpack_cmp::<W, 1024, V, F>(
+                               unsafe { crate::as_array_unchecked(input) },
+                               output,
+                               comparison,
+                               value
+                           )
+                        },
                         _ => unreachable!("Unsupported width: {}", width)
                     }
                 }))
@@ -205,7 +215,7 @@ mod tests {
         where
             T: BitPacking + BitPackingCompare + FastLanesComparable<Bitpacked = T>,
         {
-            for width in 1..T::T {
+            for width in 1..=T::T {
                 let mask: u64 = if width == 64 {
                     u64::MAX
                 } else {
