@@ -15,14 +15,17 @@ exclude = [".github/*", "renovate.json", ".git/*"]
 default = []
 # Enables runtime CPU feature detection for `transpose_bits`/`untranspose_bits`
 # dispatch. Without it, the dispatch is resolved at compile time from the enabled
-# `target_feature`s, keeping the crate `no_std`.
-std = []
+# `target_feature`s.
+runtime = ["dep:cpufeatures"]
 
 [dependencies]
 const_for = "0.1"
-num-traits = "0.2"
+num-traits = { version = "0.2", default-features = false }
 pastey = "0.2"
 seq-macro = "0.3"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+cpufeatures = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 arrayref = "0.3"
@@ -75,7 +78,7 @@ harness = false
 [[bench]]
 name = "bit_transpose"
 harness = false
-required-features = ["std"]
+required-features = ["runtime"]
 
 [[bench]]
 name = "rle"

@@ -344,6 +344,7 @@ dependencies = [
  "arrayref",
  "codspeed-divan-compat",
  "const_for",
+ "cpufeatures",
  "hegeltest",
  "num-traits",
  "pastey",

@@ -25,22 +25,25 @@ use crate::bit_transpose::as_byte_array;
 use crate::bit_transpose::as_byte_array_mut;
 use crate::bit_transpose::group_perm::group_tables;
 
-/// Check if BMI2 is available (requires the `std` feature for runtime detection).
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
+cpufeatures::new!(bmi2, "bmi2");
+#[cfg(feature = "runtime")]
+cpufeatures::new!(vbmi, "avx512f", "avx512bw", "avx512vbmi");
+
+/// Check if BMI2 is available (requires the `runtime` feature).
+#[cfg(feature = "runtime")]
 #[inline]
 #[must_use]
 pub fn has_bmi2() -> bool {
-    std::is_x86_feature_detected!("bmi2")
+    bmi2::get()
 }
 
-/// Check if AVX-512 VBMI (+ F + BW) is available (requires the `std` feature).
-#[cfg(feature = "std")]
+/// Check if AVX-512 VBMI (+ F + BW) is available (requires the `runtime` feature).
+#[cfg(feature = "runtime")]
 #[inline]
 #[must_use]
 pub fn has_vbmi() -> bool {
-    std::is_x86_feature_detected!("avx512vbmi")
-        && std::is_x86_feature_detected!("avx512bw")
-        && std::is_x86_feature_detected!("avx512f")
+    vbmi::get()
 }
 
 /// Per-bit-position masks selecting one bit out of every byte of a `u64`.
@@ -300,16 +303,16 @@ unsafe fn untranspose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &m
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     use super::*;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     use crate::bit_transpose::generate_test_data;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     use crate::bit_transpose::transpose_bits_baseline;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     use crate::bit_transpose::untranspose_bits_baseline;
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     #[test]
     fn test_bmi2_matches_baseline() {
         if !has_bmi2() {
@@ -331,7 +334,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     #[test]
     fn test_bmi2_roundtrip() {
         if !has_bmi2() {
@@ -354,7 +357,7 @@ mod tests {
 
     /// The width-generic BMI2 untranspose must match the width-parameterized baseline for every
     /// element width.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     #[test]
     fn test_bmi2_untranspose_all_widths_match_baseline() {
         fn check<T: FastLanes>() {
@@ -384,7 +387,7 @@ mod tests {
         check::<u64>();
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     #[test]
     fn test_vbmi_matches_baseline() {
         if !has_vbmi() {
@@ -406,7 +409,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     #[test]
     fn test_vbmi_roundtrip() {
         if !has_vbmi() {
@@ -429,7 +432,7 @@ mod tests {
 
     /// The width-generic VBMI untranspose must match the width-parameterized baseline for every
     /// element width.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     #[test]
     fn test_vbmi_untranspose_all_widths_match_baseline() {
         fn check<T: FastLanes>() {
