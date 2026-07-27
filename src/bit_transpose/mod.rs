@@ -12,10 +12,10 @@
 //! # Choosing an implementation
 //!
 //! [`transpose_bits`] / [`untranspose_bits`] dispatch to the fastest available
-//! implementation. When the crate is built with the `std` feature this dispatch
-//! is performed at runtime via CPU feature detection; otherwise it is resolved at
-//! compile time from the enabled `target_feature`s, falling back to the portable
-//! scalar implementation.
+//! implementation. When the crate is built with the `runtime` feature this
+//! dispatch is performed at runtime via `no_std` CPU feature detection; otherwise
+//! it is resolved at compile time from the enabled `target_feature`s, falling back
+//! to the portable scalar implementation.
 //!
 //! Every implementation is also exposed directly so that a downstream crate can
 //! select one explicitly even in a `no_std` build: [`scalar`], [`x86`]
@@ -135,17 +135,15 @@ pub(crate) fn as_byte_array_mut(block: &mut [u64; 16]) -> &mut [u8; 128] {
 
 /// Whether the AVX-512 VBMI implementation should be used.
 ///
-/// Resolved at runtime with the `std` feature, otherwise at compile time.
+/// Resolved at runtime with the `runtime` feature, otherwise at compile time.
 #[cfg(target_arch = "x86_64")]
 #[inline]
 fn detect_vbmi() -> bool {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     {
-        std::is_x86_feature_detected!("avx512vbmi")
-            && std::is_x86_feature_detected!("avx512bw")
-            && std::is_x86_feature_detected!("avx512f")
+        x86::has_vbmi()
     }
-    #[cfg(not(feature = "std"))]
+    #[cfg(not(feature = "runtime"))]
     {
         cfg!(all(
             target_feature = "avx512vbmi",
@@ -157,15 +155,15 @@ fn detect_vbmi() -> bool {
 
 /// Whether the BMI2 implementation should be used.
 ///
-/// Resolved at runtime with the `std` feature, otherwise at compile time.
+/// Resolved at runtime with the `runtime` feature, otherwise at compile time.
 #[cfg(target_arch = "x86_64")]
 #[inline]
 fn detect_bmi2() -> bool {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "runtime")]
     {
-        std::is_x86_feature_detected!("bmi2")
+        x86::has_bmi2()
     }
-    #[cfg(not(feature = "std"))]
+    #[cfg(not(feature = "runtime"))]
     {
         cfg!(target_feature = "bmi2")
     }

@@ -2,8 +2,6 @@
 
 extern crate alloc;
 extern crate core;
-#[cfg(feature = "std")]
-extern crate std;
 
 use core::mem::size_of;
 use num_traits::{PrimInt, Unsigned};
