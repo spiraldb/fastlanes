@@ -154,8 +154,10 @@ mod tests {
     use crate::{BitPacking, untranspose_bits};
     use alloc::{format, string::ToString, vec};
     use core::array;
+    use core::fmt::Debug;
     use hegel::TestCase;
     use hegel::generators as gs;
+    use hegel::generators::Integer;
     use pastey::paste;
 
     /// Reference bitmask in the same `FastLanes` (LSB-first, per-lane) order produced by
@@ -224,103 +226,105 @@ mod tests {
         }
     }
 
+    fn assert_unpack_cmp_matches_reference<T, V>(tc: &TestCase)
+    where
+        T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
+        V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
+    {
+        let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let other = tc.draw(gs::integers::<V>());
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &values, &mut packed) };
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let unpacked = values.map(|value| value & mask);
+
+            for operation in 0..=5 {
+                let f = comparison::<V>(operation);
+                let expected = reference_mask(&unpacked, f, other);
+                let mut actual = [u64::MAX; 16];
+                unsafe {
+                    T::unchecked_unpack_cmp(width, &packed, &mut actual, f, other);
+                }
+
+                assert_eq!(
+                    actual,
+                    expected,
+                    "bitpacked={} comparable={} width={width} operation={operation}",
+                    core::any::type_name::<T>(),
+                    core::any::type_name::<V>(),
+                );
+            }
+        }
+    }
+
+    fn assert_unpack_cmp_untransposes_to_logical<T, V>(tc: &TestCase)
+    where
+        T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
+        V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
+    {
+        let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let other = tc.draw(gs::integers::<V>());
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &values, &mut packed) };
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let unpacked = values.map(|value| value & mask);
+
+            for operation in 0..=5 {
+                let f = comparison::<V>(operation);
+                let mut expected = [0u64; 16];
+                for (index, value) in unpacked.iter().copied().enumerate() {
+                    if f(V::as_unpacked(value), other) {
+                        expected[index / 64] |= 1u64 << (index % 64);
+                    }
+                }
+
+                let mut transposed = [u64::MAX; 16];
+                unsafe {
+                    T::unchecked_unpack_cmp(width, &packed, &mut transposed, f, other);
+                }
+                let mut actual = [u64::MAX; 16];
+                untranspose_bits::<T>(&transposed, &mut actual);
+
+                assert_eq!(
+                    actual,
+                    expected,
+                    "bitpacked={} comparable={} width={width} operation={operation}",
+                    core::any::type_name::<T>(),
+                    core::any::type_name::<V>(),
+                );
+            }
+        }
+    }
+
     macro_rules! comparison_property_tests {
         ($T:ident, $V:ident) => {
             paste! {
                 #[hegel::test(test_cases = 10)]
                 fn [<test_unpack_cmp_matches_reference_ $T _ $V>](tc: TestCase) {
-                    let values: [$T; 1024] =
-                        tc.draw(gs::arrays(gs::integers::<$T>()));
-                    let other = tc.draw(gs::integers::<$V>());
-
-                    for width in 0..=<$T>::T {
-                        let packed_len = 1024 * width / <$T>::T;
-                        let mut packed = vec![<$T>::MAX; packed_len];
-                        unsafe { <$T>::unchecked_pack(width, &values, &mut packed) };
-                        let mask = if width == 0 {
-                            0
-                        } else if width == <$T>::T {
-                            <$T>::MAX
-                        } else {
-                            ((1 as $T) << width) - 1
-                        };
-                        let unpacked = values.map(|value| value & mask);
-
-                        for operation in 0..=5 {
-                            let f = comparison::<$V>(operation);
-                            let expected = reference_mask(&unpacked, f, other);
-                            let mut actual = [u64::MAX; 16];
-                            unsafe {
-                                <$T>::unchecked_unpack_cmp(
-                                    width,
-                                    &packed,
-                                    &mut actual,
-                                    f,
-                                    other,
-                                );
-                            }
-
-                            assert_eq!(
-                                actual,
-                                expected,
-                                "bitpacked={} comparable={} width={width} operation={operation}",
-                                core::any::type_name::<$T>(),
-                                core::any::type_name::<$V>(),
-                            );
-                        }
-                    }
+                    assert_unpack_cmp_matches_reference::<$T, $V>(&tc);
                 }
 
                 #[hegel::test(test_cases = 10)]
                 fn [<test_unpack_cmp_untransposes_to_logical_ $T _ $V>](tc: TestCase) {
-                    let values: [$T; 1024] =
-                        tc.draw(gs::arrays(gs::integers::<$T>()));
-                    let other = tc.draw(gs::integers::<$V>());
-
-                    for width in 0..=<$T>::T {
-                        let packed_len = 1024 * width / <$T>::T;
-                        let mut packed = vec![<$T>::MAX; packed_len];
-                        unsafe { <$T>::unchecked_pack(width, &values, &mut packed) };
-                        let mask = if width == 0 {
-                            0
-                        } else if width == <$T>::T {
-                            <$T>::MAX
-                        } else {
-                            ((1 as $T) << width) - 1
-                        };
-                        let unpacked = values.map(|value| value & mask);
-
-                        for operation in 0..=5 {
-                            let f = comparison::<$V>(operation);
-                            let mut expected = [0u64; 16];
-                            for (index, value) in unpacked.iter().copied().enumerate() {
-                                if f(<$V>::as_unpacked(value), other) {
-                                    expected[index / 64] |= 1u64 << (index % 64);
-                                }
-                            }
-
-                            let mut transposed = [u64::MAX; 16];
-                            unsafe {
-                                <$T>::unchecked_unpack_cmp(
-                                    width,
-                                    &packed,
-                                    &mut transposed,
-                                    f,
-                                    other,
-                                );
-                            }
-                            let mut actual = [u64::MAX; 16];
-                            untranspose_bits::<$T>(&transposed, &mut actual);
-
-                            assert_eq!(
-                                actual,
-                                expected,
-                                "bitpacked={} comparable={} width={width} operation={operation}",
-                                core::any::type_name::<$T>(),
-                                core::any::type_name::<$V>(),
-                            );
-                        }
-                    }
+                    assert_unpack_cmp_untransposes_to_logical::<$T, $V>(&tc);
                 }
             }
         };

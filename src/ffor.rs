@@ -111,9 +111,11 @@ impl_for!(u64);
 mod test {
     use super::*;
     use alloc::{format, string::ToString, vec};
+    use core::fmt::Debug;
     use core::mem::size_of;
     use hegel::TestCase;
     use hegel::generators as gs;
+    use hegel::generators::Integer;
     use pastey::paste;
 
     #[test]
@@ -142,81 +144,128 @@ mod test {
         }
     }
 
+    trait RuntimeForPack: FoR {
+        fn for_pack_for_width(
+            width: usize,
+            input: &[Self; 1024],
+            reference: Self,
+            output: &mut [Self],
+        );
+    }
+
+    macro_rules! impl_runtime_for_pack {
+        ($T:ident) => {
+            impl RuntimeForPack for $T {
+                fn for_pack_for_width(
+                    width: usize,
+                    input: &[Self; 1024],
+                    reference: Self,
+                    output: &mut [Self],
+                ) {
+                    macro_rules! pack_width {
+                        ($W:expr) => {{
+                            const B: usize = 1024 * $W / <$T>::T;
+                            // SAFETY: the caller allocates `output` for `width`, and this branch is
+                            // selected only when `width == W`.
+                            let output =
+                                unsafe { crate::as_array_mut_unchecked::<$T, B>(output) };
+                            <$T>::for_pack::<$W, B>(input, reference, output);
+                        }};
+                    }
+
+                    paste!(crate::seq_t!(W in $T {
+                        match width {
+                            #(W => pack_width!(W),)*
+                            <$T>::T => pack_width!({ <$T>::T }),
+                            _ => unreachable!("unsupported width {width}"),
+                        }
+                    }));
+                }
+            }
+        };
+    }
+
+    impl_runtime_for_pack!(u8);
+    impl_runtime_for_pack!(u16);
+    impl_runtime_for_pack!(u32);
+    impl_runtime_for_pack!(u64);
+
+    fn assert_ffor_matches_wrapping_model<T>(tc: &TestCase)
+    where
+        T: Debug
+            + Integer
+            + RuntimeForPack
+            + Send
+            + Sync
+            + num_traits::WrappingAdd
+            + num_traits::WrappingSub
+            + 'static,
+    {
+        let input: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let reference = tc.draw(gs::integers::<T>());
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            let mut actual = [T::max_value(); 1024];
+
+            T::for_pack_for_width(width, &input, reference, &mut packed);
+            unsafe { T::unchecked_unfor_pack(width, &packed, reference, &mut actual) };
+
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let expected = core::array::from_fn(|i| {
+                let delta = num_traits::WrappingSub::wrapping_sub(&input[i], &reference);
+                num_traits::WrappingAdd::wrapping_add(&reference, &(delta & mask))
+            });
+            assert_eq!(actual, expected);
+        }
+    }
+
+    fn assert_unchecked_unfor_pack_matches_unfused<T>(tc: &TestCase)
+    where
+        T: Debug + FoR + Integer + Send + Sync + num_traits::WrappingAdd + 'static,
+    {
+        let packed_source: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let reference = tc.draw(gs::integers::<T>());
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe {
+                T::unchecked_pack(width, &packed_source, &mut packed);
+            }
+
+            let mut unpacked = [T::max_value(); 1024];
+            unsafe { T::unchecked_unpack(width, &packed, &mut unpacked) };
+            let expected =
+                unpacked.map(|value| num_traits::WrappingAdd::wrapping_add(&value, &reference));
+
+            let mut actual = [T::max_value(); 1024];
+            unsafe {
+                T::unchecked_unfor_pack(width, &packed, reference, &mut actual);
+            }
+
+            assert_eq!(actual, expected);
+        }
+    }
+
     macro_rules! ffor_property_tests {
         ($T:ident) => {
             paste! {
                 #[hegel::test(test_cases = 10)]
                 fn [<test_ffor_matches_wrapping_model_ $T>](tc: TestCase) {
-                    let input: [$T; 1024] =
-                        tc.draw(gs::arrays(gs::integers::<$T>()));
-                    let reference = tc.draw(gs::integers::<$T>());
-
-                    for width in 0..=<$T>::T {
-                        macro_rules! check_width {
-                            ($W:expr) => {{
-                                const B: usize = 1024 * $W / <$T>::T;
-                                let mut packed = [<$T>::MAX; B];
-                                let mut actual = [<$T>::MAX; 1024];
-
-                                <$T>::for_pack::<$W, B>(&input, reference, &mut packed);
-                                <$T>::unfor_pack::<$W, B>(&packed, reference, &mut actual);
-
-                                let mask = if $W == 0 {
-                                    0
-                                } else if $W == <$T>::T {
-                                    <$T>::MAX
-                                } else {
-                                    ((1 as $T) << $W) - 1
-                                };
-                                let expected = core::array::from_fn(|i| {
-                                    reference.wrapping_add(
-                                        input[i].wrapping_sub(reference) & mask
-                                    )
-                                });
-                                assert_eq!(actual, expected);
-                            }};
-                        }
-
-                        paste!(crate::seq_t!(W in $T {
-                            match width {
-                                #(W => check_width!(W),)*
-                                <$T>::T => check_width!({ <$T>::T }),
-                                _ => unreachable!("unsupported width {width}"),
-                            }
-                        }));
-                    }
+                    assert_ffor_matches_wrapping_model::<$T>(&tc);
                 }
 
                 #[hegel::test(test_cases = 10)]
                 fn [<test_unchecked_unfor_pack_matches_unfused_ $T>](tc: TestCase) {
-                    let packed_source: [$T; 1024] =
-                        tc.draw(gs::arrays(gs::integers::<$T>()));
-                    let reference = tc.draw(gs::integers::<$T>());
-
-                    for width in 0..=<$T>::T {
-                        let packed_len = 1024 * width / <$T>::T;
-                        let mut packed = vec![<$T>::MAX; packed_len];
-                        unsafe {
-                            <$T>::unchecked_pack(width, &packed_source, &mut packed);
-                        }
-
-                        let mut unpacked = [<$T>::MAX; 1024];
-                        unsafe { <$T>::unchecked_unpack(width, &packed, &mut unpacked) };
-                        let expected =
-                            unpacked.map(|value| value.wrapping_add(reference));
-
-                        let mut actual = [<$T>::MAX; 1024];
-                        unsafe {
-                            <$T>::unchecked_unfor_pack(
-                                width,
-                                &packed,
-                                reference,
-                                &mut actual,
-                            );
-                        }
-
-                        assert_eq!(actual, expected);
-                    }
+                    assert_unchecked_unfor_pack_matches_unfused::<$T>(&tc);
                 }
             }
         };
