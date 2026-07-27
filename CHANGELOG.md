@@ -31,6 +31,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/spiraldb/fastlanes/compare/v0.6.0...v0.6.1) - 2026-07-27
+
+### Fixed
+
+- fused unpack_cmp panicks at full width ([#172](https://github.com/spiraldb/fastlanes/pull/172))
+
+### Other
+
+- Replace round-trip tests with hegel-based property testing ([#171](https://github.com/spiraldb/fastlanes/pull/171))
+- Clean up dependencies and use const_for! in one more place ([#153](https://github.com/spiraldb/fastlanes/pull/153))
+- Update taiki-e/install-action digest to 41049aa ([#169](https://github.com/spiraldb/fastlanes/pull/169))
+- Update MarcoIeni/release-plz-action digest to 2eb1d8b ([#166](https://github.com/spiraldb/fastlanes/pull/166))
+- Update Rust crate divan to v5 ([#167](https://github.com/spiraldb/fastlanes/pull/167))
+
 ## [0.6.0](https://github.com/spiraldb/fastlanes/compare/v0.5.2...v0.6.0) - 2026-07-23
 
 ### Other
