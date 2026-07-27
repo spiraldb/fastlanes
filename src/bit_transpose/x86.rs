@@ -14,16 +14,16 @@ use core::arch::x86_64::_mm512_xor_si512;
 use core::arch::x86_64::_pdep_u64;
 use core::arch::x86_64::_pext_u64;
 
-use crate::bit_transpose::as_byte_array;
-use crate::bit_transpose::as_byte_array_mut;
-use crate::bit_transpose::group_perm::group_tables;
+use crate::FL_ORDER;
+use crate::FastLanes;
 use crate::bit_transpose::BASE_PATTERN_FIRST;
 use crate::bit_transpose::BASE_PATTERN_SECOND;
 use crate::bit_transpose::TRANSPOSE_2X2;
 use crate::bit_transpose::TRANSPOSE_4X4;
 use crate::bit_transpose::TRANSPOSE_8X8;
-use crate::FastLanes;
-use crate::FL_ORDER;
+use crate::bit_transpose::as_byte_array;
+use crate::bit_transpose::as_byte_array_mut;
+use crate::bit_transpose::group_perm::group_tables;
 
 /// Check if BMI2 is available (requires the `std` feature for runtime detection).
 #[cfg(feature = "std")]

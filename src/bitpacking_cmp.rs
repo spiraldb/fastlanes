@@ -1,6 +1,6 @@
 use crate::seq_t;
 use crate::unpack;
-use crate::{supported_bit_width, FastLanes, FastLanesComparable};
+use crate::{FastLanes, FastLanesComparable, supported_bit_width};
 use paste::paste;
 
 pub trait BitPackingCompare: FastLanes {
@@ -141,7 +141,7 @@ impl_packing_compare!(u64);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{untranspose_bits, BitPacking};
+    use crate::{BitPacking, untranspose_bits};
     use alloc::vec::Vec;
     use core::array;
 
