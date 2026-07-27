@@ -14,5 +14,7 @@ target/
 .DS_Store
 
 # Added by cargo
-
 /target
+
+# For the hegel property testing crate
+.hegel

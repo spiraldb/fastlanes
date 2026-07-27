@@ -19,13 +19,19 @@ jobs:
       - uses: ./.github/actions/setup-rust
 
       - name: Rust Build
-        run: cargo build --all-features --all-targets
+        run: |
+            cargo build --all-features --all-targets
+            cargo build --all-targets
       - name: Rust Lint - Format
         run: cargo fmt --all --check
       - name: Rust Lint - Clippy
-        run: cargo clippy --all-features --all-targets
+        run: |
+            cargo clippy --all-features --all-targets
+            cargo clippy --all-targets
       - name: Rust Test
-        run: cargo test --workspace --all-features
+        run: |
+            cargo test --workspace --all-features
+            cargo test --workspace
 
   msrv:
     name: MSRV
