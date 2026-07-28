@@ -301,22 +301,16 @@ unsafe fn untranspose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &m
     );
 }
 
+#[cfg(feature = "runtime")]
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "runtime")]
     use super::*;
-    #[cfg(feature = "runtime")]
     use crate::bit_transpose::transpose_bits_baseline;
-    #[cfg(feature = "runtime")]
     use crate::bit_transpose::untranspose_bits_baseline;
-    #[cfg(feature = "runtime")]
     use alloc::{format, string::ToString};
-    #[cfg(feature = "runtime")]
     use hegel::TestCase;
-    #[cfg(feature = "runtime")]
     use hegel::generators as gs;
 
-    #[cfg(feature = "runtime")]
     #[hegel::test]
     fn test_bmi2_matches_baseline(tc: TestCase) {
         if !has_bmi2() {
@@ -333,7 +327,6 @@ mod tests {
         assert_eq!(baseline_out, bmi2_out);
     }
 
-    #[cfg(feature = "runtime")]
     #[hegel::test]
     fn test_bmi2_roundtrip(tc: TestCase) {
         if !has_bmi2() {
@@ -354,7 +347,6 @@ mod tests {
 
     /// The width-generic BMI2 untranspose must match the width-parameterized baseline for every
     /// element width.
-    #[cfg(feature = "runtime")]
     #[hegel::test]
     fn test_bmi2_untranspose_all_widths_match_baseline(tc: TestCase) {
         fn check<T: FastLanes>(input: &[u64; 16]) {
@@ -382,7 +374,6 @@ mod tests {
         check::<u64>(&input);
     }
 
-    #[cfg(feature = "runtime")]
     #[hegel::test]
     fn test_vbmi_matches_baseline(tc: TestCase) {
         if !has_vbmi() {
@@ -399,7 +390,6 @@ mod tests {
         assert_eq!(baseline_out, vbmi_out);
     }
 
-    #[cfg(feature = "runtime")]
     #[hegel::test]
     fn test_vbmi_roundtrip(tc: TestCase) {
         if !has_vbmi() {
@@ -420,7 +410,6 @@ mod tests {
 
     /// The width-generic VBMI untranspose must match the width-parameterized baseline for every
     /// element width.
-    #[cfg(feature = "runtime")]
     #[hegel::test]
     fn test_vbmi_untranspose_all_widths_match_baseline(tc: TestCase) {
         fn check<T: FastLanes>(input: &[u64; 16]) {
