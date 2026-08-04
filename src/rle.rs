@@ -89,6 +89,23 @@ impl<T: PartialEq + Copy> RLE for T {
 #[cfg(test)]
 mod test {
     use super::*;
+    use alloc::{format, string::ToString, vec, vec::Vec};
+    use hegel::TestCase;
+    use hegel::generators as gs;
+
+    fn reference_encode(input: &[u8; 1024]) -> (Vec<u8>, [u16; 1024]) {
+        let mut values = vec![input[0]];
+        let mut indices = [0u16; 1024];
+
+        for index in 1..1024 {
+            if input[index] != input[index - 1] {
+                values.push(input[index]);
+            }
+            indices[index] = (values.len() - 1) as u16;
+        }
+
+        (values, indices)
+    }
 
     #[test]
     fn test_rle_encode_unique_count() {
@@ -171,18 +188,49 @@ mod test {
         assert_eq!(unique_count, 1024);
     }
 
-    #[test]
-    fn test_rle_round_trip() {
-        let input: [u8; 1024] = core::array::from_fn(|i| (i % 256) as u8);
+    #[hegel::test]
+    fn test_rle_encode_matches_reference(tc: TestCase) {
+        let input: [u8; 1024] = tc.draw(gs::arrays(gs::integers::<u8>()));
+        let (expected_values, expected_indices) = reference_encode(&input);
+        let mut values = [u8::MAX; 1024];
+        let mut indices = [u16::MAX; 1024];
 
-        let mut rle_vals = [0u8; 1024];
-        let mut rle_idxs = [0u16; 1024];
-        // SAFETY: all arguments are 1024-element arrays.
-        let unique_count = unsafe { u8::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
+        let count = unsafe { u8::encode_unchecked(&input, &mut values, &mut indices) };
 
-        let mut decoded = [0u8; 1024];
-        // SAFETY: `encode_unchecked` only writes indices below the returned `unique_count`.
-        unsafe { u8::decode_unchecked(&rle_vals[..unique_count], &rle_idxs, &mut decoded) };
-        assert_eq!(input, decoded);
+        assert_eq!(count, expected_values.len());
+        assert_eq!(&values[..count], expected_values);
+        assert_eq!(indices, expected_indices);
+    }
+
+    #[hegel::test]
+    fn test_rle_roundtrip_generated(tc: TestCase) {
+        let input: [u8; 1024] = tc.draw(gs::arrays(gs::integers::<u8>()));
+        let mut values = [u8::MAX; 1024];
+        let mut indices = [u16::MAX; 1024];
+        let count = unsafe { u8::encode_unchecked(&input, &mut values, &mut indices) };
+
+        let mut actual = [u8::MAX; 1024];
+        unsafe { u8::decode_unchecked(&values[..count], &indices, &mut actual) };
+
+        assert_eq!(actual, input);
+    }
+
+    #[hegel::test]
+    fn test_rle_decode_matches_index_model(tc: TestCase) {
+        let dictionary_len = tc.draw(gs::integers::<usize>().min_value(1).max_value(1024));
+        let dictionary = tc.draw(
+            gs::vecs(gs::integers::<u32>())
+                .min_size(dictionary_len)
+                .max_size(dictionary_len),
+        );
+        let indices: [u16; 1024] = tc.draw(gs::arrays(
+            gs::integers::<u16>().max_value((dictionary_len - 1) as u16),
+        ));
+        let expected = indices.map(|index| dictionary[index as usize]);
+
+        let mut actual = [u32::MAX; 1024];
+        unsafe { u32::decode_unchecked(&dictionary, &indices, &mut actual) };
+
+        assert_eq!(actual, expected);
     }
 }

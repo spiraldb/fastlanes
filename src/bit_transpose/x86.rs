@@ -301,164 +301,139 @@ unsafe fn untranspose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &m
     );
 }
 
+#[cfg(feature = "runtime")]
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "runtime")]
     use super::*;
-    #[cfg(feature = "runtime")]
-    use crate::bit_transpose::generate_test_data;
-    #[cfg(feature = "runtime")]
     use crate::bit_transpose::transpose_bits_baseline;
-    #[cfg(feature = "runtime")]
     use crate::bit_transpose::untranspose_bits_baseline;
+    use alloc::{format, string::ToString};
+    use hegel::TestCase;
+    use hegel::generators as gs;
 
-    #[cfg(feature = "runtime")]
-    #[test]
-    fn test_bmi2_matches_baseline() {
+    #[hegel::test]
+    fn test_bmi2_matches_baseline(tc: TestCase) {
         if !has_bmi2() {
             return;
         }
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut baseline_out = [0u64; 16];
-            let mut bmi2_out = [0u64; 16];
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut baseline_out = [u64::MAX; 16];
+        let mut bmi2_out = [u64::MAX; 16];
 
-            transpose_bits_baseline(&input, &mut baseline_out);
-            // SAFETY: guarded by `has_bmi2`.
-            unsafe { transpose_bits_bmi2(&input, &mut bmi2_out) };
+        transpose_bits_baseline(&input, &mut baseline_out);
+        // SAFETY: guarded by `has_bmi2`.
+        unsafe { transpose_bits_bmi2(&input, &mut bmi2_out) };
 
-            assert_eq!(
-                baseline_out, bmi2_out,
-                "BMI2 transpose doesn't match baseline for seed {seed}"
-            );
-        }
+        assert_eq!(baseline_out, bmi2_out);
     }
 
-    #[cfg(feature = "runtime")]
-    #[test]
-    fn test_bmi2_roundtrip() {
+    #[hegel::test]
+    fn test_bmi2_roundtrip(tc: TestCase) {
         if !has_bmi2() {
             return;
         }
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut transposed = [0u64; 16];
-            let mut roundtrip = [0u64; 16];
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut transposed = [u64::MAX; 16];
+        let mut roundtrip = [u64::MAX; 16];
 
-            // SAFETY: guarded by `has_bmi2`.
-            unsafe {
-                transpose_bits_bmi2(&input, &mut transposed);
-                untranspose_bits_bmi2::<u64>(&transposed, &mut roundtrip);
-            }
-
-            assert_eq!(input, roundtrip, "BMI2 roundtrip failed for seed {seed}");
+        // SAFETY: guarded by `has_bmi2`.
+        unsafe {
+            transpose_bits_bmi2(&input, &mut transposed);
+            untranspose_bits_bmi2::<u64>(&transposed, &mut roundtrip);
         }
+
+        assert_eq!(input, roundtrip);
     }
 
     /// The width-generic BMI2 untranspose must match the width-parameterized baseline for every
     /// element width.
-    #[cfg(feature = "runtime")]
-    #[test]
-    fn test_bmi2_untranspose_all_widths_match_baseline() {
-        fn check<T: FastLanes>() {
-            for seed in [0, 42, 123, 255] {
-                let input = generate_test_data(seed);
-                let mut baseline_out = [0u64; 16];
-                let mut bmi2_out = [0u64; 16];
+    #[hegel::test]
+    fn test_bmi2_untranspose_all_widths_match_baseline(tc: TestCase) {
+        fn check<T: FastLanes>(input: &[u64; 16]) {
+            let mut baseline_out = [u64::MAX; 16];
+            let mut bmi2_out = [u64::MAX; 16];
 
-                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
-                // SAFETY: guarded by `has_bmi2`.
-                unsafe { untranspose_bits_bmi2::<T>(&input, &mut bmi2_out) };
+            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            // SAFETY: guarded by `has_bmi2`.
+            unsafe { untranspose_bits_bmi2::<T>(input, &mut bmi2_out) };
 
-                assert_eq!(
-                    baseline_out,
-                    bmi2_out,
-                    "BMI2 untranspose != baseline for type={} seed={seed}",
-                    core::any::type_name::<T>()
-                );
-            }
+            assert_eq!(
+                baseline_out,
+                bmi2_out,
+                "BMI2 untranspose != baseline for type={}",
+                core::any::type_name::<T>()
+            );
         }
         if !has_bmi2() {
             return;
         }
-        check::<u8>();
-        check::<u16>();
-        check::<u32>();
-        check::<u64>();
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        check::<u8>(&input);
+        check::<u16>(&input);
+        check::<u32>(&input);
+        check::<u64>(&input);
     }
 
-    #[cfg(feature = "runtime")]
-    #[test]
-    fn test_vbmi_matches_baseline() {
+    #[hegel::test]
+    fn test_vbmi_matches_baseline(tc: TestCase) {
         if !has_vbmi() {
             return;
         }
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut baseline_out = [0u64; 16];
-            let mut vbmi_out = [0u64; 16];
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut baseline_out = [u64::MAX; 16];
+        let mut vbmi_out = [u64::MAX; 16];
 
-            transpose_bits_baseline(&input, &mut baseline_out);
-            // SAFETY: guarded by `has_vbmi`.
-            unsafe { transpose_bits_vbmi(&input, &mut vbmi_out) };
+        transpose_bits_baseline(&input, &mut baseline_out);
+        // SAFETY: guarded by `has_vbmi`.
+        unsafe { transpose_bits_vbmi(&input, &mut vbmi_out) };
 
-            assert_eq!(
-                baseline_out, vbmi_out,
-                "VBMI transpose doesn't match baseline for seed {seed}"
-            );
-        }
+        assert_eq!(baseline_out, vbmi_out);
     }
 
-    #[cfg(feature = "runtime")]
-    #[test]
-    fn test_vbmi_roundtrip() {
+    #[hegel::test]
+    fn test_vbmi_roundtrip(tc: TestCase) {
         if !has_vbmi() {
             return;
         }
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut transposed = [0u64; 16];
-            let mut roundtrip = [0u64; 16];
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut transposed = [u64::MAX; 16];
+        let mut roundtrip = [u64::MAX; 16];
 
-            // SAFETY: guarded by `has_vbmi`.
-            unsafe {
-                transpose_bits_vbmi(&input, &mut transposed);
-                untranspose_bits_vbmi::<u64>(&transposed, &mut roundtrip);
-            }
-
-            assert_eq!(input, roundtrip, "VBMI roundtrip failed for seed {seed}");
+        // SAFETY: guarded by `has_vbmi`.
+        unsafe {
+            transpose_bits_vbmi(&input, &mut transposed);
+            untranspose_bits_vbmi::<u64>(&transposed, &mut roundtrip);
         }
+
+        assert_eq!(input, roundtrip);
     }
 
     /// The width-generic VBMI untranspose must match the width-parameterized baseline for every
     /// element width.
-    #[cfg(feature = "runtime")]
-    #[test]
-    fn test_vbmi_untranspose_all_widths_match_baseline() {
-        fn check<T: FastLanes>() {
-            for seed in [0, 42, 123, 255] {
-                let input = generate_test_data(seed);
-                let mut baseline_out = [0u64; 16];
-                let mut vbmi_out = [0u64; 16];
+    #[hegel::test]
+    fn test_vbmi_untranspose_all_widths_match_baseline(tc: TestCase) {
+        fn check<T: FastLanes>(input: &[u64; 16]) {
+            let mut baseline_out = [u64::MAX; 16];
+            let mut vbmi_out = [u64::MAX; 16];
 
-                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
-                // SAFETY: guarded by `has_vbmi`.
-                unsafe { untranspose_bits_vbmi::<T>(&input, &mut vbmi_out) };
+            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            // SAFETY: guarded by `has_vbmi`.
+            unsafe { untranspose_bits_vbmi::<T>(input, &mut vbmi_out) };
 
-                assert_eq!(
-                    baseline_out,
-                    vbmi_out,
-                    "VBMI untranspose != baseline for type={} seed={seed}",
-                    core::any::type_name::<T>()
-                );
-            }
+            assert_eq!(
+                baseline_out,
+                vbmi_out,
+                "VBMI untranspose != baseline for type={}",
+                core::any::type_name::<T>()
+            );
         }
         if !has_vbmi() {
             return;
         }
-        check::<u8>();
-        check::<u16>();
-        check::<u32>();
-        check::<u64>();
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        check::<u8>(&input);
+        check::<u16>(&input);
+        check::<u32>(&input);
+        check::<u64>(&input);
     }
 }

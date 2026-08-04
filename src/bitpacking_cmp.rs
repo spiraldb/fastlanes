@@ -152,8 +152,13 @@ impl_packing_compare!(u64);
 mod tests {
     use super::*;
     use crate::{BitPacking, untranspose_bits};
-    use alloc::vec::Vec;
+    use alloc::{format, string::ToString, vec};
     use core::array;
+    use core::fmt::Debug;
+    use hegel::TestCase;
+    use hegel::generators as gs;
+    use hegel::generators::Integer;
+    use pastey::paste;
 
     /// Reference bitmask in the same `FastLanes` (LSB-first, per-lane) order produced by
     /// `unpack_cmp`:
@@ -180,6 +185,18 @@ mod tests {
             }
         }
         out
+    }
+
+    fn comparison<V: PartialOrd>(operation: u8) -> fn(V, V) -> bool {
+        match operation {
+            0 => |a, b| a == b,
+            1 => |a, b| a != b,
+            2 => |a, b| a < b,
+            3 => |a, b| a <= b,
+            4 => |a, b| a > b,
+            5 => |a, b| a >= b,
+            _ => unreachable!("unsupported comparison {operation}"),
+        }
     }
 
     #[test]
@@ -209,73 +226,116 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_unpack_cmp_all_widths_and_ops() {
-        fn check<T>()
-        where
-            T: BitPacking + BitPackingCompare + FastLanesComparable<Bitpacked = T>,
-        {
-            for width in 1..=T::T {
-                let mask: u64 = if width == 64 {
-                    u64::MAX
-                } else {
-                    (1u64 << width) - 1
-                };
-                let values: [T; 1024] = array::from_fn(|i| {
-                    T::from((i as u64).wrapping_mul(2_654_435_761) & mask).unwrap()
-                });
+    fn assert_unpack_cmp_matches_reference<T, V>(tc: &TestCase)
+    where
+        T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
+        V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
+    {
+        let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let other = tc.draw(gs::integers::<V>());
 
-                let mut packed = Vec::new();
-                packed.resize(128 * width / size_of::<T>(), T::zero());
-                unsafe { T::unchecked_pack(width, &values, &mut packed) };
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &values, &mut packed) };
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let unpacked = values.map(|value| value & mask);
 
-                let mut unpacked = [T::zero(); 1024];
-                unsafe { T::unchecked_unpack(width, &packed, &mut unpacked) };
-
-                let other = T::from(7u64 & mask).unwrap();
-                for (name, f) in [
-                    ("eq", (|a: T, b: T| a == b) as fn(T, T) -> bool),
-                    ("ne", |a, b| a != b),
-                    ("lt", |a, b| a < b),
-                    ("le", |a, b| a <= b),
-                    ("gt", |a, b| a > b),
-                    ("ge", |a, b| a >= b),
-                ] {
-                    let mut output = [0u64; 16];
-                    unsafe {
-                        T::unchecked_unpack_cmp(width, &packed, &mut output, f, other);
-                    }
-                    let expected = reference_mask(&unpacked, f, other);
-                    assert_eq!(
-                        output,
-                        expected,
-                        "type={} width={width} op={name}",
-                        core::any::type_name::<T>()
-                    );
-
-                    // Untransposing the mask must yield logical row order: bit `i` is the
-                    // comparison for logical value `i` (i.e. `collect_bool` semantics).
-                    let mut logical = [0u64; 16];
-                    untranspose_bits::<T>(&output, &mut logical);
-                    let mut expected_logical = [0u64; 16];
-                    for i in 0..1024 {
-                        if f(T::as_unpacked(unpacked[i]), other) {
-                            expected_logical[i / 64] |= 1u64 << (i % 64);
-                        }
-                    }
-                    assert_eq!(
-                        logical,
-                        expected_logical,
-                        "untranspose type={} width={width} op={name}",
-                        core::any::type_name::<T>()
-                    );
+            for operation in 0..=5 {
+                let f = comparison::<V>(operation);
+                let expected = reference_mask(&unpacked, f, other);
+                let mut actual = [u64::MAX; 16];
+                unsafe {
+                    T::unchecked_unpack_cmp(width, &packed, &mut actual, f, other);
                 }
+
+                assert_eq!(
+                    actual,
+                    expected,
+                    "bitpacked={} comparable={} width={width} operation={operation}",
+                    core::any::type_name::<T>(),
+                    core::any::type_name::<V>(),
+                );
             }
         }
-
-        check::<u8>();
-        check::<u16>();
-        check::<u32>();
-        check::<u64>();
     }
+
+    fn assert_unpack_cmp_untransposes_to_logical<T, V>(tc: &TestCase)
+    where
+        T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
+        V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
+    {
+        let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let other = tc.draw(gs::integers::<V>());
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &values, &mut packed) };
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let unpacked = values.map(|value| value & mask);
+
+            for operation in 0..=5 {
+                let f = comparison::<V>(operation);
+                let mut expected = [0u64; 16];
+                for (index, value) in unpacked.iter().copied().enumerate() {
+                    if f(V::as_unpacked(value), other) {
+                        expected[index / 64] |= 1u64 << (index % 64);
+                    }
+                }
+
+                let mut transposed = [u64::MAX; 16];
+                unsafe {
+                    T::unchecked_unpack_cmp(width, &packed, &mut transposed, f, other);
+                }
+                let mut actual = [u64::MAX; 16];
+                untranspose_bits::<T>(&transposed, &mut actual);
+
+                assert_eq!(
+                    actual,
+                    expected,
+                    "bitpacked={} comparable={} width={width} operation={operation}",
+                    core::any::type_name::<T>(),
+                    core::any::type_name::<V>(),
+                );
+            }
+        }
+    }
+
+    macro_rules! comparison_property_tests {
+        ($T:ident, $V:ident) => {
+            paste! {
+                #[hegel::test(test_cases = 10)]
+                fn [<test_unpack_cmp_matches_reference_ $T _ $V>](tc: TestCase) {
+                    assert_unpack_cmp_matches_reference::<$T, $V>(&tc);
+                }
+
+                #[hegel::test(test_cases = 10)]
+                fn [<test_unpack_cmp_untransposes_to_logical_ $T _ $V>](tc: TestCase) {
+                    assert_unpack_cmp_untransposes_to_logical::<$T, $V>(&tc);
+                }
+            }
+        };
+    }
+
+    comparison_property_tests!(u8, u8);
+    comparison_property_tests!(u8, i8);
+    comparison_property_tests!(u16, u16);
+    comparison_property_tests!(u16, i16);
+    comparison_property_tests!(u32, u32);
+    comparison_property_tests!(u32, i32);
+    comparison_property_tests!(u64, u64);
+    comparison_property_tests!(u64, i64);
 }

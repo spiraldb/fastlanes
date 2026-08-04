@@ -270,18 +270,16 @@ impl_packing!(u64);
 #[cfg(test)]
 mod test {
     use core::array;
+    use core::fmt::Debug;
 
     use super::*;
+    use alloc::{format, string::ToString, vec, vec::Vec};
+    use hegel::TestCase;
+    use hegel::generators as gs;
+    use hegel::generators::Integer;
+    use pastey::paste;
 
-    #[test]
-    fn test_unchecked_pack() {
-        let input = array::from_fn(|i| i as u32);
-        let mut packed = [0; 320];
-        unsafe { BitPacking::unchecked_pack(10, &input, &mut packed) };
-        let mut output = [0; 1024];
-        unsafe { BitPacking::unchecked_unpack(10, &packed, &mut output) };
-        assert_eq!(input, output);
-    }
+    const BUFFER_SIZE: usize = 1024;
 
     #[test]
     fn test_unpack_single() {
@@ -297,4 +295,164 @@ mod test {
             );
         }
     }
+
+    fn assert_bitpack_roundtrip<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let input = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+
+        for width in 0..=T::T {
+            let mut packed_output = vec![T::one(); (BUFFER_SIZE * width) / T::T];
+            let mut unpacked_output = vec![T::one(); BUFFER_SIZE];
+            unsafe { T::unchecked_pack(width, &input, &mut packed_output) };
+            unsafe { T::unchecked_unpack(width, &packed_output, &mut unpacked_output) };
+
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let expected = input
+                .iter()
+                .copied()
+                .map(|value| value & mask)
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                expected,
+                unpacked_output,
+                "roundtrip failed for type={} width={width}",
+                core::any::type_name::<T>(),
+            );
+        }
+    }
+
+    fn assert_bitpack_repack_roundtrip<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let packed_source = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+
+        for width in 0..=T::T {
+            let packed_length = (BUFFER_SIZE * width) / T::T;
+            let packed_input = &packed_source[..packed_length];
+            let mut unpacked_output = vec![T::one(); BUFFER_SIZE];
+            let mut repacked_output = vec![T::one(); packed_length];
+            unsafe {
+                T::unchecked_unpack(width, packed_input, &mut unpacked_output);
+                T::unchecked_pack(width, &unpacked_output, &mut repacked_output);
+            }
+
+            assert_eq!(
+                packed_input,
+                repacked_output,
+                "repack roundtrip failed for type={} width={width}",
+                core::any::type_name::<T>(),
+            );
+        }
+    }
+
+    fn assert_bitpack_unpack_single_matches_bulk<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let packed_source = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+        let index = tc.draw(
+            gs::integers::<usize>()
+                .min_value(0)
+                .max_value(BUFFER_SIZE - 1),
+        );
+
+        for width in 0..=T::T {
+            let packed_length = (BUFFER_SIZE * width) / T::T;
+            let packed_input = &packed_source[..packed_length];
+            let mut unpacked_output = vec![T::one(); BUFFER_SIZE];
+            unsafe { T::unchecked_unpack(width, packed_input, &mut unpacked_output) };
+
+            assert_eq!(
+                unsafe { T::unchecked_unpack_single(width, packed_input, index) },
+                unpacked_output[index],
+                "single unpack failed for type={} width={width} index={index}",
+                core::any::type_name::<T>(),
+            );
+        }
+    }
+
+    fn reference_pack<T>(width: usize, input: &[T]) -> Vec<T>
+    where
+        T: BitPacking,
+    {
+        let mut packed = vec![T::zero(); (BUFFER_SIZE * width) / T::T];
+
+        for lane in 0..T::LANES {
+            for row in 0..T::T {
+                let order = row / 8;
+                let sub_row = row % 8;
+                let input_idx = (FL_ORDER[order] * 16) + (sub_row * 128) + lane;
+
+                for bit in 0..width {
+                    if ((input[input_idx] >> bit) & T::one()) != T::zero() {
+                        let packed_bit = row * width + bit;
+                        let word = packed_bit / T::T;
+                        let word_bit = packed_bit % T::T;
+                        packed[word * T::LANES + lane] =
+                            packed[word * T::LANES + lane] | (T::one() << word_bit);
+                    }
+                }
+            }
+        }
+
+        packed
+    }
+
+    fn assert_bitpack_matches_reference<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let input = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+
+        for width in 0..=T::T {
+            let mut packed = vec![T::one(); (BUFFER_SIZE * width) / T::T];
+            unsafe { T::unchecked_pack(width, &input, &mut packed) };
+
+            assert_eq!(packed, reference_pack(width, &input));
+        }
+    }
+
+    macro_rules! bitpack_property_tests {
+        ($property:ident, $test_cases:literal for $($type:ident),+ $(,)?) => {
+            paste! {
+                $(
+                    #[hegel::test(test_cases = $test_cases)]
+                    fn [<test_ $property _ $type>](tc: TestCase) {
+                        [<assert_ $property>]::<$type>(&tc);
+                    }
+                )+
+            }
+        };
+    }
+
+    bitpack_property_tests!(bitpack_roundtrip, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_repack_roundtrip, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_unpack_single_matches_bulk, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_matches_reference, 10 for u8, u16, u32, u64);
 }

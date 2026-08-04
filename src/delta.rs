@@ -98,7 +98,14 @@ impl_delta!(u64);
 mod test {
     use super::*;
     use crate::Transpose;
+    use alloc::{format, string::ToString, vec};
+    use core::fmt::Debug;
     use core::mem::size_of;
+    use hegel::TestCase;
+    use hegel::generators as gs;
+    use hegel::generators::Integer;
+    use num_traits::WrappingSub;
+    use pastey::paste;
 
     #[test]
     fn test_delta() {
@@ -131,4 +138,138 @@ mod test {
         Delta::undelta(&unpacked, &[0; 64], &mut undelta);
         assert_eq!(transposed, undelta);
     }
+
+    trait RuntimeUndeltaPack: Delta {
+        fn undelta_pack_for_width<const LANES: usize>(
+            width: usize,
+            input: &[Self],
+            base: &[Self; LANES],
+            output: &mut [Self; 1024],
+        );
+    }
+
+    macro_rules! impl_runtime_undelta_pack {
+        ($T:ident) => {
+            impl RuntimeUndeltaPack for $T {
+                fn undelta_pack_for_width<const LANES: usize>(
+                    width: usize,
+                    input: &[Self],
+                    base: &[Self; LANES],
+                    output: &mut [Self; 1024],
+                ) {
+                    macro_rules! unpack_width {
+                        ($W:expr) => {{
+                            const B: usize = 1024 * $W / <$T>::T;
+                            // SAFETY: the caller allocates `input` for `width`, and this branch is
+                            // selected only when `width == W`.
+                            let input = unsafe { crate::as_array_unchecked::<$T, B>(input) };
+                            <$T>::undelta_pack::<LANES, $W, B>(input, base, output);
+                        }};
+                    }
+
+                    paste!(crate::seq_t!(W in $T {
+                        match width {
+                            #(W => unpack_width!(W),)*
+                            <$T>::T => unpack_width!({ <$T>::T }),
+                            _ => unreachable!("unsupported width {width}"),
+                        }
+                    }));
+                }
+            }
+        };
+    }
+
+    impl_runtime_undelta_pack!(u8);
+    impl_runtime_undelta_pack!(u16);
+    impl_runtime_undelta_pack!(u32);
+    impl_runtime_undelta_pack!(u64);
+
+    fn assert_delta_matches_reference<T, const LANES: usize>(tc: &TestCase)
+    where
+        T: Delta + Debug + Integer + Send + Sync + WrappingSub + 'static,
+    {
+        let input: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let mut expected = [T::max_value(); 1024];
+
+        for lane in 0..LANES {
+            let mut previous = base[lane];
+            for row in 0..T::T {
+                let order = row / 8;
+                let sub_row = row % 8;
+                let index = (crate::FL_ORDER[order] * 16) + (sub_row * 128) + lane;
+                expected[index] = input[index].wrapping_sub(&previous);
+                previous = input[index];
+            }
+        }
+
+        let mut actual = [T::max_value(); 1024];
+        T::delta::<LANES>(&input, &base, &mut actual);
+
+        assert_eq!(actual, expected);
+    }
+
+    fn assert_delta_roundtrip<T, const LANES: usize>(tc: &TestCase)
+    where
+        T: Delta + Debug + Integer + Send + Sync + 'static,
+    {
+        let input: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let mut deltas = [T::max_value(); 1024];
+        let mut output = [T::max_value(); 1024];
+
+        T::delta::<LANES>(&input, &base, &mut deltas);
+        T::undelta::<LANES>(&deltas, &base, &mut output);
+
+        assert_eq!(output, input);
+    }
+
+    fn assert_undelta_pack_matches_unfused<T, const LANES: usize>(tc: &TestCase)
+    where
+        T: RuntimeUndeltaPack + Debug + Integer + Send + Sync + 'static,
+    {
+        let deltas: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &deltas, &mut packed) };
+
+            let mut unpacked = [T::max_value(); 1024];
+            let mut expected = [T::max_value(); 1024];
+            unsafe { T::unchecked_unpack(width, &packed, &mut unpacked) };
+            T::undelta::<LANES>(&unpacked, &base, &mut expected);
+
+            let mut actual = [T::max_value(); 1024];
+            T::undelta_pack_for_width(width, &packed, &base, &mut actual);
+            assert_eq!(actual, expected);
+        }
+    }
+
+    macro_rules! delta_property_tests {
+        ($T:ident, $lanes:expr) => {
+            paste! {
+                #[hegel::test]
+                fn [<test_delta_matches_reference_ $T>](tc: TestCase) {
+                    assert_delta_matches_reference::<$T, $lanes>(&tc);
+                }
+
+                #[hegel::test]
+                fn [<test_delta_roundtrip_ $T>](tc: TestCase) {
+                    assert_delta_roundtrip::<$T, $lanes>(&tc);
+                }
+
+                #[hegel::test(test_cases = 10)]
+                fn [<test_undelta_pack_matches_unfused_ $T>](tc: TestCase) {
+                    assert_undelta_pack_matches_unfused::<$T, $lanes>(&tc);
+                }
+            }
+        };
+    }
+
+    delta_property_tests!(u8, 128);
+    delta_property_tests!(u16, 64);
+    delta_property_tests!(u32, 32);
+    delta_property_tests!(u64, 16);
 }

@@ -106,39 +106,34 @@ pub fn untranspose_bits<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16])
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bit_transpose::generate_test_data;
     use crate::bit_transpose::transpose_bits_baseline;
     use crate::bit_transpose::untranspose_bits_baseline;
+    use alloc::{format, string::ToString};
+    use hegel::TestCase;
+    use hegel::generators as gs;
 
-    #[test]
-    fn test_scalar_matches_baseline() {
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut baseline_out = [0u64; 16];
-            let mut scalar_out = [0u64; 16];
+    #[hegel::test]
+    fn test_scalar_matches_baseline(tc: TestCase) {
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut baseline_out = [u64::MAX; 16];
+        let mut scalar_out = [u64::MAX; 16];
 
-            transpose_bits_baseline(&input, &mut baseline_out);
-            transpose_bits(&input, &mut scalar_out);
+        transpose_bits_baseline(&input, &mut baseline_out);
+        transpose_bits(&input, &mut scalar_out);
 
-            assert_eq!(
-                baseline_out, scalar_out,
-                "scalar transpose doesn't match baseline for seed {seed}"
-            );
-        }
+        assert_eq!(baseline_out, scalar_out);
     }
 
-    #[test]
-    fn test_scalar_roundtrip() {
-        for seed in [0, 42, 123, 255] {
-            let input = generate_test_data(seed);
-            let mut transposed = [0u64; 16];
-            let mut roundtrip = [0u64; 16];
+    #[hegel::test]
+    fn test_scalar_roundtrip(tc: TestCase) {
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        let mut transposed = [u64::MAX; 16];
+        let mut roundtrip = [u64::MAX; 16];
 
-            transpose_bits(&input, &mut transposed);
-            untranspose_bits::<u64>(&transposed, &mut roundtrip);
+        transpose_bits(&input, &mut transposed);
+        untranspose_bits::<u64>(&transposed, &mut roundtrip);
 
-            assert_eq!(input, roundtrip, "scalar roundtrip failed for seed {seed}");
-        }
+        assert_eq!(input, roundtrip);
     }
 
     #[test]
@@ -167,28 +162,26 @@ mod tests {
 
     /// The generic untranspose must match the width-parameterized baseline for every element
     /// width, not just `u64`.
-    #[test]
-    fn test_untranspose_all_widths_match_baseline() {
-        fn check<T: FastLanes>() {
-            for seed in [0, 42, 123, 255] {
-                let input = generate_test_data(seed);
-                let mut baseline_out = [0u64; 16];
-                let mut scalar_out = [0u64; 16];
+    #[hegel::test]
+    fn test_untranspose_all_widths_match_baseline(tc: TestCase) {
+        fn check<T: FastLanes>(input: &[u64; 16]) {
+            let mut baseline_out = [u64::MAX; 16];
+            let mut scalar_out = [u64::MAX; 16];
 
-                untranspose_bits_baseline::<T>(&input, &mut baseline_out);
-                untranspose_bits::<T>(&input, &mut scalar_out);
+            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            untranspose_bits::<T>(input, &mut scalar_out);
 
-                assert_eq!(
-                    baseline_out,
-                    scalar_out,
-                    "scalar untranspose != baseline for type={} seed={seed}",
-                    core::any::type_name::<T>()
-                );
-            }
+            assert_eq!(
+                baseline_out,
+                scalar_out,
+                "scalar untranspose != baseline for type={}",
+                core::any::type_name::<T>()
+            );
         }
-        check::<u8>();
-        check::<u16>();
-        check::<u32>();
-        check::<u64>();
+        let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
+        check::<u8>(&input);
+        check::<u16>(&input);
+        check::<u32>(&input);
+        check::<u64>(&input);
     }
 }
