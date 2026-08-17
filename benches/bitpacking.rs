@@ -7,6 +7,8 @@ use std::hint::black_box;
 
 mod shared;
 
+use shared::Aligned;
+
 fn main() {
     divan::main();
 }
@@ -31,12 +33,12 @@ fn pack_16_to_3_heap(bencher: Bencher) {
 fn pack_16_to_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [3u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
+    let values = Aligned([3u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
 
     bencher.bench_local(|| {
-        BitPacking::pack::<WIDTH, B>(black_box(&values), &mut packed);
-        black_box(&packed);
+        BitPacking::pack::<WIDTH, B>(black_box(&values.0), &mut packed.0);
+        black_box(&packed.0);
     });
 }
 
@@ -44,15 +46,15 @@ fn pack_16_to_3_stack(bencher: Bencher) {
 fn unpack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [3u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-    BitPacking::pack::<WIDTH, B>(&values, &mut packed);
+    let values = Aligned([3u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
+    BitPacking::pack::<WIDTH, B>(&values.0, &mut packed.0);
 
-    let mut unpacked = [0u16; 1024];
+    let mut unpacked = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
-        BitPacking::unpack::<WIDTH, B>(black_box(&packed), &mut unpacked);
-        black_box(&unpacked);
+        BitPacking::unpack::<WIDTH, B>(black_box(&packed.0), &mut unpacked.0);
+        black_box(&unpacked.0);
     });
 }
 
@@ -60,15 +62,15 @@ fn unpack_16_from_3_stack(bencher: Bencher) {
 fn unchecked_unpack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
     const B: usize = 1024 * WIDTH / u16::T;
-    let values = [3u16; 1024];
-    let mut packed = [0; 128 * WIDTH / size_of::<u16>()];
-    BitPacking::pack::<WIDTH, B>(&values, &mut packed);
+    let values = Aligned([3u16; 1024]);
+    let mut packed = Aligned([0; 128 * WIDTH / size_of::<u16>()]);
+    BitPacking::pack::<WIDTH, B>(&values.0, &mut packed.0);
 
-    let mut unpacked = [0u16; 1024];
+    let mut unpacked = Aligned([0u16; 1024]);
 
     bencher.bench_local(|| {
-        unsafe { BitPacking::unchecked_unpack(WIDTH, black_box(&packed), &mut unpacked) };
-        black_box(&unpacked);
+        unsafe { BitPacking::unchecked_unpack(WIDTH, black_box(&packed.0), &mut unpacked.0) };
+        black_box(&unpacked.0);
     });
 }
 

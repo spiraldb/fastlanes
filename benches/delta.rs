@@ -7,6 +7,8 @@ use fastlanes::{BitPacking, Delta, FastLanes, Transpose};
 
 mod shared;
 
+use shared::Aligned;
+
 fn main() {
     divan::main();
 }
@@ -17,23 +19,28 @@ fn delta_u16_fused(bencher: Bencher) {
     const B: usize = 1024 * W / <u16 as FastLanes>::T;
     const LANES: usize = u16::LANES;
 
-    let mut values: [u16; 1024] = [0; 1024];
+    let mut values = Aligned([0u16; 1024]);
     for i in 0..1024 {
-        values[i] = (i / 8) as u16;
+        values.0[i] = (i / 8) as u16;
     }
 
-    let mut transposed = [0; 1024];
-    Transpose::transpose(&values, &mut transposed);
+    let mut transposed = Aligned([0; 1024]);
+    Transpose::transpose(&values.0, &mut transposed.0);
 
-    let mut deltas = [0; 1024];
-    Delta::delta(&transposed, &[0; 64], &mut deltas);
+    let bases = Aligned([0; 64]);
+    let mut deltas = Aligned([0; 1024]);
+    Delta::delta(&transposed.0, &bases.0, &mut deltas.0);
 
-    let mut packed = [0; 128 * W / size_of::<u16>()];
-    BitPacking::pack::<W, B>(&deltas, &mut packed);
+    let mut packed = Aligned([0; 128 * W / size_of::<u16>()]);
+    BitPacking::pack::<W, B>(&deltas.0, &mut packed.0);
 
-    with_counter!(bencher, values.len() * std::mem::size_of::<u16>()).bench_local(|| {
-        let mut unpacked = [0; 1024];
-        Delta::undelta_pack::<LANES, W, B>(black_box(&packed), black_box(&[0; 64]), &mut unpacked);
+    with_counter!(bencher, values.0.len() * std::mem::size_of::<u16>()).bench_local(|| {
+        let mut unpacked = Aligned([0; 1024]);
+        Delta::undelta_pack::<LANES, W, B>(
+            black_box(&packed.0),
+            black_box(&bases.0),
+            &mut unpacked.0,
+        );
         unpacked
     });
 }
@@ -43,25 +50,26 @@ fn delta_u16_unfused(bencher: Bencher) {
     const W: usize = 9;
     const B: usize = 1024 * W / <u16 as FastLanes>::T;
 
-    let mut values: [u16; 1024] = [0; 1024];
+    let mut values = Aligned([0u16; 1024]);
     for i in 0..1024 {
-        values[i] = (i / 8) as u16;
+        values.0[i] = (i / 8) as u16;
     }
 
-    let mut transposed = [0; 1024];
-    Transpose::transpose(&values, &mut transposed);
+    let mut transposed = Aligned([0; 1024]);
+    Transpose::transpose(&values.0, &mut transposed.0);
 
-    let mut deltas = [0; 1024];
-    Delta::delta(&transposed, &[0; 64], &mut deltas);
+    let bases = Aligned([0; 64]);
+    let mut deltas = Aligned([0; 1024]);
+    Delta::delta(&transposed.0, &bases.0, &mut deltas.0);
 
-    let mut packed = [0; 128 * W / size_of::<u16>()];
-    BitPacking::pack::<W, B>(&deltas, &mut packed);
+    let mut packed = Aligned([0; 128 * W / size_of::<u16>()]);
+    BitPacking::pack::<W, B>(&deltas.0, &mut packed.0);
 
-    with_counter!(bencher, values.len() * std::mem::size_of::<u16>()).bench_local(|| {
-        let mut unpacked = [0; 1024];
-        BitPacking::unpack::<W, B>(black_box(&packed), &mut unpacked);
-        let mut undelta = [0; 1024];
-        Delta::undelta(black_box(&unpacked), black_box(&[0; 64]), &mut undelta);
+    with_counter!(bencher, values.0.len() * std::mem::size_of::<u16>()).bench_local(|| {
+        let mut unpacked = Aligned([0; 1024]);
+        BitPacking::unpack::<W, B>(black_box(&packed.0), &mut unpacked.0);
+        let mut undelta = Aligned([0; 1024]);
+        Delta::undelta(black_box(&unpacked.0), black_box(&bases.0), &mut undelta.0);
         undelta
     });
 }
