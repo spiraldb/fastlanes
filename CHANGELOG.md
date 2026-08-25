@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- release v0.6.2 ([#173](https://github.com/spiraldb/fastlanes/pull/173))
+- :transpose/untranspose and bit_transpose/untranspose have the same ordering ([#186](https://github.com/spiraldb/fastlanes/pull/186))
+- Lock file maintenance ([#185](https://github.com/spiraldb/fastlanes/pull/185))
+- Update Rust crate hegeltest to 0.31.0 ([#184](https://github.com/spiraldb/fastlanes/pull/184))
+- Extend prop test coverage, and move them into the relevant files ([#174](https://github.com/spiraldb/fastlanes/pull/174))
+
+## [0.6.2](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.6.2) - 2026-08-25
+
+### Added
+
+- Replace `std` feature with a `runtime` feature so its always `no_std` ([#175](https://github.com/spiraldb/fastlanes/pull/175))
+
+### Other
+
 - :transpose/untranspose and bit_transpose/untranspose have the same ordering ([#186](https://github.com/spiraldb/fastlanes/pull/186))
 - Lock file maintenance ([#185](https://github.com/spiraldb/fastlanes/pull/185))
 - Update Rust crate hegeltest to 0.31.0 ([#184](https://github.com/spiraldb/fastlanes/pull/184))
