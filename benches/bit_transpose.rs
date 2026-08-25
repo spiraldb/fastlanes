@@ -72,7 +72,7 @@ mod x86 {
         }
         // SAFETY: guarded by `has_bmi2`.
         bench_blocks(bencher, |i, o| unsafe {
-            x86::transpose_bits_bmi2::<T>(i, o)
+            x86::transpose_bits_bmi2::<T>(i, o);
         });
     }
 
@@ -94,7 +94,7 @@ mod x86 {
         }
         // SAFETY: guarded by `has_vbmi`.
         bench_blocks(bencher, |i, o| unsafe {
-            x86::transpose_bits_vbmi::<T>(i, o)
+            x86::transpose_bits_vbmi::<T>(i, o);
         });
     }
 
