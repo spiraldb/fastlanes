@@ -36,27 +36,27 @@ fn bench_blocks(bencher: Bencher, op: impl Fn(&[u64; 16], &mut [u64; 16])) {
     });
 }
 
-#[divan::bench]
-fn scalar_transpose(bencher: Bencher) {
-    bench_blocks(bencher, fastlanes::scalar::transpose_bits);
-}
-
-/// Untranspose is generic over the element width `T`; benchmark each width separately. The mask
+/// Transpose is generic over the element width `T`; benchmark each width separately. The mask
 /// always factors into 16 groups of 8 bytes regardless of `T`, so per-arch the widths should be
 /// within noise of one another (only the gather/scatter index tables differ).
 #[divan::bench(types = [u8, u16, u32, u64])]
-fn scalar_untranspose<T: FastLanes>(bencher: Bencher) {
-    bench_blocks(bencher, fastlanes::scalar::untranspose_bits::<T>);
+fn scalar_transpose<T: FastLanes>(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::scalar::transpose_bits::<T>);
 }
 
 #[divan::bench]
-fn dispatch_transpose(bencher: Bencher) {
-    bench_blocks(bencher, fastlanes::transpose_bits);
+fn scalar_untranspose(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::scalar::untranspose_bits);
 }
 
 #[divan::bench(types = [u8, u16, u32, u64])]
-fn dispatch_untranspose<T: FastLanes>(bencher: Bencher) {
-    bench_blocks(bencher, fastlanes::untranspose_bits::<T>);
+fn dispatch_transpose<T: FastLanes>(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::transpose_bits::<T>);
+}
+
+#[divan::bench]
+fn dispatch_untranspose(bencher: Bencher) {
+    bench_blocks(bencher, fastlanes::untranspose_bits);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -65,43 +65,47 @@ mod x86 {
     use fastlanes::FastLanes;
     use fastlanes::x86;
 
-    #[divan::bench]
-    fn bmi2_transpose(bencher: Bencher) {
-        if !x86::has_bmi2() {
-            return;
-        }
-        // SAFETY: guarded by `has_bmi2`.
-        bench_blocks(bencher, |i, o| unsafe { x86::transpose_bits_bmi2(i, o) });
-    }
-
     #[divan::bench(types = [u8, u16, u32, u64])]
-    fn bmi2_untranspose<T: FastLanes>(bencher: Bencher) {
+    fn bmi2_transpose<T: FastLanes>(bencher: Bencher) {
         if !x86::has_bmi2() {
             return;
         }
         // SAFETY: guarded by `has_bmi2`.
         bench_blocks(bencher, |i, o| unsafe {
-            x86::untranspose_bits_bmi2::<T>(i, o);
+            x86::transpose_bits_bmi2::<T>(i, o)
         });
     }
 
     #[divan::bench]
-    fn vbmi_transpose(bencher: Bencher) {
-        if !x86::has_vbmi() {
+    fn bmi2_untranspose(bencher: Bencher) {
+        if !x86::has_bmi2() {
             return;
         }
-        // SAFETY: guarded by `has_vbmi`.
-        bench_blocks(bencher, |i, o| unsafe { x86::transpose_bits_vbmi(i, o) });
+        // SAFETY: guarded by `has_bmi2`.
+        bench_blocks(bencher, |i, o| unsafe {
+            x86::untranspose_bits_bmi2(i, o);
+        });
     }
 
     #[divan::bench(types = [u8, u16, u32, u64])]
-    fn vbmi_untranspose<T: FastLanes>(bencher: Bencher) {
+    fn vbmi_transpose<T: FastLanes>(bencher: Bencher) {
         if !x86::has_vbmi() {
             return;
         }
         // SAFETY: guarded by `has_vbmi`.
         bench_blocks(bencher, |i, o| unsafe {
-            x86::untranspose_bits_vbmi::<T>(i, o);
+            x86::transpose_bits_vbmi::<T>(i, o)
+        });
+    }
+
+    #[divan::bench]
+    fn vbmi_untranspose(bencher: Bencher) {
+        if !x86::has_vbmi() {
+            return;
+        }
+        // SAFETY: guarded by `has_vbmi`.
+        bench_blocks(bencher, |i, o| unsafe {
+            x86::untranspose_bits_vbmi(i, o);
         });
     }
 }
@@ -112,19 +116,19 @@ mod aarch64 {
     use fastlanes::FastLanes;
     use fastlanes::aarch64;
 
-    #[divan::bench]
-    fn neon_transpose(bencher: Bencher) {
+    #[divan::bench(types = [u8, u16, u32, u64])]
+    fn neon_transpose<T: FastLanes>(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
         bench_blocks(bencher, |i, o| unsafe {
-            aarch64::transpose_bits_neon(i, o);
+            aarch64::transpose_bits_neon::<T>(i, o);
         });
     }
 
-    #[divan::bench(types = [u8, u16, u32, u64])]
-    fn neon_untranspose<T: FastLanes>(bencher: Bencher) {
+    #[divan::bench]
+    fn neon_untranspose(bencher: Bencher) {
         // SAFETY: NEON is always available on aarch64.
         bench_blocks(bencher, |i, o| unsafe {
-            aarch64::untranspose_bits_neon::<T>(i, o);
+            aarch64::untranspose_bits_neon(i, o);
         });
     }
 }

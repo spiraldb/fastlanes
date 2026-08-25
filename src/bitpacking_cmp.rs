@@ -12,16 +12,17 @@ pub trait BitPackingCompare: FastLanes {
     /// `V::Bitpacked` = `Self`). This allows for comparison between signed values which are
     /// bit-packed as unsigned ones.
     ///
-    /// The output is a bitmask in **`FastLanes` (transposed) order**, not logical row order. The
-    /// `1024` bits are `Self::LANES` words of `Self::T` bits, one word per lane laid out
-    /// contiguously (little-endian) in the `[u64; 16]`. Within a lane's word the comparison
-    /// results are packed LSB-first: row `r` (for `r` in `0..Self::T`) lands at bit `r`, holding
-    /// the comparison for the value at logical index `index(row, lane)` (see the `unpack!` macro).
-    /// This is the cheapest order to produce: it needs no cross-lane shuffles, just a per-lane
-    /// accumulator that the compiler keeps in a (vectorized) register.
+    /// The output is a bitmask in **lane-major order**, not logical row order. The `1024` bits
+    /// are `Self::LANES` words of `Self::T` bits, one word per lane laid out contiguously
+    /// (little-endian) in the `[u64; 16]`. Within a lane's word the comparison results are packed
+    /// LSB-first: row `r` (for `r` in `0..Self::T`) lands at bit `r`, holding the comparison for
+    /// the value at logical index `index(row, lane)` (see the `unpack!` macro). This is the
+    /// cheapest order to produce: it needs no cross-lane shuffles, just a per-lane accumulator
+    /// that the compiler keeps in a (vectorized) register.
     ///
-    /// To recover logical row order (e.g. an Arrow-style boolean buffer), pass the result through
-    /// [`untranspose_cmp_mask`].
+    /// For `u64` this lane-major order is the bit-level [`crate::Transpose::untranspose`] of the
+    /// logical mask. To recover logical row order (e.g. an Arrow-style boolean buffer), pass the
+    /// result through [`crate::transpose_bits::<Self>`](crate::transpose_bits).
     fn unpack_cmp<const W: usize, const B: usize, V, F>(
         input: &[Self; B],
         output: &mut [u64; 16],
@@ -151,7 +152,7 @@ impl_packing_compare!(u64);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BitPacking, untranspose_bits};
+    use crate::{BitPacking, transpose_bits};
     use alloc::{format, string::ToString, vec};
     use core::array;
     use core::fmt::Debug;
@@ -266,7 +267,7 @@ mod tests {
         }
     }
 
-    fn assert_unpack_cmp_untransposes_to_logical<T, V>(tc: &TestCase)
+    fn assert_unpack_cmp_transposes_to_logical<T, V>(tc: &TestCase)
     where
         T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
         V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
@@ -296,12 +297,12 @@ mod tests {
                     }
                 }
 
-                let mut transposed = [u64::MAX; 16];
+                let mut lane_major = [u64::MAX; 16];
                 unsafe {
-                    T::unchecked_unpack_cmp(width, &packed, &mut transposed, f, other);
+                    T::unchecked_unpack_cmp(width, &packed, &mut lane_major, f, other);
                 }
                 let mut actual = [u64::MAX; 16];
-                untranspose_bits::<T>(&transposed, &mut actual);
+                transpose_bits::<T>(&lane_major, &mut actual);
 
                 assert_eq!(
                     actual,
@@ -323,8 +324,8 @@ mod tests {
                 }
 
                 #[hegel::test(test_cases = 10)]
-                fn [<test_unpack_cmp_untransposes_to_logical_ $T _ $V>](tc: TestCase) {
-                    assert_unpack_cmp_untransposes_to_logical::<$T, $V>(&tc);
+                fn [<test_unpack_cmp_transposes_to_logical_ $T _ $V>](tc: TestCase) {
+                    assert_unpack_cmp_transposes_to_logical::<$T, $V>(&tc);
                 }
             }
         };

@@ -58,16 +58,18 @@ const BIT_MASKS: [u64; 8] = [
     0x8080_8080_8080_8080,
 ];
 
-/// Transpose 1024 bits using BMI2 `PEXT`.
+/// Untranspose 1024 bits using BMI2 `PEXT`.
 ///
-/// `PEXT` extracts bits at positions specified by a mask into contiguous low bits.
+/// The bit-level equivalent of [`crate::Transpose::untranspose`]; the inverse of
+/// [`transpose_bits_bmi2::<u64>`](transpose_bits_bmi2). `PEXT` extracts bits at positions
+/// specified by a mask into contiguous low bits.
 ///
 /// # Safety
 /// Requires BMI2 support. Check with [`has_bmi2`] before calling.
 #[target_feature(enable = "bmi2")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn transpose_bits_bmi2(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn untranspose_bits_bmi2(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
@@ -81,21 +83,22 @@ pub unsafe fn transpose_bits_bmi2(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose a `T`-width comparison mask (1024 bits) using BMI2 `PDEP`.
+/// Transpose 1024 bits (a `T`-width comparison mask) using BMI2 `PDEP`.
 ///
 /// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
-/// bit transpose (see [`crate::bit_transpose::scalar::untranspose_bits`]). The width only changes
+/// bit transpose (see [`crate::bit_transpose::scalar::transpose_bits`]). The width only changes
 /// the gather stride and the scatter base. For each group we gather its 8 bytes (at stride
 /// `T::T / 8`) and use `PDEP` to deposit byte `llo` into bit-position `llo` of all 8 packed
 /// output bytes — which is exactly the 8x8 bit transpose — then scatter the group at stride 16.
-/// For `T = u64` this is the canonical `FastLanes` bit untranspose.
+/// For `T = u64` this is the canonical `FastLanes` bit transpose, the bit-level equivalent of
+/// [`crate::Transpose::transpose`].
 ///
 /// # Safety
 /// Requires BMI2 support. Check with [`has_bmi2`] before calling.
 #[target_feature(enable = "bmi2")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn untranspose_bits_bmi2<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn transpose_bits_bmi2<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
@@ -181,17 +184,19 @@ unsafe fn bit_transpose_8x8_zmm(mut v: __m512i) -> __m512i {
     _mm512_xor_si512(_mm512_xor_si512(v, t), _mm512_slli_epi64::<28>(t))
 }
 
-/// Transpose 1024 bits using AVX-512 VBMI for vectorized gather and scatter.
+/// Untranspose 1024 bits using AVX-512 VBMI for vectorized gather and scatter.
 ///
-/// Uses `vpermi2b` to gather bytes from stride-16 positions in parallel,
-/// and `vpermb` for the final 8x8 byte transpose to output format.
+/// The bit-level equivalent of [`crate::Transpose::untranspose`]; the inverse of
+/// [`transpose_bits_vbmi::<u64>`](transpose_bits_vbmi). Uses `vpermi2b` to gather bytes from
+/// stride-16 positions in parallel, and `vpermb` for the final 8x8 byte transpose to output
+/// format.
 ///
 /// # Safety
 /// Requires AVX-512F, AVX-512BW, and AVX-512VBMI support. Check with [`has_vbmi`].
 #[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512vbmi")]
 #[inline]
 #[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
-pub unsafe fn transpose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn untranspose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
@@ -212,32 +217,32 @@ pub unsafe fn transpose_bits_vbmi(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose a `T`-width comparison mask (1024 bits) using AVX-512 VBMI.
+/// Transpose 1024 bits (a `T`-width comparison mask) using AVX-512 VBMI.
 ///
 /// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
 /// bit transpose. The `T = 64` block keeps the original kernel (gather within each 64-byte half
-/// with `vpermb`, then scatter); narrower widths use the width-generic [`untranspose_bits_vbmi_lt64`]
+/// with `vpermb`, then scatter); narrower widths use the width-generic [`transpose_bits_vbmi_lt64`]
 /// kernel whose groups span both halves. For `T = u64` this is the canonical `FastLanes` bit
-/// untranspose.
+/// transpose, the bit-level equivalent of [`crate::Transpose::transpose`].
 ///
 /// # Safety
 /// Requires AVX-512F, AVX-512BW, and AVX-512VBMI support. Check with [`has_vbmi`].
 #[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512vbmi")]
 #[inline]
 #[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
-pub unsafe fn untranspose_bits_vbmi<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn transpose_bits_vbmi<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     // `T::T` is a compile-time constant, so this branch is resolved at monomorphization and the
     // unused arm is eliminated. The `u64` arm is kept byte-identical to the original kernel.
     if T::T != 64 {
-        untranspose_bits_vbmi_lt64::<T>(input, output);
+        transpose_bits_vbmi_lt64::<T>(input, output);
         return;
     }
 
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
-    // In the transposed layout the 8 bytes of a group are consecutive; this gather
-    // collects them into the eight u64 lanes of a ZMM register.
+    // In the untransposed (lane-major) layout the 8 bytes of a group are consecutive; this
+    // gather collects them into the eight u64 lanes of a ZMM register.
     let gather_indices: [u8; 64] = SCATTER_8X8;
     let idx = _mm512_loadu_si512(gather_indices.as_ptr().cast::<__m512i>());
 
@@ -256,7 +261,7 @@ pub unsafe fn untranspose_bits_vbmi<T: FastLanes>(input: &[u64; 16], output: &mu
     }
 }
 
-/// Width-generic (`T::T < 64`) VBMI untranspose for the narrow comparison-mask widths.
+/// Width-generic (`T::T < 64`) VBMI transpose for the narrow comparison-mask widths.
 ///
 /// Mirrors the width-generic NEON kernel: `vpermi2b` gathers the 16 eight-byte groups into
 /// group-major order across two ZMM registers (each 64-bit lane is one group), every lane is
@@ -269,7 +274,7 @@ pub unsafe fn untranspose_bits_vbmi<T: FastLanes>(input: &[u64; 16], output: &mu
 #[target_feature(enable = "avx512f", enable = "avx512bw", enable = "avx512vbmi")]
 #[inline]
 #[allow(clippy::cast_ptr_alignment, unsafe_op_in_unsafe_fn)]
-unsafe fn untranspose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+unsafe fn transpose_bits_vbmi_lt64<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
     let (gather_idx, scatter_idx) = group_tables::<T>();
@@ -312,7 +317,7 @@ mod tests {
     use hegel::generators as gs;
 
     #[hegel::test]
-    fn test_bmi2_matches_baseline(tc: TestCase) {
+    fn test_bmi2_untranspose_matches_baseline(tc: TestCase) {
         if !has_bmi2() {
             return;
         }
@@ -320,9 +325,9 @@ mod tests {
         let mut baseline_out = [u64::MAX; 16];
         let mut bmi2_out = [u64::MAX; 16];
 
-        transpose_bits_baseline(&input, &mut baseline_out);
+        untranspose_bits_baseline(&input, &mut baseline_out);
         // SAFETY: guarded by `has_bmi2`.
-        unsafe { transpose_bits_bmi2(&input, &mut bmi2_out) };
+        unsafe { untranspose_bits_bmi2(&input, &mut bmi2_out) };
 
         assert_eq!(baseline_out, bmi2_out);
     }
@@ -338,29 +343,29 @@ mod tests {
 
         // SAFETY: guarded by `has_bmi2`.
         unsafe {
-            transpose_bits_bmi2(&input, &mut transposed);
-            untranspose_bits_bmi2::<u64>(&transposed, &mut roundtrip);
+            transpose_bits_bmi2::<u64>(&input, &mut transposed);
+            untranspose_bits_bmi2(&transposed, &mut roundtrip);
         }
 
         assert_eq!(input, roundtrip);
     }
 
-    /// The width-generic BMI2 untranspose must match the width-parameterized baseline for every
+    /// The width-generic BMI2 transpose must match the width-parameterized baseline for every
     /// element width.
     #[hegel::test]
-    fn test_bmi2_untranspose_all_widths_match_baseline(tc: TestCase) {
+    fn test_bmi2_transpose_all_widths_match_baseline(tc: TestCase) {
         fn check<T: FastLanes>(input: &[u64; 16]) {
             let mut baseline_out = [u64::MAX; 16];
             let mut bmi2_out = [u64::MAX; 16];
 
-            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            transpose_bits_baseline::<T>(input, &mut baseline_out);
             // SAFETY: guarded by `has_bmi2`.
-            unsafe { untranspose_bits_bmi2::<T>(input, &mut bmi2_out) };
+            unsafe { transpose_bits_bmi2::<T>(input, &mut bmi2_out) };
 
             assert_eq!(
                 baseline_out,
                 bmi2_out,
-                "BMI2 untranspose != baseline for type={}",
+                "BMI2 transpose != baseline for type={}",
                 core::any::type_name::<T>()
             );
         }
@@ -375,7 +380,7 @@ mod tests {
     }
 
     #[hegel::test]
-    fn test_vbmi_matches_baseline(tc: TestCase) {
+    fn test_vbmi_untranspose_matches_baseline(tc: TestCase) {
         if !has_vbmi() {
             return;
         }
@@ -383,9 +388,9 @@ mod tests {
         let mut baseline_out = [u64::MAX; 16];
         let mut vbmi_out = [u64::MAX; 16];
 
-        transpose_bits_baseline(&input, &mut baseline_out);
+        untranspose_bits_baseline(&input, &mut baseline_out);
         // SAFETY: guarded by `has_vbmi`.
-        unsafe { transpose_bits_vbmi(&input, &mut vbmi_out) };
+        unsafe { untranspose_bits_vbmi(&input, &mut vbmi_out) };
 
         assert_eq!(baseline_out, vbmi_out);
     }
@@ -401,29 +406,29 @@ mod tests {
 
         // SAFETY: guarded by `has_vbmi`.
         unsafe {
-            transpose_bits_vbmi(&input, &mut transposed);
-            untranspose_bits_vbmi::<u64>(&transposed, &mut roundtrip);
+            transpose_bits_vbmi::<u64>(&input, &mut transposed);
+            untranspose_bits_vbmi(&transposed, &mut roundtrip);
         }
 
         assert_eq!(input, roundtrip);
     }
 
-    /// The width-generic VBMI untranspose must match the width-parameterized baseline for every
+    /// The width-generic VBMI transpose must match the width-parameterized baseline for every
     /// element width.
     #[hegel::test]
-    fn test_vbmi_untranspose_all_widths_match_baseline(tc: TestCase) {
+    fn test_vbmi_transpose_all_widths_match_baseline(tc: TestCase) {
         fn check<T: FastLanes>(input: &[u64; 16]) {
             let mut baseline_out = [u64::MAX; 16];
             let mut vbmi_out = [u64::MAX; 16];
 
-            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            transpose_bits_baseline::<T>(input, &mut baseline_out);
             // SAFETY: guarded by `has_vbmi`.
-            unsafe { untranspose_bits_vbmi::<T>(input, &mut vbmi_out) };
+            unsafe { transpose_bits_vbmi::<T>(input, &mut vbmi_out) };
 
             assert_eq!(
                 baseline_out,
                 vbmi_out,
-                "VBMI untranspose != baseline for type={}",
+                "VBMI transpose != baseline for type={}",
                 core::any::type_name::<T>()
             );
         }
