@@ -51,9 +51,12 @@ fn scatter(output: &mut [u8; 128], base: usize, val: u64) {
     }
 }
 
-/// Transpose one 1024-bit block using the scalar implementation.
+/// Untranspose one 1024-bit block using the scalar implementation.
+///
+/// The bit-level equivalent of [`crate::Transpose::untranspose`]; the inverse of
+/// [`transpose_bits::<u64>`](transpose_bits).
 #[inline]
-pub fn transpose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
+pub fn untranspose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
     for (half, groups) in HALVES.iter().enumerate() {
@@ -66,19 +69,22 @@ pub fn transpose_bits(input: &[u64; 16], output: &mut [u64; 16]) {
     }
 }
 
-/// Untranspose a `T`-width comparison mask into logical row order, scalar implementation.
+/// Transpose one 1024-bit block into `FastLanes` layout, scalar implementation.
 ///
-/// The mask produced by `unpack_cmp` for an element width of `T::T` bits is laid out as
-/// `T::LANES` words of `T::T` bits (LSB-first per lane); the bit at position
-/// `lane * T::T + row` holds the comparison for logical index `index(row, lane)` (see the
-/// `unpack!` macro). This is the inverse of that permutation.
+/// For `T = u64` this is the canonical `FastLanes` bit transpose, the bit-level equivalent of
+/// [`crate::Transpose::transpose`] (`output[i] = input[transpose(i)]`).
+///
+/// Narrower `T` bring a `T`-width comparison mask into logical row order. The mask produced by
+/// `unpack_cmp` for an element width of `T::T` bits is laid out as `T::LANES` words of `T::T`
+/// bits (LSB-first per lane); the bit at position `lane * T::T + row` holds the comparison for
+/// logical index `index(row, lane)` (see the `unpack!` macro). This moves each mask bit to that
+/// logical index.
 ///
 /// Regardless of width the 128 bytes always factor into exactly 16 groups of 8 bytes, each
 /// group being an independent 8x8 bit transpose. The width only changes which input bytes form
-/// a group (the gather stride) and where the transposed bytes land (the scatter base). For
-/// `T = u64` this reduces to the canonical `FastLanes` bit untranspose.
+/// a group (the gather stride) and where the transposed bytes land (the scatter base).
 #[inline]
-pub fn untranspose_bits<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+pub fn transpose_bits<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
@@ -113,13 +119,13 @@ mod tests {
     use hegel::generators as gs;
 
     #[hegel::test]
-    fn test_scalar_matches_baseline(tc: TestCase) {
+    fn test_scalar_untranspose_matches_baseline(tc: TestCase) {
         let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
         let mut baseline_out = [u64::MAX; 16];
         let mut scalar_out = [u64::MAX; 16];
 
-        transpose_bits_baseline(&input, &mut baseline_out);
-        transpose_bits(&input, &mut scalar_out);
+        untranspose_bits_baseline(&input, &mut baseline_out);
+        untranspose_bits(&input, &mut scalar_out);
 
         assert_eq!(baseline_out, scalar_out);
     }
@@ -130,8 +136,8 @@ mod tests {
         let mut transposed = [u64::MAX; 16];
         let mut roundtrip = [u64::MAX; 16];
 
-        transpose_bits(&input, &mut transposed);
-        untranspose_bits::<u64>(&transposed, &mut roundtrip);
+        transpose_bits::<u64>(&input, &mut transposed);
+        untranspose_bits(&transposed, &mut roundtrip);
 
         assert_eq!(input, roundtrip);
     }
@@ -141,10 +147,10 @@ mod tests {
         let input = [0u64; 16];
         let mut output = [u64::MAX; 16];
 
-        transpose_bits(&input, &mut output);
+        transpose_bits::<u64>(&input, &mut output);
         assert_eq!(output, [0u64; 16]);
 
-        untranspose_bits::<u64>(&input, &mut output);
+        untranspose_bits(&input, &mut output);
         assert_eq!(output, [0u64; 16]);
     }
 
@@ -153,28 +159,28 @@ mod tests {
         let input = [u64::MAX; 16];
         let mut output = [0u64; 16];
 
-        transpose_bits(&input, &mut output);
+        transpose_bits::<u64>(&input, &mut output);
         assert_eq!(output, [u64::MAX; 16]);
 
-        untranspose_bits::<u64>(&input, &mut output);
+        untranspose_bits(&input, &mut output);
         assert_eq!(output, [u64::MAX; 16]);
     }
 
-    /// The generic untranspose must match the width-parameterized baseline for every element
+    /// The generic transpose must match the width-parameterized baseline for every element
     /// width, not just `u64`.
     #[hegel::test]
-    fn test_untranspose_all_widths_match_baseline(tc: TestCase) {
+    fn test_transpose_all_widths_match_baseline(tc: TestCase) {
         fn check<T: FastLanes>(input: &[u64; 16]) {
             let mut baseline_out = [u64::MAX; 16];
             let mut scalar_out = [u64::MAX; 16];
 
-            untranspose_bits_baseline::<T>(input, &mut baseline_out);
-            untranspose_bits::<T>(input, &mut scalar_out);
+            transpose_bits_baseline::<T>(input, &mut baseline_out);
+            transpose_bits::<T>(input, &mut scalar_out);
 
             assert_eq!(
                 baseline_out,
                 scalar_out,
-                "scalar untranspose != baseline for type={}",
+                "scalar transpose != baseline for type={}",
                 core::any::type_name::<T>()
             );
         }

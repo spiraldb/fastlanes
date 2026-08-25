@@ -114,13 +114,16 @@ unsafe fn bit_transpose_8x8_neon(mut v: uint64x2_t) -> uint64x2_t {
     veorq_u64(veorq_u64(v, t), vshlq_n_u64::<28>(t))
 }
 
-/// Transpose one 1024-bit block using NEON with TBL-based gather and scatter.
+/// Untranspose one 1024-bit block using NEON with TBL-based gather and scatter.
+///
+/// The bit-level equivalent of [`crate::Transpose::untranspose`]; the inverse of
+/// [`transpose_bits_neon::<u64>`](transpose_bits_neon).
 ///
 /// # Safety
 /// Requires `AArch64` with NEON (always available on `AArch64`).
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn transpose_bits_neon(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn untranspose_bits_neon(input: &[u64; 16], output: &mut [u64; 16]) {
     let input = as_byte_array(input);
     let output = as_byte_array_mut(output);
 
@@ -195,17 +198,19 @@ unsafe fn permute_128(src: &[u8; 128], idx: &[u8; 128]) -> [u8; 128] {
     out
 }
 
-/// Untranspose a `T`-width comparison mask into logical row order using NEON.
+/// Transpose 1024 bits (a `T`-width comparison mask) into logical row order using NEON.
 ///
-/// Regardless of width the 128 bytes factor into 16 groups of 8 bytes, each an independent 8x8
-/// bit transpose (see [`crate::scalar::untranspose_bits`]). We TBL-gather the groups into
-/// group-major order, run the per-group 8x8 transpose, then TBL-scatter to logical positions.
+/// For `T = u64` this is the canonical `FastLanes` bit transpose, the bit-level equivalent of
+/// [`crate::Transpose::transpose`]. Regardless of width the 128 bytes factor into 16 groups of 8
+/// bytes, each an independent 8x8 bit transpose (see [`crate::scalar::transpose_bits`]). We
+/// TBL-gather the groups into group-major order, run the per-group 8x8 transpose, then
+/// TBL-scatter to logical positions.
 ///
 /// # Safety
 /// Requires `AArch64` with NEON (always available on `AArch64`).
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
-pub unsafe fn untranspose_bits_neon<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
+pub unsafe fn transpose_bits_neon<T: FastLanes>(input: &[u64; 16], output: &mut [u64; 16]) {
     let (gather_idx, scatter_idx) = group_tables::<T>();
 
     // Gather the 16 groups into contiguous group-major order.
@@ -234,14 +239,14 @@ mod tests {
     use hegel::generators as gs;
 
     #[hegel::test]
-    fn test_neon_matches_baseline(tc: TestCase) {
+    fn test_neon_untranspose_matches_baseline(tc: TestCase) {
         let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
         let mut baseline_out = [u64::MAX; 16];
         let mut tbl_out = [u64::MAX; 16];
 
-        transpose_bits_baseline(&input, &mut baseline_out);
+        untranspose_bits_baseline(&input, &mut baseline_out);
         // SAFETY: NEON is always available on aarch64.
-        unsafe { transpose_bits_neon(&input, &mut tbl_out) };
+        unsafe { untranspose_bits_neon(&input, &mut tbl_out) };
 
         assert_eq!(baseline_out, tbl_out);
     }
@@ -254,42 +259,42 @@ mod tests {
 
         // SAFETY: NEON is always available on aarch64.
         unsafe {
-            transpose_bits_neon(&input, &mut transposed);
-            untranspose_bits_neon::<u64>(&transposed, &mut roundtrip);
+            transpose_bits_neon::<u64>(&input, &mut transposed);
+            untranspose_bits_neon(&transposed, &mut roundtrip);
         }
 
         assert_eq!(input, roundtrip);
     }
 
     #[hegel::test]
-    fn test_untranspose_neon_matches_baseline(tc: TestCase) {
+    fn test_neon_transpose_matches_baseline(tc: TestCase) {
         let input: [u64; 16] = tc.draw(gs::arrays(gs::integers::<u64>()));
         let mut baseline_out = [u64::MAX; 16];
         let mut tbl_out = [u64::MAX; 16];
 
-        untranspose_bits_baseline::<u64>(&input, &mut baseline_out);
+        transpose_bits_baseline::<u64>(&input, &mut baseline_out);
         // SAFETY: NEON is always available on aarch64.
-        unsafe { untranspose_bits_neon::<u64>(&input, &mut tbl_out) };
+        unsafe { transpose_bits_neon::<u64>(&input, &mut tbl_out) };
 
         assert_eq!(baseline_out, tbl_out);
     }
 
-    /// The generic NEON untranspose must match the width-parameterized baseline for every
+    /// The generic NEON transpose must match the width-parameterized baseline for every
     /// element width.
     #[hegel::test]
-    fn test_untranspose_neon_all_widths_match_baseline(tc: TestCase) {
+    fn test_neon_transpose_all_widths_match_baseline(tc: TestCase) {
         fn check<T: FastLanes>(input: &[u64; 16]) {
             let mut baseline_out = [u64::MAX; 16];
             let mut tbl_out = [u64::MAX; 16];
 
-            untranspose_bits_baseline::<T>(input, &mut baseline_out);
+            transpose_bits_baseline::<T>(input, &mut baseline_out);
             // SAFETY: NEON is always available on aarch64.
-            unsafe { untranspose_bits_neon::<T>(input, &mut tbl_out) };
+            unsafe { transpose_bits_neon::<T>(input, &mut tbl_out) };
 
             assert_eq!(
                 baseline_out,
                 tbl_out,
-                "NEON untranspose != baseline for type={}",
+                "NEON transpose != baseline for type={}",
                 core::any::type_name::<T>()
             );
         }
