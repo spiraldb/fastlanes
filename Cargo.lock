@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "fastlanes"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "arrayref",
  "codspeed-divan-compat",

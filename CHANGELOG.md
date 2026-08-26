@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.7.0) - 2026-08-26
+
+This release has the same contents as 0.6.2. Version 0.6.2 is yanked, because
+it has breaking changes that a patch release must not have:
+
+- The `std` feature is replaced by the `runtime` feature ([#175](https://github.com/spiraldb/fastlanes/pull/175))
+- `Transpose::transpose`/`untranspose` use the same element order as
+  `bit_transpose`/`bit_untranspose` ([#186](https://github.com/spiraldb/fastlanes/pull/186))
+
 ## [0.6.2](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.6.2) - 2026-08-25
 
 ### Added
