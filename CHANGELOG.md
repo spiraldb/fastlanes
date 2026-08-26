@@ -1,5 +1,4 @@
 # Changelog
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -7,29 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.2](https://github.com/spiraldb/fastlanes/compare/v0.2.1...v0.2.2) - 2025-09-15
+## [0.7.0](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.7.0) - 2026-08-26
 
-### Other
+This release has the same contents as 0.6.2. Version 0.6.2 is yanked, because
+it has breaking changes that a patch release must not have:
 
-- use `get_unchecked` for index accesses in rle ([#76](https://github.com/spiraldb/fastlanes/pull/76))
-- improve fls-rle comments ([#75](https://github.com/spiraldb/fastlanes/pull/75))
-- *(deps)* update codspeedhq/action digest to 653fdc3 ([#73](https://github.com/spiraldb/fastlanes/pull/73))
-- *(deps)* pin dependencies ([#67](https://github.com/spiraldb/fastlanes/pull/67))
-- *(deps)* update codspeedhq/action action to v4 ([#69](https://github.com/spiraldb/fastlanes/pull/69))
-- *(deps)* update actions/checkout action to v5 ([#68](https://github.com/spiraldb/fastlanes/pull/68))
-
-## [0.2.1](https://github.com/spiraldb/fastlanes/compare/v0.2.0...v0.2.1) - 2025-09-05
-
-### Added
-
-- fastlanes rle ([#70](https://github.com/spiraldb/fastlanes/pull/70))
-# Changelog
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
+- The `std` feature is replaced by the `runtime` feature ([#175](https://github.com/spiraldb/fastlanes/pull/175))
+- `Transpose::transpose`/`untranspose` use the same element order as
+  `bit_transpose`/`bit_untranspose` ([#186](https://github.com/spiraldb/fastlanes/pull/186))
 
 ## [0.6.2](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.6.2) - 2026-08-25
 
@@ -156,6 +140,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - move all benchmarks to divan ([#83](https://github.com/spiraldb/fastlanes/pull/83))
 - Narrow down the scope of paste macro ([#77](https://github.com/spiraldb/fastlanes/pull/77))
 - *(deps)* update marcoieni/release-plz-action digest to acb9246 ([#74](https://github.com/spiraldb/fastlanes/pull/74))
+
+## [0.2.2](https://github.com/spiraldb/fastlanes/compare/v0.2.1...v0.2.2) - 2025-09-15
+
+### Other
+
+- use `get_unchecked` for index accesses in rle ([#76](https://github.com/spiraldb/fastlanes/pull/76))
+- improve fls-rle comments ([#75](https://github.com/spiraldb/fastlanes/pull/75))
+- *(deps)* update codspeedhq/action digest to 653fdc3 ([#73](https://github.com/spiraldb/fastlanes/pull/73))
+- *(deps)* pin dependencies ([#67](https://github.com/spiraldb/fastlanes/pull/67))
+- *(deps)* update codspeedhq/action action to v4 ([#69](https://github.com/spiraldb/fastlanes/pull/69))
+- *(deps)* update actions/checkout action to v5 ([#68](https://github.com/spiraldb/fastlanes/pull/68))
+
+## [0.2.1](https://github.com/spiraldb/fastlanes/compare/v0.2.0...v0.2.1) - 2025-09-05
+
+### Added
+
+- fastlanes rle ([#70](https://github.com/spiraldb/fastlanes/pull/70))
 
 ## [0.2.0](https://github.com/spiraldb/fastlanes/compare/v0.1.8...v0.2.0) - 2025-07-15
 
