@@ -57,16 +57,7 @@ pub trait BitPacking: FastLanes {
         packed: &[Self; B],
         indices: &[usize],
         output: &mut [MaybeUninit<Self>],
-    ) {
-        assert_eq!(
-            indices.len(),
-            output.len(),
-            "Output length must equal index length"
-        );
-        for (&index, value) in indices.iter().zip(output) {
-            value.write(Self::unpack_single::<W, B>(packed, index));
-        }
-    }
+    );
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
     /// where `W` is runtime-known instead of compile-time known.
@@ -101,22 +92,7 @@ pub trait BitPacking: FastLanes {
         input: &[Self],
         indices: &[usize],
         output: &mut [MaybeUninit<Self>],
-    ) {
-        assert!(
-            width <= Self::T,
-            "Width must be less than or equal to {}",
-            Self::T
-        );
-        assert_eq!(
-            indices.len(),
-            output.len(),
-            "Output length must equal index length"
-        );
-        for (&index, value) in indices.iter().zip(output) {
-            // SAFETY: the caller guarantees that `input` contains the packed representation.
-            value.write(unsafe { Self::unchecked_unpack_single(width, input, index) });
-        }
-    }
+    );
 }
 
 macro_rules! impl_packing {
@@ -269,6 +245,22 @@ macro_rules! impl_packing {
                     let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
                     (lo | hi) & mask
                 };
+            }
+
+            fn unpack_indices<const W: usize, const B: usize>(
+                packed: &[Self; B],
+                indices: &[usize],
+                output: &mut [MaybeUninit<Self>],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+
+                assert_eq!(indices.len(), output.len(), "Output length must equal index length");
+                for (&index, value) in indices.iter().zip(output) {
+                    value.write(Self::unpack_single::<W, B>(packed, index));
+                }
             }
 
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
