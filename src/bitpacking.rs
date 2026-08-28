@@ -44,17 +44,6 @@ pub trait BitPacking: FastLanes {
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
     fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self;
 
-    /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output length differs from the index length or an index is not less than 1024.
-    fn unpack_indices<const W: usize, const B: usize>(
-        packed: &[Self; B],
-        indices: &[usize],
-        output: &mut [MaybeUninit<Self>],
-    );
-
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
     /// where `W` is runtime-known instead of compile-time known.
     ///
@@ -66,6 +55,17 @@ pub trait BitPacking: FastLanes {
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
+
+    /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the output length differs from the index length or an index is not less than 1024.
+    fn unpack_indices<const W: usize, const B: usize>(
+        packed: &[Self; B],
+        indices: &[usize],
+        output: &mut [MaybeUninit<Self>],
+    );
 
     /// Unpacks selected elements where `W` is known only at runtime.
     ///
@@ -149,7 +149,6 @@ macro_rules! impl_packing {
                     assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
                     assert!(B == 1024 * W / Self::T);
                 }
-
 
                 for lane in 0..Self::LANES {
                     unpack!($T, W, input, lane, |$idx, $elem| {
@@ -240,28 +239,6 @@ macro_rules! impl_packing {
                 };
             }
 
-            fn unpack_indices<const W: usize, const B: usize>(
-                packed: &[Self; B],
-                indices: &[usize],
-                output: &mut [MaybeUninit<Self>],
-            ) {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-
-                assert_eq!(indices.len(), output.len(), "Output length must equal index length");
-                if W == 0 {
-                    assert!(
-                        indices.iter().all(|&index| index < 1024),
-                        "Index must be less than 1024"
-                    );
-                }
-                for (&index, value) in indices.iter().zip(output) {
-                    value.write(Self::unpack_single::<W, B>(packed, index));
-                }
-            }
-
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
 
@@ -286,6 +263,28 @@ macro_rules! impl_packing {
                 }))
             }
 
+            fn unpack_indices<const W: usize, const B: usize>(
+                packed: &[Self; B],
+                indices: &[usize],
+                output: &mut [MaybeUninit<Self>],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+
+                assert_eq!(indices.len(), output.len(), "Output length must equal index length");
+                if W == 0 {
+                    assert!(
+                        indices.iter().all(|&index| index < 1024),
+                        "Index must be less than 1024"
+                    );
+                }
+                for (&index, value) in indices.iter().zip(output) {
+                    value.write(Self::unpack_single::<W, B>(packed, index));
+                }
+            }
+
             unsafe fn unchecked_unpack_indices(
                 width: usize,
                 packed: &[Self],
@@ -294,8 +293,8 @@ macro_rules! impl_packing {
             ) {
                 const T: usize = <$T>::T;
 
-                assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-                assert_eq!(indices.len(), output.len(), "Output length must equal index length");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                debug_assert_eq!(indices.len(), output.len(), "Output length must equal index length");
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
 
