@@ -253,13 +253,19 @@ macro_rules! impl_packing {
                     match width {
                         #(W => {
                             const B: usize = 1024 * W / T;
-                            return <$T>::unpack_single::<W, B>(unsafe { crate::as_array_unchecked(packed) }, index);
+                            return [<unpack_single_ $T>]::<W, B>(
+                                unsafe { crate::as_array_unchecked(packed) },
+                                index,
+                            );
                         },)*
                         // seq_t has exclusive upper bound
                         T => {
                             const W: usize = T;
                             const B: usize = 1024;
-                            return <$T>::unpack_single::<W, B>(unsafe { crate::as_array_unchecked(packed) }, index);
+                            return [<unpack_single_ $T>]::<W, B>(
+                                unsafe { crate::as_array_unchecked(packed) },
+                                index,
+                            );
                         },
                         _ => unreachable!("Unsupported width: {}", width)
                     }
