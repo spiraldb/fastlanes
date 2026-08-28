@@ -276,10 +276,9 @@ macro_rules! impl_packing {
 
                 assert_eq!(indices.len(), output.len(), "Output length must equal index length");
                 if W == 0 {
-                    assert!(
-                        indices.iter().all(|&index| index < 1024),
-                        "Index must be less than 1024"
-                    );
+                    for (&index, value) in indices.iter().zip(output) {
+                        value.write(0 as Self);
+                    }
                 }
                 for (&index, value) in indices.iter().zip(output) {
                     value.write(Self::unpack_single::<W, B>(packed, index));
@@ -293,11 +292,12 @@ macro_rules! impl_packing {
                 output: &mut [MaybeUninit<Self>],
             ) {
                 const T: usize = <$T>::T;
-
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-                debug_assert_eq!(indices.len(), output.len(), "Output length must equal index length");
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                debug_assert!(width <= T, "Width must be less than or equal to {}", T);
+                #[cfg(debug_assertions)]
+                {
+                    let packed_len = 128 * width / size_of::<Self>();
+                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                }
 
                 paste!(seq_t!(W in $T {
                     match width {
