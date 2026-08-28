@@ -42,10 +42,6 @@ pub trait BitPacking: FastLanes {
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `index` is not less than 1024.
     fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self;
 
     /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
@@ -64,13 +60,11 @@ pub trait BitPacking: FastLanes {
     ///
     /// # Safety
     ///
-    /// The input slice must contain at least `1024 * W / T` elements, where `T` is the unpacked
-    /// bit width of `Self` and `W` is `width`.
+    /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
+    ///   of `Self` and `W` is the packed bit-width.
+    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
-    /// # Panics
-    ///
-    /// Panics if `width` exceeds the bit width of `Self` or `index` is not less than 1024. Debug
-    /// builds also panic unless the input length equals `1024 * W / T`.
+    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
 
     /// Unpacks selected elements where `W` is known only at runtime.
@@ -79,8 +73,8 @@ pub trait BitPacking: FastLanes {
     ///
     /// # Safety
     ///
-    /// The input slice must contain at least `1024 * W / T` elements, where `T` is the unpacked
-    /// bit width of `Self` and `W` is `width`.
+    /// The input slice must contain exactly `1024 * W / T` elements, where `T` is the unpacked bit
+    /// width of `Self` and `W` is `width`.
     ///
     /// # Panics
     ///
@@ -201,8 +195,6 @@ macro_rules! impl_packing {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                assert!(index < 1024, "Index must be less than 1024, got {}", index);
-
                 if W == 0 {
                     // Special case for W=0, we just need to zero the output.
                     return 0 as $T;
@@ -219,6 +211,7 @@ macro_rules! impl_packing {
                 // decompression can be fused efficiently with encodings like delta and RLE.
                 //
                 // First step, we need to get the lane and row for interpretation #1 above.
+                assert!(index < 1024, "Index must be less than 1024, got {}", index);
                 let (lane, row): (usize, usize) = {
                     const LANES: [u8; 1024] = lanes_by_index::<$T>();
                     const ROWS: [u8; 1024] = rows_by_index::<$T>();
@@ -258,6 +251,12 @@ macro_rules! impl_packing {
                 }
 
                 assert_eq!(indices.len(), output.len(), "Output length must equal index length");
+                if W == 0 {
+                    assert!(
+                        indices.iter().all(|&index| index < 1024),
+                        "Index must be less than 1024"
+                    );
+                }
                 for (&index, value) in indices.iter().zip(output) {
                     value.write(Self::unpack_single::<W, B>(packed, index));
                 }
@@ -266,10 +265,9 @@ macro_rules! impl_packing {
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
 
-                assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-                assert!(index < 1024, "Index must be less than 1024, got {}", index);
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -466,20 +464,6 @@ mod test {
         // SAFETY: the packed input has the required length. The mismatched output is a documented
         // panic condition, not a safety requirement.
         unsafe { BitPacking::unchecked_unpack_indices(1, &packed, &[], &mut output) };
-    }
-
-    #[test]
-    #[should_panic(expected = "Index must be less than 1024")]
-    fn test_unpack_single_rejects_invalid_index_at_zero_width() {
-        u32::unpack_single::<0, 0>(&[], 1024);
-    }
-
-    #[test]
-    #[should_panic(expected = "Index must be less than 1024")]
-    fn test_unchecked_unpack_single_rejects_invalid_index_at_zero_width() {
-        // SAFETY: the zero-width packed representation contains no elements. The invalid index is
-        // a documented panic condition, not a safety requirement.
-        unsafe { u32::unchecked_unpack_single(0, &[], 1024) };
     }
 
     #[test]
