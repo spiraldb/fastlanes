@@ -60,7 +60,8 @@ pub trait BitPacking: FastLanes {
     ///
     /// # Panics
     ///
-    /// Panics if the output length differs from the index length or an index is not less than 1024.
+    /// Panics if the output length differs from the index length or, when `W` is not zero, an index
+    /// is not less than 1024.
     fn unpack_indices<const W: usize, const B: usize>(
         packed: &[Self; B],
         indices: &[usize],
@@ -81,7 +82,8 @@ pub trait BitPacking: FastLanes {
     ///
     /// # Panics
     ///
-    /// Panics if the output length differs from the index length or an index is not less than 1024.
+    /// Panics if the output length differs from the index length or, when `width` is not zero, an
+    /// index is not less than 1024.
     unsafe fn unchecked_unpack_indices(
         width: usize,
         input: &[Self],
@@ -276,9 +278,10 @@ macro_rules! impl_packing {
 
                 assert_eq!(indices.len(), output.len(), "Output length must equal index length");
                 if W == 0 {
-                    for (&index, value) in indices.iter().zip(output) {
+                    for value in output {
                         value.write(0 as Self);
                     }
+                    return;
                 }
                 for (&index, value) in indices.iter().zip(output) {
                     value.write(Self::unpack_single::<W, B>(packed, index));
@@ -457,12 +460,16 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Index must be less than 1024")]
-    fn test_unchecked_unpack_indices_rejects_invalid_index_at_zero_width() {
+    fn test_unpack_indices_zero_width_ignores_indices() {
+        let indices = [usize::MAX];
         let mut output = [MaybeUninit::<u32>::uninit()];
-        // SAFETY: the zero-width packed representation contains no elements. The invalid index is
-        // a documented panic condition, not a safety requirement.
-        unsafe { BitPacking::unchecked_unpack_indices(0, &[], &[1024], &mut output) };
+        BitPacking::unpack_indices::<0, 0>(&[], &indices, &mut output);
+        assert_eq!(assume_initialized(&output), [0]);
+
+        let mut output = [MaybeUninit::<u32>::uninit()];
+        // SAFETY: the zero-width packed representation contains no elements.
+        unsafe { BitPacking::unchecked_unpack_indices(0, &[], &indices, &mut output) };
+        assert_eq!(assume_initialized(&output), [0]);
     }
 
     fn assert_bitpack_roundtrip<T>(tc: &TestCase)
