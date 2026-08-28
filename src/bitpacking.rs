@@ -73,14 +73,15 @@ pub trait BitPacking: FastLanes {
     ///
     /// # Safety
     ///
-    /// The input slice must contain exactly `1024 * W / T` elements, where `T` is the unpacked bit
-    /// width of `Self` and `W` is `width`.
+    /// - The input slice must contain exactly `1024 * W / T` elements, where `T` is the unpacked bit
+    ///   width of `Self` and `W` is `width`.
+    /// - The `width` must be less than or equal to the unpacked bit width of `Self`.
+    ///
+    /// These conditions are checked only with `debug_assert`.
     ///
     /// # Panics
     ///
-    /// Panics if `width` exceeds the bit width of `Self`, the output length differs from the index
-    /// length, or an index is not less than 1024. Debug builds also panic unless the input length
-    /// equals `1024 * W / T`.
+    /// Panics if the output length differs from the index length or an index is not less than 1024.
     unsafe fn unchecked_unpack_indices(
         width: usize,
         input: &[Self],
@@ -428,18 +429,8 @@ mod test {
     }
 
     #[test]
-    fn test_unpack_indices_single() {
-        assert_u32_unpack_indices(&[731]);
-    }
-
-    #[test]
-    fn test_unpack_indices_duplicates() {
-        assert_u32_unpack_indices(&[17, 17, 511, 17, 511]);
-    }
-
-    #[test]
-    fn test_unpack_indices_unordered() {
-        assert_u32_unpack_indices(&[1023, 0, 700, 17, 512, 511, 1]);
+    fn test_unpack_indices_preserves_order_and_duplicates() {
+        assert_u32_unpack_indices(&[1023, 0, 17, 17, 511, 17, 511]);
     }
 
     #[test]
@@ -472,13 +463,6 @@ mod test {
         // SAFETY: the zero-width packed representation contains no elements. The invalid index is
         // a documented panic condition, not a safety requirement.
         unsafe { BitPacking::unchecked_unpack_indices(0, &[], &[1024], &mut output) };
-    }
-
-    #[test]
-    #[should_panic(expected = "Width must be less than or equal to 32")]
-    fn test_unchecked_unpack_indices_rejects_invalid_width() {
-        // SAFETY: an invalid width is a documented panic condition, not a safety requirement.
-        unsafe { u32::unchecked_unpack_indices(33, &[], &[], &mut []) };
     }
 
     fn assert_bitpack_roundtrip<T>(tc: &TestCase)
