@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/spiraldb/fastlanes/compare/v0.7.0...v0.7.1) - 2026-09-01
+
+### Added
+
+- *(bitpacking)* Add batched index unpacking ([#190](https://github.com/spiraldb/fastlanes/pull/190))
+
+### Other
+
+- *(bitpacking)* more representative unpack_indices benchmarks ([#194](https://github.com/spiraldb/fastlanes/pull/194))
+
 ## [0.7.0](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.7.0) - 2026-08-26
 
 This release has the same contents as 0.6.2. Version 0.6.2 is yanked, because
