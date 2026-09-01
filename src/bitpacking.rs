@@ -234,9 +234,17 @@ macro_rules! impl_packing {
                     (LANES[index] as usize, ROWS[index] as usize)
                 };
 
+                // The table lookups above bound `lane < LANES` and `row < T`, and the `const`
+                // block bounds `B == LANES * W`. Every `packed` read below is therefore in-bounds
+                // by construction, so it is `get_unchecked` rather than a checked index whose
+                // bounds LLVM cannot prove away through the table loads.
+
                 if W == <$T>::T {
-                    // Special case for W==T, we can just read the value directly
-                    return packed[<$T>::LANES * row + lane];
+                    // Special case for W==T, we can just read the value directly.
+                    // SAFETY: `LANES * row + lane <= LANES * (T - 1) + LANES - 1 = 1024 - 1 < B`.
+                    let word = <$T>::LANES * row + lane;
+                    debug_assert!(word < B);
+                    return unsafe { *packed.get_unchecked(word) };
                 }
 
                 let mask: $T = (1 << (W % <$T>::T)) - 1;
@@ -245,13 +253,22 @@ macro_rules! impl_packing {
                 let lo_shift = start_bit % <$T>::T;
                 let remaining_bits = <$T>::T - lo_shift;
 
-                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                // SAFETY: `start_word = row * W / T <= (T - 1) * W / T < W`, so
+                // `LANES * start_word + lane < LANES * W == B`.
+                let lo_word = <$T>::LANES * start_word + lane;
+                debug_assert!(lo_word < B);
+                let lo = unsafe { *packed.get_unchecked(lo_word) } >> lo_shift;
                 return if remaining_bits >= W {
                     // in this case we will mask out all bits of hi word
                     lo & mask
                 } else {
                     // guaranteed that lo_shift > 0 and thus remaining_bits < T
-                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                    // SAFETY: the element straddles `start_word` and `start_word + 1`, so its last
+                    // bit `row * W + W - 1 <= T * W - 1` lies in word `start_word + 1 <= W - 1`,
+                    // hence `LANES * (start_word + 1) + lane < LANES * W == B`.
+                    let hi_word = <$T>::LANES * (start_word + 1) + lane;
+                    debug_assert!(hi_word < B);
+                    let hi = unsafe { *packed.get_unchecked(hi_word) } << remaining_bits;
                     (lo | hi) & mask
                 };
             }
