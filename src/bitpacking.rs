@@ -94,50 +94,6 @@ pub trait BitPacking: FastLanes {
 
 macro_rules! impl_packing {
     ($T:ty) => {
-        paste! {
-            #[inline(always)]
-            fn [<unpack_single_ $T>]<const W: usize, const B: usize>(
-                packed: &[$T; B],
-                index: usize,
-            ) -> $T {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / <$T>::T);
-                }
-
-                if W == 0 {
-                    return 0 as $T;
-                }
-
-                // Packing transposes each logical index into a FastLanes lane and row.
-                // Map the requested index back to those coordinates.
-                assert!(index < 1024, "Index must be less than 1024, got {}", index);
-                let (lane, row): (usize, usize) = {
-                    const LANES: [u8; 1024] = lanes_by_index::<$T>();
-                    const ROWS: [u8; 1024] = rows_by_index::<$T>();
-                    (LANES[index] as usize, ROWS[index] as usize)
-                };
-
-                if W == <$T>::T {
-                    return packed[<$T>::LANES * row + lane];
-                }
-
-                let mask: $T = (1 << (W % <$T>::T)) - 1;
-                let start_bit = row * W;
-                let start_word = start_bit / <$T>::T;
-                let lo_shift = start_bit % <$T>::T;
-                let remaining_bits = <$T>::T - lo_shift;
-
-                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
-                if remaining_bits >= W {
-                    lo & mask
-                } else {
-                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
-                    (lo | hi) & mask
-                }
-            }
-        }
-
         impl BitPacking for $T {
             #[inline(never)]
             fn pack<const W: usize, const B: usize>(
@@ -234,14 +190,47 @@ macro_rules! impl_packing {
             }
 
             /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
-            #[inline(never)]
+            #[inline]
             fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self
             {
-                paste! {
-                    [<unpack_single_ $T>]::<W, B>(packed, index)
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+
+                if W == 0 {
+                    return 0 as $T;
+                }
+
+                // Packing transposes each logical index into a FastLanes lane and row.
+                // Map the requested index back to those coordinates.
+                assert!(index < 1024, "Index must be less than 1024, got {}", index);
+                let (lane, row): (usize, usize) = {
+                    const LANES: [u8; 1024] = lanes_by_index::<$T>();
+                    const ROWS: [u8; 1024] = rows_by_index::<$T>();
+                    (LANES[index] as usize, ROWS[index] as usize)
+                };
+
+                if W == <$T>::T {
+                    return packed[<$T>::LANES * row + lane];
+                }
+
+                let mask: $T = (1 << (W % <$T>::T)) - 1;
+                let start_bit = row * W;
+                let start_word = start_bit / <$T>::T;
+                let lo_shift = start_bit % <$T>::T;
+                let remaining_bits = <$T>::T - lo_shift;
+
+                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                if remaining_bits >= W {
+                    lo & mask
+                } else {
+                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                    (lo | hi) & mask
                 }
             }
 
+            #[inline]
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
 
@@ -253,7 +242,7 @@ macro_rules! impl_packing {
                     match width {
                         #(W => {
                             const B: usize = 1024 * W / T;
-                            return [<unpack_single_ $T>]::<W, B>(
+                            return <$T>::unpack_single::<W, B>(
                                 unsafe { crate::as_array_unchecked(packed) },
                                 index,
                             );
@@ -262,7 +251,7 @@ macro_rules! impl_packing {
                         T => {
                             const W: usize = T;
                             const B: usize = 1024;
-                            return [<unpack_single_ $T>]::<W, B>(
+                            return <$T>::unpack_single::<W, B>(
                                 unsafe { crate::as_array_unchecked(packed) },
                                 index,
                             );
@@ -290,9 +279,7 @@ macro_rules! impl_packing {
                     return;
                 }
                 for (&index, value) in indices.iter().zip(output) {
-                    paste! {
-                        value.write([<unpack_single_ $T>]::<W, B>(packed, index));
-                    }
+                    value.write(<$T>::unpack_single::<W, B>(packed, index));
                 }
             }
 
