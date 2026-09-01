@@ -91,49 +91,21 @@ fn unpack_single_16_from_3(bencher: Bencher) {
     });
 }
 
-const MAX_BENCHMARK_INDICES: usize = 128;
+const MAX_BENCHMARK_INDICES: usize = 192;
 
-#[derive(Clone, Copy)]
-enum IndexDistribution {
-    Uniform,
-    Clustered,
-    UnorderedWithDuplicates,
-}
-
-fn benchmark_indices(
-    distribution: IndexDistribution,
-    num_indices: usize,
-) -> [usize; MAX_BENCHMARK_INDICES] {
+fn benchmark_indices(num_indices: usize) -> [usize; MAX_BENCHMARK_INDICES] {
     assert!(num_indices <= MAX_BENCHMARK_INDICES);
     let mut indices = [0; MAX_BENCHMARK_INDICES];
 
-    match distribution {
-        IndexDistribution::Uniform => {
-            for (position, index) in indices[..num_indices].iter_mut().enumerate() {
-                *index = position * 1024 / num_indices;
-            }
-        }
-        IndexDistribution::Clustered => {
-            for (position, index) in indices[..num_indices].iter_mut().enumerate() {
-                *index = 448 + position;
-            }
-        }
-        IndexDistribution::UnorderedWithDuplicates => {
-            for position in 0..num_indices {
-                indices[position] = if position > 0 && position % 4 == 0 {
-                    indices[position - 1]
-                } else {
-                    (position * 541 + 17) % 1024
-                };
-            }
-        }
+    for (position, index) in indices[..num_indices].iter_mut().enumerate() {
+        *index = position * 1024 / num_indices;
     }
 
     indices
 }
 
 macro_rules! unpack_indices_benchmarks {
-    ($module:ident, $type:ty, $width:expr, $distribution:expr) => {
+    ($module:ident, $type:ty, $width:expr, [$($num_indices:expr),+ $(,)?]) => {
         mod $module {
             use super::*;
 
@@ -148,14 +120,15 @@ macro_rules! unpack_indices_benchmarks {
                     std::array::from_fn(|index| ((index as $type).wrapping_mul(17)) & mask);
                 let mut packed = [0; PACKED_LENGTH];
                 BitPacking::pack::<WIDTH, PACKED_LENGTH>(&values, &mut packed);
-                let indices = benchmark_indices($distribution, num_indices);
+                let indices = benchmark_indices(num_indices);
                 (packed, indices)
             }
 
-            #[divan::bench(args = [1, 8, 32, 128], sample_size = 10_000)]
+            #[divan::bench(args = [$($num_indices),+], sample_size = 10_000)]
             fn batched(bencher: Bencher, num_indices: usize) {
                 let (packed, indices) = fixture(num_indices);
                 let mut output = [MaybeUninit::<$type>::uninit(); MAX_BENCHMARK_INDICES];
+                let width = black_box(WIDTH);
 
                 bencher.bench_local(|| {
                     let packed = black_box(&packed);
@@ -163,16 +136,17 @@ macro_rules! unpack_indices_benchmarks {
                     let output = black_box(&mut output[..num_indices]);
                     // SAFETY: `packed` contains exactly one packed FastLanes block.
                     unsafe {
-                        BitPacking::unchecked_unpack_indices(WIDTH, packed, indices, output);
+                        BitPacking::unchecked_unpack_indices(width, packed, indices, output);
                     }
                     black_box(&*output);
                 });
             }
 
-            #[divan::bench(args = [1, 8, 32, 128], sample_size = 10_000)]
+            #[divan::bench(args = [$($num_indices),+], sample_size = 10_000)]
             fn repeated_single(bencher: Bencher, num_indices: usize) {
                 let (packed, indices) = fixture(num_indices);
                 let mut output = [MaybeUninit::<$type>::uninit(); MAX_BENCHMARK_INDICES];
+                let width = black_box(WIDTH);
 
                 bencher.bench_local(|| {
                     let packed = black_box(&packed);
@@ -181,18 +155,19 @@ macro_rules! unpack_indices_benchmarks {
                     for (&index, value) in indices.iter().zip(output.iter_mut()) {
                         // SAFETY: `packed` contains exactly one packed FastLanes block.
                         value.write(unsafe {
-                            BitPacking::unchecked_unpack_single(WIDTH, packed, index)
+                            BitPacking::unchecked_unpack_single(width, packed, index)
                         });
                     }
                     black_box(&*output);
                 });
             }
 
-            #[divan::bench(args = [1, 8, 32, 128], sample_size = 10_000)]
+            #[divan::bench(args = [$($num_indices),+], sample_size = 10_000)]
             fn full_unpack_then_gather(bencher: Bencher, num_indices: usize) {
                 let (packed, indices) = fixture(num_indices);
                 let mut unpacked = [0; 1024];
                 let mut output = [MaybeUninit::<$type>::uninit(); MAX_BENCHMARK_INDICES];
+                let width = black_box(WIDTH);
 
                 bencher.bench_local(|| {
                     let packed = black_box(&packed);
@@ -200,7 +175,7 @@ macro_rules! unpack_indices_benchmarks {
                     let unpacked = black_box(&mut unpacked);
                     let output = black_box(&mut output[..num_indices]);
                     // SAFETY: both buffers have the required lengths for `WIDTH`.
-                    unsafe { BitPacking::unchecked_unpack(WIDTH, packed, unpacked) };
+                    unsafe { BitPacking::unchecked_unpack(width, packed, unpacked) };
                     for (&index, value) in indices.iter().zip(output.iter_mut()) {
                         value.write(unpacked[index]);
                     }
@@ -211,24 +186,10 @@ macro_rules! unpack_indices_benchmarks {
     };
 }
 
-unpack_indices_benchmarks!(
-    unpack_indices_u16_width3_uniform,
-    u16,
-    3,
-    IndexDistribution::Uniform
-);
-unpack_indices_benchmarks!(
-    unpack_indices_u32_width16_clustered,
-    u32,
-    16,
-    IndexDistribution::Clustered
-);
-unpack_indices_benchmarks!(
-    unpack_indices_u64_width63_unordered_duplicates,
-    u64,
-    63,
-    IndexDistribution::UnorderedWithDuplicates
-);
+unpack_indices_benchmarks!(unpack_indices_u8_width7, u8, 7, [1, 8, 16, 24]);
+unpack_indices_benchmarks!(unpack_indices_u16_width3, u16, 3, [1, 8, 32, 48]);
+unpack_indices_benchmarks!(unpack_indices_u32_width16, u32, 16, [1, 8, 64, 80]);
+unpack_indices_benchmarks!(unpack_indices_u64_width63, u64, 63, [1, 8, 160, 192]);
 
 #[divan::bench(sample_count = 10000)]
 fn throughput_compress(bencher: Bencher) {

@@ -153,6 +153,7 @@ macro_rules! impl_packing {
                     assert!(B == 1024 * W / Self::T);
                 }
 
+
                 for lane in 0..Self::LANES {
                     unpack!($T, W, input, lane, |$idx, $elem| {
                         output[$idx] = $elem
@@ -199,11 +200,21 @@ macro_rules! impl_packing {
                 }
 
                 if W == 0 {
+                    // Special case for W=0, we just need to zero the output.
                     return 0 as $T;
                 }
 
-                // Packing transposes each logical index into a FastLanes lane and row.
-                // Map the requested index back to those coordinates.
+                // We can think of the input array as effectively a row-major, left-to-right
+                // 2-D array of with `Self::LANES` columns and `Self::T` rows.
+                //
+                // Meanwhile, we can think of the packed array as either:
+                //      1. `Self::T` rows of W-bit elements, with `Self::LANES` columns
+                //      2. `W` rows of `Self::T`-bit words, with `Self::LANES` columns
+                //
+                // Bitpacking involves a transposition of the input array ordering, such that
+                // decompression can be fused efficiently with encodings like delta and RLE.
+                //
+                // First step, we need to get the lane and row for interpretation #1 above.
                 assert!(index < 1024, "Index must be less than 1024, got {}", index);
                 let (lane, row): (usize, usize) = {
                     const LANES: [u8; 1024] = lanes_by_index::<$T>();
@@ -212,6 +223,7 @@ macro_rules! impl_packing {
                 };
 
                 if W == <$T>::T {
+                    // Special case for W==T, we can just read the value directly
                     return packed[<$T>::LANES * row + lane];
                 }
 
@@ -222,12 +234,14 @@ macro_rules! impl_packing {
                 let remaining_bits = <$T>::T - lo_shift;
 
                 let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
-                if remaining_bits >= W {
+                return if remaining_bits >= W {
+                    // in this case we will mask out all bits of hi word
                     lo & mask
                 } else {
+                    // guaranteed that lo_shift > 0 and thus remaining_bits < T
                     let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
                     (lo | hi) & mask
-                }
+                };
             }
 
             #[inline]
@@ -386,12 +400,21 @@ mod test {
         }
     }
 
+    fn initialized_output<T: Integer>(expected: &[T]) -> Vec<MaybeUninit<T>> {
+        expected
+            .iter()
+            .map(|&value| {
+                let initial = if value == T::MIN { T::MAX } else { T::MIN };
+                MaybeUninit::new(initial)
+            })
+            .collect()
+    }
+
     fn assume_initialized<T: Copy>(output: &[MaybeUninit<T>]) -> Vec<T> {
         output
             .iter()
             .map(|value| {
-                // SAFETY: callers use this helper only after an unpack method initializes every
-                // output element.
+                // SAFETY: every caller initializes each element before the unpack method.
                 unsafe { value.assume_init() }
             })
             .collect()
@@ -409,11 +432,11 @@ mod test {
             .map(|&index| values[index])
             .collect::<Vec<_>>();
 
-        let mut output = vec![MaybeUninit::uninit(); indices.len()];
+        let mut output = initialized_output(&expected);
         BitPacking::unpack_indices::<WIDTH, PACKED_LENGTH>(&packed, indices, &mut output);
         assert_eq!(assume_initialized(&output), expected);
 
-        let mut output = vec![MaybeUninit::uninit(); indices.len()];
+        let mut output = initialized_output(&expected);
         // SAFETY: `packed` contains exactly one packed FastLanes block.
         unsafe {
             BitPacking::unchecked_unpack_indices(WIDTH, &packed, indices, &mut output);
@@ -457,11 +480,11 @@ mod test {
     #[test]
     fn test_unpack_indices_zero_width_ignores_indices() {
         let indices = [usize::MAX];
-        let mut output = [MaybeUninit::<u32>::uninit()];
+        let mut output = [MaybeUninit::new(1_u32)];
         BitPacking::unpack_indices::<0, 0>(&[], &indices, &mut output);
         assert_eq!(assume_initialized(&output), [0]);
 
-        let mut output = [MaybeUninit::<u32>::uninit()];
+        let mut output = [MaybeUninit::new(1_u32)];
         // SAFETY: the zero-width packed representation contains no elements.
         unsafe { BitPacking::unchecked_unpack_indices(0, &[], &indices, &mut output) };
         assert_eq!(assume_initialized(&output), [0]);
@@ -593,7 +616,7 @@ mod test {
                 .iter()
                 .map(|&index| unpacked[index])
                 .collect::<Vec<_>>();
-            let mut output = vec![MaybeUninit::uninit(); indices.len()];
+            let mut output = initialized_output(&expected);
 
             // SAFETY: `packed_input` contains exactly one packed FastLanes block.
             unsafe {
