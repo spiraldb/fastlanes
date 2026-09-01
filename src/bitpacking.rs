@@ -20,9 +20,12 @@ pub trait BitPacking: FastLanes {
     /// - The input slice must be of exactly length 1024.
     /// - The output slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks 1024 elements from `W` bits each.
@@ -36,12 +39,19 @@ pub trait BitPacking: FastLanes {
     /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
     /// - The output slice must be of exactly length 1024.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `W` is not zero and `index` is not less than 1024.
     fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self;
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
@@ -51,9 +61,13 @@ pub trait BitPacking: FastLanes {
     ///
     /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
-    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    /// This length is checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self` or, when `width` is
+    /// not zero, `index` is not less than 1024.
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
 
     /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
@@ -76,14 +90,13 @@ pub trait BitPacking: FastLanes {
     ///
     /// - The input slice must contain exactly `1024 * W / T` elements, where `T` is the unpacked bit
     ///   width of `Self` and `W` is `width`.
-    /// - The `width` must be less than or equal to the unpacked bit width of `Self`.
     ///
-    /// These conditions are checked only with `debug_assert`.
+    /// This length is checked only with `debug_assert` (i.e., not checked on release builds).
     ///
     /// # Panics
     ///
-    /// Panics if the output length differs from the index length or, when `width` is not zero, an
-    /// index is not less than 1024.
+    /// Panics if `width` is greater than the unpacked bit width of `Self`, if the output length
+    /// differs from the index length or, when `width` is not zero, an index is not less than 1024.
     unsafe fn unchecked_unpack_indices(
         width: usize,
         input: &[Self],
@@ -114,10 +127,9 @@ macro_rules! impl_packing {
             }
 
             unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(output.len(), packed_len, "Output buffer must be of size 1024 * W / T");
-                debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
+                debug_assert!(input.len() == 1024);
+                debug_assert!(output.len() == 128 * width / size_of::<Self>());
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -162,10 +174,9 @@ macro_rules! impl_packing {
             }
 
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
-                debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
+                debug_assert!(input.len() == 128 * width / size_of::<Self>());
+                debug_assert!(output.len() == 1024);
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -215,7 +226,8 @@ macro_rules! impl_packing {
                 // decompression can be fused efficiently with encodings like delta and RLE.
                 //
                 // First step, we need to get the lane and row for interpretation #1 above.
-                assert!(index < 1024, "Index must be less than 1024, got {}", index);
+                // Indexing the 1024-entry tables is the `index < 1024` bounds check; a separate
+                // assert would only add a second panic path that captures `index` for formatting.
                 let (lane, row): (usize, usize) = {
                     const LANES: [u8; 1024] = lanes_by_index::<$T>();
                     const ROWS: [u8; 1024] = rows_by_index::<$T>();
@@ -248,9 +260,8 @@ macro_rules! impl_packing {
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
 
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                // `width > T` falls through to the `unreachable!` arm below in every build.
+                debug_assert!(packed.len() == 128 * width / size_of::<Self>());
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -285,7 +296,7 @@ macro_rules! impl_packing {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                assert_eq!(indices.len(), output.len(), "Output length must equal index length");
+                assert!(indices.len() == output.len(), "Output length must equal index length");
                 if W == 0 {
                     for value in output {
                         value.write(0 as Self);
@@ -304,12 +315,8 @@ macro_rules! impl_packing {
                 output: &mut [MaybeUninit<Self>],
             ) {
                 const T: usize = <$T>::T;
-                debug_assert!(width <= T, "Width must be less than or equal to {}", T);
-                #[cfg(debug_assertions)]
-                {
-                    let packed_len = 128 * width / size_of::<Self>();
-                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
-                }
+                // `width > T` falls through to the `unreachable!` arm below in every build.
+                debug_assert!(packed.len() == 128 * width / size_of::<Self>());
 
                 paste!(seq_t!(W in $T {
                     match width {

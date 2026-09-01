@@ -40,6 +40,9 @@ pub trait BitPackingCompare: FastLanes {
     /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
     /// is the packed width. The output is exactly `[u64; 16]` (`1024` bits).
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    /// Panics if `width` is greater than the bit-width of `Self`.
     unsafe fn unchecked_unpack_cmp<V, F>(
         width: usize,
         input: &[Self],
@@ -111,9 +114,8 @@ macro_rules! impl_packing_compare {
                 V: FastLanesComparable<Bitpacked = Self>,
                 F: Fn(V, V) -> bool
             {
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
+                debug_assert!(input.len() == 128 * width / size_of::<Self>());
 
                 paste!(seq_t!(W in $T {
                     match width {
