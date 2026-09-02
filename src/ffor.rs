@@ -22,6 +22,9 @@ pub trait FoR: BitPacking {
     /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
     /// is the packed width. The output slice must be of exactly length 1024.
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    /// Panics if `width` is greater than the bit-width of `Self`.
     unsafe fn unchecked_unfor_pack(
         width: usize,
         input: &[Self],

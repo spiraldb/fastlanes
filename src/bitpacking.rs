@@ -20,9 +20,12 @@ pub trait BitPacking: FastLanes {
     /// - The input slice must be of exactly length 1024.
     /// - The output slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks 1024 elements from `W` bits each.
@@ -36,12 +39,19 @@ pub trait BitPacking: FastLanes {
     /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
     /// - The output slice must be of exactly length 1024.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `W` is not zero and `index` is not less than 1024.
     fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self;
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
@@ -51,9 +61,13 @@ pub trait BitPacking: FastLanes {
     ///
     /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
-    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    /// This length is checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self` or, when `width` is
+    /// not zero, `index` is not less than 1024.
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
 
     /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
@@ -76,14 +90,13 @@ pub trait BitPacking: FastLanes {
     ///
     /// - The input slice must contain exactly `1024 * W / T` elements, where `T` is the unpacked bit
     ///   width of `Self` and `W` is `width`.
-    /// - The `width` must be less than or equal to the unpacked bit width of `Self`.
     ///
-    /// These conditions are checked only with `debug_assert`.
+    /// This length is checked only with `debug_assert` (i.e., not checked on release builds).
     ///
     /// # Panics
     ///
-    /// Panics if the output length differs from the index length or, when `width` is not zero, an
-    /// index is not less than 1024.
+    /// Panics if `width` is greater than the unpacked bit width of `Self`, if the output length
+    /// differs from the index length or, when `width` is not zero, an index is not less than 1024.
     unsafe fn unchecked_unpack_indices(
         width: usize,
         input: &[Self],
@@ -215,16 +228,25 @@ macro_rules! impl_packing {
                 // decompression can be fused efficiently with encodings like delta and RLE.
                 //
                 // First step, we need to get the lane and row for interpretation #1 above.
-                assert!(index < 1024, "Index must be less than 1024, got {}", index);
+                // Indexing the 1024-entry tables is the `index < 1024` bounds check; a separate
+                // assert would only add a second panic path that captures `index` for formatting.
                 let (lane, row): (usize, usize) = {
                     const LANES: [u8; 1024] = lanes_by_index::<$T>();
                     const ROWS: [u8; 1024] = rows_by_index::<$T>();
                     (LANES[index] as usize, ROWS[index] as usize)
                 };
 
+                // The table lookups above bound `lane < LANES` and `row < T`, and the `const`
+                // block bounds `B == LANES * W`. Every `packed` read below is therefore in-bounds
+                // by construction, so it is `get_unchecked` rather than a checked index whose
+                // bounds LLVM cannot prove away through the table loads.
+
                 if W == <$T>::T {
-                    // Special case for W==T, we can just read the value directly
-                    return packed[<$T>::LANES * row + lane];
+                    // Special case for W==T, we can just read the value directly.
+                    // SAFETY: `LANES * row + lane <= LANES * (T - 1) + LANES - 1 = 1024 - 1 < B`.
+                    let word = <$T>::LANES * row + lane;
+                    debug_assert!(word < B);
+                    return unsafe { *packed.get_unchecked(word) };
                 }
 
                 let mask: $T = (1 << (W % <$T>::T)) - 1;
@@ -233,13 +255,22 @@ macro_rules! impl_packing {
                 let lo_shift = start_bit % <$T>::T;
                 let remaining_bits = <$T>::T - lo_shift;
 
-                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                // SAFETY: `start_word = row * W / T <= (T - 1) * W / T < W`, so
+                // `LANES * start_word + lane < LANES * W == B`.
+                let lo_word = <$T>::LANES * start_word + lane;
+                debug_assert!(lo_word < B);
+                let lo = unsafe { *packed.get_unchecked(lo_word) } >> lo_shift;
                 return if remaining_bits >= W {
                     // in this case we will mask out all bits of hi word
                     lo & mask
                 } else {
                     // guaranteed that lo_shift > 0 and thus remaining_bits < T
-                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                    // SAFETY: the element straddles `start_word` and `start_word + 1`, so its last
+                    // bit `row * W + W - 1 <= T * W - 1` lies in word `start_word + 1 <= W - 1`,
+                    // hence `LANES * (start_word + 1) + lane < LANES * W == B`.
+                    let hi_word = <$T>::LANES * (start_word + 1) + lane;
+                    debug_assert!(hi_word < B);
+                    let hi = unsafe { *packed.get_unchecked(hi_word) } << remaining_bits;
                     (lo | hi) & mask
                 };
             }
@@ -285,7 +316,7 @@ macro_rules! impl_packing {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                assert_eq!(indices.len(), output.len(), "Output length must equal index length");
+                assert!(indices.len() == output.len(), "Output length must equal index length");
                 if W == 0 {
                     for value in output {
                         value.write(0 as Self);

@@ -40,6 +40,9 @@ pub trait BitPackingCompare: FastLanes {
     /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
     /// is the packed width. The output is exactly `[u64; 16]` (`1024` bits).
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    /// Panics if `width` is greater than the bit-width of `Self`.
     unsafe fn unchecked_unpack_cmp<V, F>(
         width: usize,
         input: &[Self],
