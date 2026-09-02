@@ -127,9 +127,10 @@ macro_rules! impl_packing {
             }
 
             unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
-                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
-                debug_assert!(input.len() == 1024);
-                debug_assert!(output.len() == 128 * width / size_of::<Self>());
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(output.len(), packed_len, "Output buffer must be of size 1024 * W / T");
+                debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -174,9 +175,10 @@ macro_rules! impl_packing {
             }
 
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
-                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
-                debug_assert!(input.len() == 128 * width / size_of::<Self>());
-                debug_assert!(output.len() == 1024);
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -277,8 +279,9 @@ macro_rules! impl_packing {
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
 
-                // `width > T` falls through to the `unreachable!` arm below in every build.
-                debug_assert!(packed.len() == 128 * width / size_of::<Self>());
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
                 paste!(seq_t!(W in $T {
                     match width {
@@ -332,8 +335,12 @@ macro_rules! impl_packing {
                 output: &mut [MaybeUninit<Self>],
             ) {
                 const T: usize = <$T>::T;
-                // `width > T` falls through to the `unreachable!` arm below in every build.
-                debug_assert!(packed.len() == 128 * width / size_of::<Self>());
+                debug_assert!(width <= T, "Width must be less than or equal to {}", T);
+                #[cfg(debug_assertions)]
+                {
+                    let packed_len = 128 * width / size_of::<Self>();
+                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                }
 
                 paste!(seq_t!(W in $T {
                     match width {

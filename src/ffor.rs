@@ -72,9 +72,10 @@ macro_rules! impl_for {
             }
 
            unsafe fn unchecked_unfor_pack(width: usize, input: &[Self], reference: Self, output: &mut [Self]) {
-                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
-                debug_assert!(input.len() == 128 * width / size_of::<Self>());
-                debug_assert!(output.len() == 1024);
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
                 paste!(seq_t!(W in $T {
                     match width {

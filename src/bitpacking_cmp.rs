@@ -114,8 +114,9 @@ macro_rules! impl_packing_compare {
                 V: FastLanesComparable<Bitpacked = Self>,
                 F: Fn(V, V) -> bool
             {
-                // `width > Self::T` falls through to the `unreachable!` arm below in every build.
-                debug_assert!(input.len() == 128 * width / size_of::<Self>());
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
                 paste!(seq_t!(W in $T {
                     match width {
