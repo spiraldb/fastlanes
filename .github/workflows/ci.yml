@@ -33,6 +33,85 @@ jobs:
             cargo test --workspace --all-features
             cargo test --workspace
 
+  # Architecture-specific test jobs. These only start once the default `build`
+  # job (baseline x86-64 target features) has passed, and each one compiles the
+  # crate with the given target features enabled so the compile-time dispatch
+  # paths are exercised on hardware that actually supports them. The `runtime`
+  # feature (via `--all-features`) additionally exercises runtime dispatch.
+  test-x86-64-avx2:
+    name: Test (x86-64 AVX2)
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+avx2,+bmi2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
+      - name: Check CPU features
+        run: grep -qw avx2 /proc/cpuinfo && grep -qw bmi2 /proc/cpuinfo
+      - name: Rust Test
+        run: |
+            cargo test --workspace --all-features
+            cargo test --workspace
+
+  test-x86-64-avx512:
+    name: Test (x86-64 AVX-512)
+    needs: build
+    # GitHub-hosted runners do not guarantee AVX-512, so use an Ice Lake instance.
+    runs-on:
+      - runs-on=${{ github.run_id }}
+      - family=c6id.2xlarge
+      - image=ubuntu24-full-x64
+      - tag=test-avx512
+    env:
+      RUSTFLAGS: "-C target-feature=+avx2,+bmi2,+avx512f,+avx512bw,+avx512vbmi"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
+      - name: Check CPU features
+        run: grep -qw avx512f /proc/cpuinfo && grep -qw avx512bw /proc/cpuinfo && grep -qw avx512vbmi /proc/cpuinfo
+      - name: Rust Test
+        run: |
+            cargo test --workspace --all-features
+            cargo test --workspace
+
+  test-aarch64-neon:
+    name: Test (aarch64 NEON)
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    env:
+      RUSTFLAGS: "-C target-feature=+neon"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
+      - name: Check CPU features
+        run: grep -qw asimd /proc/cpuinfo
+      - name: Rust Test
+        run: |
+            cargo test --workspace --all-features
+            cargo test --workspace
+
+  test-aarch64-sve:
+    name: Test (aarch64 SVE)
+    needs: build
+    # GitHub-hosted arm64 runners (Cobalt 100) do not expose SVE, so use Graviton3.
+    runs-on:
+      - runs-on=${{ github.run_id }}
+      - family=c7g.2xlarge
+      - image=ubuntu24-full-arm64
+      - tag=test-sve
+    env:
+      RUSTFLAGS: "-C target-feature=+neon,+sve"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
+      - name: Check CPU features
+        run: grep -qw sve /proc/cpuinfo
+      - name: Rust Test
+        run: |
+            cargo test --workspace --all-features
+            cargo test --workspace
+
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
