@@ -40,7 +40,8 @@ jobs:
   # least to most capable. Each level recompiles the crate with those target
   # features enabled so the compile-time dispatch paths are exercised; the
   # `runtime` feature (via `--all-features`) additionally exercises runtime
-  # dispatch. Runner spec is kept loose (any family/size in range) so that
+  # dispatch. Tests run both in debug (overflow checks) and release, since only
+  # optimised builds autovectorise into the wider SIMD instruction sets. Runner spec is kept loose (any family/size in range) so that
   # spot capacity is easy to find.
   test-x86-64:
     name: Test (x86-64)
@@ -67,6 +68,8 @@ jobs:
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
+            cargo test --release --workspace --all-features
+            cargo test --release --workspace
 
       - name: Rust Test - AVX-512
         env:
@@ -74,6 +77,8 @@ jobs:
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
+            cargo test --release --workspace --all-features
+            cargo test --release --workspace
 
   test-aarch64:
     name: Test (aarch64)
@@ -99,6 +104,8 @@ jobs:
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
+            cargo test --release --workspace --all-features
+            cargo test --release --workspace
 
       - name: Rust Test - SVE
         env:
@@ -106,6 +113,8 @@ jobs:
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
+            cargo test --release --workspace --all-features
+            cargo test --release --workspace
 
   msrv:
     name: MSRV
