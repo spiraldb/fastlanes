@@ -41,7 +41,12 @@ jobs:
   test-x86-64-avx2:
     name: Test (x86-64 AVX2)
     needs: build
-    runs-on: ubuntu-latest
+    # AMD Zen 3: AVX2 without AVX-512, so runtime dispatch also takes the AVX2 path.
+    runs-on:
+      - runs-on=${{ github.run_id }}
+      - family=c6a.2xlarge
+      - image=ubuntu24-full-x64
+      - tag=test-avx2
     env:
       RUSTFLAGS: "-C target-feature=+avx2,+bmi2"
     steps:
@@ -57,7 +62,7 @@ jobs:
   test-x86-64-avx512:
     name: Test (x86-64 AVX-512)
     needs: build
-    # GitHub-hosted runners do not guarantee AVX-512, so use an Ice Lake instance.
+    # Ice Lake: AVX2 and AVX-512 (F, BW, VBMI).
     runs-on:
       - runs-on=${{ github.run_id }}
       - family=c6id.2xlarge
@@ -78,7 +83,12 @@ jobs:
   test-aarch64-neon:
     name: Test (aarch64 NEON)
     needs: build
-    runs-on: ubuntu-24.04-arm
+    # Graviton2: NEON without SVE.
+    runs-on:
+      - runs-on=${{ github.run_id }}
+      - family=c6g.2xlarge
+      - image=ubuntu24-full-arm64
+      - tag=test-neon
     env:
       RUSTFLAGS: "-C target-feature=+neon"
     steps:
@@ -94,7 +104,7 @@ jobs:
   test-aarch64-sve:
     name: Test (aarch64 SVE)
     needs: build
-    # GitHub-hosted arm64 runners (Cobalt 100) do not expose SVE, so use Graviton3.
+    # Graviton3: NEON and SVE.
     runs-on:
       - runs-on=${{ github.run_id }}
       - family=c7g.2xlarge
