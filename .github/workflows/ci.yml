@@ -33,91 +33,76 @@ jobs:
             cargo test --workspace --all-features
             cargo test --workspace
 
-  # Architecture-specific test jobs. These only start once the default `build`
-  # job (baseline x86-64 target features) has passed, and each one compiles the
-  # crate with the given target features enabled so the compile-time dispatch
-  # paths are exercised on hardware that actually supports them. The `runtime`
-  # feature (via `--all-features`) additionally exercises runtime dispatch.
-  test-x86-64-avx2:
-    name: Test (x86-64 AVX2)
+  # Architecture-specific test jobs. They only start once the default `build`
+  # job (baseline target features) has passed. Each job runs on a current
+  # generation runs-on spot instance whose CPU supports every feature level for
+  # that architecture, and runs the feature levels one after the other, from
+  # least to most capable. Each level recompiles the crate with those target
+  # features enabled so the compile-time dispatch paths are exercised; the
+  # `runtime` feature (via `--all-features`) additionally exercises runtime
+  # dispatch. Runner spec is kept loose (any family/size in range) so that
+  # spot capacity is easy to find.
+  test-x86-64:
+    name: Test (x86-64)
     needs: build
-    # AMD Zen 3: AVX2 without AVX-512, so runtime dispatch also takes the AVX2 path.
-    runs-on:
-      - runs-on=${{ github.run_id }}
-      - family=c6a.2xlarge
-      - image=ubuntu24-full-x64
-      - tag=test-avx2
-    env:
-      RUSTFLAGS: "-C target-feature=+avx2,+bmi2"
+    # Sapphire/Granite Rapids (c7i/c8i) and Zen 4/5 (c7a/c8a) all support
+    # AVX2, BMI2 and AVX-512 F/BW/VBMI.
+    runs-on: runs-on=${{ github.run_id }}/cpu=4+16/family=c7i+c7a+m7i+m7a+r7i+r7a+c8i+c8a+m8i+m8a/image=ubuntu24-full-x64/spot=true/tag=test-x86-64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/setup-rust
+
+      - name: Show CPU
+        run: lscpu
+
       - name: Check CPU features
-        run: grep -qw avx2 /proc/cpuinfo && grep -qw bmi2 /proc/cpuinfo
-      - name: Rust Test
+        run: |
+          for f in avx2 bmi2 avx512f avx512bw avx512vbmi; do
+            grep -qw "$f" /proc/cpuinfo || { echo "CPU is missing $f"; exit 1; }
+          done
+
+      - name: Rust Test - AVX2
+        env:
+          RUSTFLAGS: "-C target-feature=+avx2,+bmi2"
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
 
-  test-x86-64-avx512:
-    name: Test (x86-64 AVX-512)
-    needs: build
-    # Ice Lake: AVX2 and AVX-512 (F, BW, VBMI).
-    runs-on:
-      - runs-on=${{ github.run_id }}
-      - family=c6id.2xlarge
-      - image=ubuntu24-full-x64
-      - tag=test-avx512
-    env:
-      RUSTFLAGS: "-C target-feature=+avx2,+bmi2,+avx512f,+avx512bw,+avx512vbmi"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/setup-rust
-      - name: Check CPU features
-        run: grep -qw avx512f /proc/cpuinfo && grep -qw avx512bw /proc/cpuinfo && grep -qw avx512vbmi /proc/cpuinfo
-      - name: Rust Test
+      - name: Rust Test - AVX-512
+        env:
+          RUSTFLAGS: "-C target-feature=+avx2,+bmi2,+avx512f,+avx512bw,+avx512vbmi"
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
 
-  test-aarch64-neon:
-    name: Test (aarch64 NEON)
+  test-aarch64:
+    name: Test (aarch64)
     needs: build
-    # Graviton2: NEON without SVE.
-    runs-on:
-      - runs-on=${{ github.run_id }}
-      - family=c6g.2xlarge
-      - image=ubuntu24-full-arm64
-      - tag=test-neon
-    env:
-      RUSTFLAGS: "-C target-feature=+neon"
+    # Graviton3 (c7g) and Graviton4 (c8g) both support NEON and SVE.
+    runs-on: runs-on=${{ github.run_id }}/cpu=4+16/family=c7g+m7g+r7g+c8g+m8g+r8g/image=ubuntu24-full-arm64/spot=true/tag=test-aarch64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/setup-rust
+
+      - name: Show CPU
+        run: lscpu
+
       - name: Check CPU features
-        run: grep -qw asimd /proc/cpuinfo
-      - name: Rust Test
+        run: |
+          for f in asimd sve; do
+            grep -qw "$f" /proc/cpuinfo || { echo "CPU is missing $f"; exit 1; }
+          done
+
+      - name: Rust Test - NEON
+        env:
+          RUSTFLAGS: "-C target-feature=+neon"
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
 
-  test-aarch64-sve:
-    name: Test (aarch64 SVE)
-    needs: build
-    # Graviton3: NEON and SVE.
-    runs-on:
-      - runs-on=${{ github.run_id }}
-      - family=c7g.2xlarge
-      - image=ubuntu24-full-arm64
-      - tag=test-sve
-    env:
-      RUSTFLAGS: "-C target-feature=+neon,+sve"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/setup-rust
-      - name: Check CPU features
-        run: grep -qw sve /proc/cpuinfo
-      - name: Rust Test
+      - name: Rust Test - SVE
+        env:
+          RUSTFLAGS: "-C target-feature=+neon,+sve"
         run: |
             cargo test --workspace --all-features
             cargo test --workspace
