@@ -16,7 +16,9 @@ fn rle_encode_u32(bencher: Bencher) {
     let mut rle_idxs = [0u16; 1024];
 
     bencher.bench_local(|| {
-        let unique_count = u32::encode(black_box(&input), &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count =
+            unsafe { u32::encode_unchecked(black_box(&input), &mut rle_vals, &mut rle_idxs) };
         black_box(unique_count);
     });
 }
@@ -26,16 +28,20 @@ fn rle_decode_u32(bencher: Bencher) {
     let input: [u32; 1024] = std::array::from_fn(|i| (i / 100 + 1) as u32);
     let mut rle_vals = [0u32; 1024];
     let mut rle_idxs = [0u16; 1024];
-    let unique_count = u32::encode(&input, &mut rle_vals, &mut rle_idxs);
+    // SAFETY: all arguments are 1024-element arrays.
+    let unique_count = unsafe { u32::encode_unchecked(&input, &mut rle_vals, &mut rle_idxs) };
 
     let mut output = [0u32; 1024];
 
     bencher.bench_local(|| {
-        u32::decode(
-            black_box(&rle_vals[..unique_count]),
-            black_box(&rle_idxs),
-            &mut output,
-        );
+        // SAFETY: `encode_unchecked` only writes indices below the returned `unique_count`.
+        unsafe {
+            u32::decode_unchecked(
+                black_box(&rle_vals[..unique_count]),
+                black_box(&rle_idxs),
+                &mut output,
+            );
+        }
         black_box(&output);
     });
 }
@@ -54,7 +60,10 @@ fn rle_throughput_encode_32(bencher: Bencher) {
             let batch_start = batch * 1024;
             let input_batch = array_ref![input_data, batch_start, 1024];
 
-            let unique_count = u32::encode(black_box(input_batch), &mut rle_vals, &mut rle_idxs);
+            // SAFETY: all arguments are 1024-element arrays.
+            let unique_count = unsafe {
+                u32::encode_unchecked(black_box(input_batch), &mut rle_vals, &mut rle_idxs)
+            };
             black_box(unique_count);
         }
     });
@@ -75,18 +84,23 @@ fn rle_throughput_decode_32(bencher: Bencher) {
 
         let mut rle_vals = [0u32; 1024];
         let mut rle_idxs = [0u16; 1024];
-        let unique_count = u32::encode(&input_batch, &mut rle_vals, &mut rle_idxs);
+        // SAFETY: all arguments are 1024-element arrays.
+        let unique_count =
+            unsafe { u32::encode_unchecked(&input_batch, &mut rle_vals, &mut rle_idxs) };
         encoded_batches.push((rle_vals, rle_idxs, unique_count));
     }
 
     with_counter!(bencher, input_data.len() * std::mem::size_of::<u32>()).bench_local(|| {
         let mut output = [0u32; 1024];
         for (rle_vals, rle_idxs, unique_count) in &encoded_batches {
-            u32::decode(
-                black_box(&rle_vals[..*unique_count]),
-                black_box(rle_idxs),
-                &mut output,
-            );
+            // SAFETY: `encode_unchecked` only writes indices below the returned `unique_count`.
+            unsafe {
+                u32::decode_unchecked(
+                    black_box(&rle_vals[..*unique_count]),
+                    black_box(rle_idxs),
+                    &mut output,
+                );
+            }
             black_box(&output);
         }
     });

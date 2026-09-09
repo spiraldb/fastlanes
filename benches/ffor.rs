@@ -39,7 +39,7 @@ fn for_pack_16_to_3_stack(bencher: Bencher) {
 
     bencher.bench_local(|| {
         FoR::for_pack::<WIDTH, B>(black_box(&values), reference, &mut packed);
-        black_box(packed);
+        black_box(&packed);
     });
 }
 
@@ -55,8 +55,8 @@ fn unfor_pack_16_from_3_stack(bencher: Bencher) {
     let mut unpacked = [0u16; 1024];
 
     bencher.bench_local(|| {
-        FoR::unfor_pack::<WIDTH, B>(&black_box(packed), reference, &mut unpacked);
-        black_box(unpacked);
+        FoR::unfor_pack::<WIDTH, B>(black_box(&packed), reference, &mut unpacked);
+        black_box(&unpacked);
     });
 }
 
@@ -72,8 +72,8 @@ fn unchecked_unfor_pack_16_from_3_stack(bencher: Bencher) {
     let mut unpacked = [0u16; 1024];
 
     bencher.bench_local(|| {
-        unsafe { FoR::unchecked_unfor_pack(WIDTH, &black_box(packed), reference, &mut unpacked) };
-        black_box(unpacked);
+        unsafe { FoR::unchecked_unfor_pack(WIDTH, black_box(&packed), reference, &mut unpacked) };
+        black_box(&unpacked);
     });
 }
 
@@ -187,12 +187,12 @@ fn unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
 
     bencher.bench_local(|| {
         // First, unpack using bitpacking kernel
-        BitPacking::unpack::<WIDTH, B>(&black_box(packed), &mut unpacked);
+        BitPacking::unpack::<WIDTH, B>(black_box(&packed), &mut unpacked);
         // Then, apply reference values in a separate loop
         for i in 0..1024 {
             unpacked[i] = unpacked[i].wrapping_add(reference);
         }
-        black_box(unpacked);
+        black_box(&unpacked);
     });
 }
 
@@ -209,12 +209,12 @@ fn unchecked_unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
 
     bencher.bench_local(|| {
         // First, unpack using unchecked bitpacking kernel
-        unsafe { BitPacking::unchecked_unpack(WIDTH, &black_box(packed), &mut unpacked) };
+        unsafe { BitPacking::unchecked_unpack(WIDTH, black_box(&packed), &mut unpacked) };
         // Then, apply reference values in a separate loop
         for i in 0..1024 {
             unpacked[i] = unpacked[i].wrapping_add(reference);
         }
-        black_box(unpacked);
+        black_box(&unpacked);
     });
 }
 

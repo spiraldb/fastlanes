@@ -1,5 +1,4 @@
 # Changelog
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -7,29 +6,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.2](https://github.com/spiraldb/fastlanes/compare/v0.2.1...v0.2.2) - 2025-09-15
+## [0.7.2](https://github.com/spiraldb/fastlanes/compare/v0.7.1...v0.7.2) - 2026-09-02
 
 ### Other
 
-- use `get_unchecked` for index accesses in rle ([#76](https://github.com/spiraldb/fastlanes/pull/76))
-- improve fls-rle comments ([#75](https://github.com/spiraldb/fastlanes/pull/75))
-- *(deps)* update codspeedhq/action digest to 653fdc3 ([#73](https://github.com/spiraldb/fastlanes/pull/73))
-- *(deps)* pin dependencies ([#67](https://github.com/spiraldb/fastlanes/pull/67))
-- *(deps)* update codspeedhq/action action to v4 ([#69](https://github.com/spiraldb/fastlanes/pull/69))
-- *(deps)* update actions/checkout action to v5 ([#68](https://github.com/spiraldb/fastlanes/pull/68))
+- Assertions in functions are more optimisation friendly ([#195](https://github.com/spiraldb/fastlanes/pull/195))
 
-## [0.2.1](https://github.com/spiraldb/fastlanes/compare/v0.2.0...v0.2.1) - 2025-09-05
+## [0.7.1](https://github.com/spiraldb/fastlanes/compare/v0.7.0...v0.7.1) - 2026-09-01
 
 ### Added
 
-- fastlanes rle ([#70](https://github.com/spiraldb/fastlanes/pull/70))
-# Changelog
-All notable changes to this project will be documented in this file.
+- *(bitpacking)* Add batched index unpacking ([#190](https://github.com/spiraldb/fastlanes/pull/190))
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Other
 
-## [Unreleased]
+- *(bitpacking)* more representative unpack_indices benchmarks ([#194](https://github.com/spiraldb/fastlanes/pull/194))
+
+## [0.7.0](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.7.0) - 2026-08-26
+
+This release has the same contents as 0.6.2. Version 0.6.2 is yanked, because
+it has breaking changes that a patch release must not have:
+
+- The `std` feature is replaced by the `runtime` feature ([#175](https://github.com/spiraldb/fastlanes/pull/175))
+- `Transpose::transpose`/`untranspose` use the same element order as
+  `bit_transpose`/`bit_untranspose` ([#186](https://github.com/spiraldb/fastlanes/pull/186))
+
+## [0.6.2](https://github.com/spiraldb/fastlanes/compare/v0.6.1...v0.6.2) - 2026-08-25
+
+### Added
+
+- Replace `std` feature with a `runtime` feature so its always `no_std` ([#175](https://github.com/spiraldb/fastlanes/pull/175))
+
+### Other
+
+- :transpose/untranspose and bit_transpose/untranspose have the same ordering ([#186](https://github.com/spiraldb/fastlanes/pull/186))
+- Lock file maintenance ([#185](https://github.com/spiraldb/fastlanes/pull/185))
+- Update Rust crate hegeltest to 0.31.0 ([#184](https://github.com/spiraldb/fastlanes/pull/184))
+- Extend prop test coverage, and move them into the relevant files ([#174](https://github.com/spiraldb/fastlanes/pull/174))
+
+## [0.6.1](https://github.com/spiraldb/fastlanes/compare/v0.6.0...v0.6.1) - 2026-07-27
+
+### Fixed
+
+- fused unpack_cmp panicks at full width ([#172](https://github.com/spiraldb/fastlanes/pull/172))
+
+### Other
+
+- Replace round-trip tests with hegel-based property testing ([#171](https://github.com/spiraldb/fastlanes/pull/171))
+- Clean up dependencies and use const_for! in one more place ([#153](https://github.com/spiraldb/fastlanes/pull/153))
+- Update taiki-e/install-action digest to 41049aa ([#169](https://github.com/spiraldb/fastlanes/pull/169))
+- Update MarcoIeni/release-plz-action digest to 2eb1d8b ([#166](https://github.com/spiraldb/fastlanes/pull/166))
+- Update Rust crate divan to v5 ([#167](https://github.com/spiraldb/fastlanes/pull/167))
+
+## [0.6.0](https://github.com/spiraldb/fastlanes/compare/v0.5.2...v0.6.0) - 2026-07-23
+
+### Other
+
+- Update taiki-e/install-action digest to c44f6b0 ([#161](https://github.com/spiraldb/fastlanes/pull/161))
+- Update dtolnay/rust-toolchain digest ([#160](https://github.com/spiraldb/fastlanes/pull/160))
+- Update CodSpeedHQ/action digest to f99becd ([#159](https://github.com/spiraldb/fastlanes/pull/159))
+- Update actions/checkout action to v7 ([#162](https://github.com/spiraldb/fastlanes/pull/162))
+- Mark RLE encode/decode as unsafe due to index bounds requirements ([#163](https://github.com/spiraldb/fastlanes/pull/163))
+
+## [0.5.2](https://github.com/spiraldb/fastlanes/compare/v0.5.1...v0.5.2) - 2026-06-12
+
+### Other
+
+- Remove array ref to reduce code size ([#151](https://github.com/spiraldb/fastlanes/pull/151))
+
+## [0.5.1](https://github.com/spiraldb/fastlanes/compare/v0.5.0...v0.5.1) - 2026-06-04
+
+### Added
+
+- Add width-generic x86 BMI2/VBMI untranspose for u8/u16/u32 ([#145](https://github.com/spiraldb/fastlanes/pull/145))
+- Fused bitpacking compare into a 1024-bit mask (+ SIMD bit-untranspose) ([#141](https://github.com/spiraldb/fastlanes/pull/141))
+- Add FastLanes 1024-bit transpose with SIMD implementations ([#142](https://github.com/spiraldb/fastlanes/pull/142))
+
+### Other
+
+- *(deps)* update taiki-e/install-action digest to 25435dc ([#138](https://github.com/spiraldb/fastlanes/pull/138))
+- clean up publish ([#139](https://github.com/spiraldb/fastlanes/pull/139))
+- *(deps)* update marcoieni/release-plz-action digest to 064f4d1 ([#136](https://github.com/spiraldb/fastlanes/pull/136))
+- *(deps)* update taiki-e/install-action digest to b550161 ([#135](https://github.com/spiraldb/fastlanes/pull/135))
+- *(deps)* update codspeedhq/action digest to 3194d9a ([#134](https://github.com/spiraldb/fastlanes/pull/134))
+- *(deps)* pin taiki-e/install-action action to 1329c29 ([#132](https://github.com/spiraldb/fastlanes/pull/132))
+- *(deps)* update mozilla-actions/sccache-action action to v0.0.10 ([#133](https://github.com/spiraldb/fastlanes/pull/133))
+- Reduce copies in benchmarks ([#131](https://github.com/spiraldb/fastlanes/pull/131))
+- Bump toolchain to stable and MSRV to 1.91 while verifying MSRV respected ([#130](https://github.com/spiraldb/fastlanes/pull/130))
+- Benchmark fused comparison for all widths ([#129](https://github.com/spiraldb/fastlanes/pull/129))
+- Remove unused const generics benchmarks ([#128](https://github.com/spiraldb/fastlanes/pull/128))
+- *(deps)* update codspeedhq/action digest to db35df7 ([#127](https://github.com/spiraldb/fastlanes/pull/127))
+- *(deps)* pin dependencies ([#126](https://github.com/spiraldb/fastlanes/pull/126))
+- Move memory allocation out of RLE benchmarks ([#123](https://github.com/spiraldb/fastlanes/pull/123))
+- *(deps)* update codspeedhq/action digest to 1c8ae48 ([#122](https://github.com/spiraldb/fastlanes/pull/122))
+- *(deps)* update swatinem/rust-cache digest to e18b497 ([#121](https://github.com/spiraldb/fastlanes/pull/121))
+- *(deps)* update codspeedhq/action digest to 281164b ([#118](https://github.com/spiraldb/fastlanes/pull/118))
+- *(deps)* update marcoieni/release-plz-action digest to 1528104 ([#119](https://github.com/spiraldb/fastlanes/pull/119))
+- *(deps)* update marcoieni/release-plz-action digest to f708778 ([#115](https://github.com/spiraldb/fastlanes/pull/115))
+- *(deps)* update actions/checkout digest to de0fac2 ([#114](https://github.com/spiraldb/fastlanes/pull/114))
+- *(deps)* update codspeedhq/action digest to 4deb327 ([#113](https://github.com/spiraldb/fastlanes/pull/113))
+- *(deps)* update codspeedhq/action digest to e736f0d ([#111](https://github.com/spiraldb/fastlanes/pull/111))
+- *(deps)* update actions/checkout action to v6 ([#109](https://github.com/spiraldb/fastlanes/pull/109))
+- *(deps)* update swatinem/rust-cache digest to 779680d ([#108](https://github.com/spiraldb/fastlanes/pull/108))
+- *(deps)* update marcoieni/release-plz-action digest to e592230 ([#107](https://github.com/spiraldb/fastlanes/pull/107))
+- *(deps)* update codspeedhq/action digest to 346a2d8 ([#105](https://github.com/spiraldb/fastlanes/pull/105))
+- *(deps)* update actions/checkout digest to 93cb6ef ([#104](https://github.com/spiraldb/fastlanes/pull/104))
+- *(deps)* update codspeedhq/action digest to daf3e64 ([#103](https://github.com/spiraldb/fastlanes/pull/103))
+- clear up safety documentation ([#102](https://github.com/spiraldb/fastlanes/pull/102))
+- *(deps)* update codspeedhq/action digest to bb005fe ([#101](https://github.com/spiraldb/fastlanes/pull/101))
+- *(deps)* update codspeedhq/action digest to c6574d0 ([#99](https://github.com/spiraldb/fastlanes/pull/99))
 
 ## [0.5.0](https://github.com/spiraldb/fastlanes/compare/v0.4.0...v0.5.0) - 2025-10-16
 
@@ -71,6 +156,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - move all benchmarks to divan ([#83](https://github.com/spiraldb/fastlanes/pull/83))
 - Narrow down the scope of paste macro ([#77](https://github.com/spiraldb/fastlanes/pull/77))
 - *(deps)* update marcoieni/release-plz-action digest to acb9246 ([#74](https://github.com/spiraldb/fastlanes/pull/74))
+
+## [0.2.2](https://github.com/spiraldb/fastlanes/compare/v0.2.1...v0.2.2) - 2025-09-15
+
+### Other
+
+- use `get_unchecked` for index accesses in rle ([#76](https://github.com/spiraldb/fastlanes/pull/76))
+- improve fls-rle comments ([#75](https://github.com/spiraldb/fastlanes/pull/75))
+- *(deps)* update codspeedhq/action digest to 653fdc3 ([#73](https://github.com/spiraldb/fastlanes/pull/73))
+- *(deps)* pin dependencies ([#67](https://github.com/spiraldb/fastlanes/pull/67))
+- *(deps)* update codspeedhq/action action to v4 ([#69](https://github.com/spiraldb/fastlanes/pull/69))
+- *(deps)* update actions/checkout action to v5 ([#68](https://github.com/spiraldb/fastlanes/pull/68))
+
+## [0.2.1](https://github.com/spiraldb/fastlanes/compare/v0.2.0...v0.2.1) - 2025-09-05
+
+### Added
+
+- fastlanes rle ([#70](https://github.com/spiraldb/fastlanes/pull/70))
 
 ## [0.2.0](https://github.com/spiraldb/fastlanes/compare/v0.1.8...v0.2.0) - 2025-07-15
 

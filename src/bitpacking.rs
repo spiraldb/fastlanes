@@ -1,9 +1,9 @@
-use arrayref::{array_mut_ref, array_ref};
 use const_for::const_for;
+use core::mem::MaybeUninit;
 use core::mem::size_of;
-use paste::paste;
+use pastey::paste;
 
-use crate::{pack, seq_t, supported_bit_width, unpack, FastLanes, FL_ORDER};
+use crate::{FL_ORDER, FastLanes, pack, seq_t, supported_bit_width, unpack};
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {
@@ -20,9 +20,12 @@ pub trait BitPacking: FastLanes {
     /// - The input slice must be of exactly length 1024.
     /// - The output slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks 1024 elements from `W` bits each.
@@ -36,12 +39,19 @@ pub trait BitPacking: FastLanes {
     /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
     /// - The output slice must be of exactly length 1024.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
     /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `W` is not zero and `index` is not less than 1024.
     fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self;
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements,
@@ -51,10 +61,48 @@ pub trait BitPacking: FastLanes {
     ///
     /// - The input slice must be of length `1024 * W / T`, where `T` is the (unpacked) bit-width
     ///   of `Self` and `W` is the packed bit-width.
-    /// - The `width` must be less than or equal to the (unpacked) bit-width of `Self`.
     ///
-    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    /// This length is checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the (unpacked) bit-width of `Self` or, when `width` is
+    /// not zero, `index` is not less than 1024.
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
+
+    /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the output length differs from the index length or, when `W` is not zero, an index
+    /// is not less than 1024.
+    fn unpack_indices<const W: usize, const B: usize>(
+        packed: &[Self; B],
+        indices: &[usize],
+        output: &mut [MaybeUninit<Self>],
+    );
+
+    /// Unpacks selected elements where `W` is known only at runtime.
+    ///
+    /// This method dispatches on `width` once for the complete index batch.
+    ///
+    /// # Safety
+    ///
+    /// - The input slice must contain exactly `1024 * W / T` elements, where `T` is the unpacked bit
+    ///   width of `Self` and `W` is `width`.
+    ///
+    /// This length is checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` is greater than the unpacked bit width of `Self`, if the output length
+    /// differs from the index length or, when `width` is not zero, an index is not less than 1024.
+    unsafe fn unchecked_unpack_indices(
+        width: usize,
+        input: &[Self],
+        indices: &[usize],
+        output: &mut [MaybeUninit<Self>],
+    );
 }
 
 macro_rules! impl_packing {
@@ -89,8 +137,8 @@ macro_rules! impl_packing {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::pack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, B],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },)*
                         // seq_t has exclusive upper bound
@@ -99,8 +147,8 @@ macro_rules! impl_packing {
                             const W: usize = <$T>::T;
                             const B: usize = 1024;
                             Self::pack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)
@@ -137,8 +185,8 @@ macro_rules! impl_packing {
                         #(W => {
                             const B: usize = 1024 * W / <$T>::T;
                             Self::unpack::<W, B>(
-                                array_ref![input, 0, B],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },)*
                         // seq_t has exclusive upper bound
@@ -146,8 +194,8 @@ macro_rules! impl_packing {
                             const W: usize = <$T>::T;
                             const B: usize = 1024;
                             Self::unpack::<W, B>(
-                                array_ref![input, 0, 1024],
-                                array_mut_ref![output, 0, 1024],
+                                unsafe { crate::as_array_unchecked(input) },
+                                unsafe { crate::as_array_mut_unchecked(output) },
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)
@@ -156,6 +204,7 @@ macro_rules! impl_packing {
             }
 
             /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
+            #[inline]
             fn unpack_single<const W: usize, const B: usize>(packed: &[Self; B], index: usize) -> Self
             {
                 const {
@@ -179,16 +228,25 @@ macro_rules! impl_packing {
                 // decompression can be fused efficiently with encodings like delta and RLE.
                 //
                 // First step, we need to get the lane and row for interpretation #1 above.
-                assert!(index < 1024, "Index must be less than 1024, got {}", index);
+                // Indexing the 1024-entry tables is the `index < 1024` bounds check; a separate
+                // assert would only add a second panic path that captures `index` for formatting.
                 let (lane, row): (usize, usize) = {
                     const LANES: [u8; 1024] = lanes_by_index::<$T>();
                     const ROWS: [u8; 1024] = rows_by_index::<$T>();
                     (LANES[index] as usize, ROWS[index] as usize)
                 };
 
+                // The table lookups above bound `lane < LANES` and `row < T`, and the `const`
+                // block bounds `B == LANES * W`. Every `packed` read below is therefore in-bounds
+                // by construction, so it is `get_unchecked` rather than a checked index whose
+                // bounds LLVM cannot prove away through the table loads.
+
                 if W == <$T>::T {
-                    // Special case for W==T, we can just read the value directly
-                    return packed[<$T>::LANES * row + lane];
+                    // Special case for W==T, we can just read the value directly.
+                    // SAFETY: `LANES * row + lane <= LANES * (T - 1) + LANES - 1 = 1024 - 1 < B`.
+                    let word = <$T>::LANES * row + lane;
+                    debug_assert!(word < B);
+                    return unsafe { *packed.get_unchecked(word) };
                 }
 
                 let mask: $T = (1 << (W % <$T>::T)) - 1;
@@ -197,17 +255,27 @@ macro_rules! impl_packing {
                 let lo_shift = start_bit % <$T>::T;
                 let remaining_bits = <$T>::T - lo_shift;
 
-                let lo = packed[<$T>::LANES * start_word + lane] >> lo_shift;
+                // SAFETY: `start_word = row * W / T <= (T - 1) * W / T < W`, so
+                // `LANES * start_word + lane < LANES * W == B`.
+                let lo_word = <$T>::LANES * start_word + lane;
+                debug_assert!(lo_word < B);
+                let lo = unsafe { *packed.get_unchecked(lo_word) } >> lo_shift;
                 return if remaining_bits >= W {
                     // in this case we will mask out all bits of hi word
                     lo & mask
                 } else {
                     // guaranteed that lo_shift > 0 and thus remaining_bits < T
-                    let hi = packed[<$T>::LANES * (start_word + 1) + lane] << remaining_bits;
+                    // SAFETY: the element straddles `start_word` and `start_word + 1`, so its last
+                    // bit `row * W + W - 1 <= T * W - 1` lies in word `start_word + 1 <= W - 1`,
+                    // hence `LANES * (start_word + 1) + lane < LANES * W == B`.
+                    let hi_word = <$T>::LANES * (start_word + 1) + lane;
+                    debug_assert!(hi_word < B);
+                    let hi = unsafe { *packed.get_unchecked(hi_word) } << remaining_bits;
                     (lo | hi) & mask
                 };
             }
 
+            #[inline]
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
 
@@ -219,13 +287,79 @@ macro_rules! impl_packing {
                     match width {
                         #(W => {
                             const B: usize = 1024 * W / T;
-                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, B], index);
+                            return <$T>::unpack_single::<W, B>(
+                                unsafe { crate::as_array_unchecked(packed) },
+                                index,
+                            );
                         },)*
                         // seq_t has exclusive upper bound
                         T => {
                             const W: usize = T;
                             const B: usize = 1024;
-                            return <$T>::unpack_single::<W, B>(array_ref![packed, 0, 1024], index);
+                            return <$T>::unpack_single::<W, B>(
+                                unsafe { crate::as_array_unchecked(packed) },
+                                index,
+                            );
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
+            }
+
+            fn unpack_indices<const W: usize, const B: usize>(
+                packed: &[Self; B],
+                indices: &[usize],
+                output: &mut [MaybeUninit<Self>],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+
+                assert!(indices.len() == output.len(), "Output length must equal index length");
+                if W == 0 {
+                    for value in output {
+                        value.write(0 as Self);
+                    }
+                    return;
+                }
+                for (&index, value) in indices.iter().zip(output) {
+                    value.write(<$T>::unpack_single::<W, B>(packed, index));
+                }
+            }
+
+            unsafe fn unchecked_unpack_indices(
+                width: usize,
+                packed: &[Self],
+                indices: &[usize],
+                output: &mut [MaybeUninit<Self>],
+            ) {
+                const T: usize = <$T>::T;
+                debug_assert!(width <= T, "Width must be less than or equal to {}", T);
+                #[cfg(debug_assertions)]
+                {
+                    let packed_len = 128 * width / size_of::<Self>();
+                    debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
+                }
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / T;
+                            return <$T>::unpack_indices::<W, B>(
+                                unsafe { crate::as_array_unchecked(packed) },
+                                indices,
+                                output,
+                            );
+                        },)*
+                        T => {
+                            const W: usize = T;
+                            const B: usize = 1024;
+                            return <$T>::unpack_indices::<W, B>(
+                                unsafe { crate::as_array_unchecked(packed) },
+                                indices,
+                                output,
+                            );
                         },
                         _ => unreachable!("Unsupported width: {}", width)
                     }
@@ -272,19 +406,15 @@ impl_packing!(u64);
 mod test {
     use core::array;
     use core::fmt::Debug;
-    use seq_macro::seq;
 
     use super::*;
+    use alloc::{format, string::ToString, vec, vec::Vec};
+    use hegel::TestCase;
+    use hegel::generators as gs;
+    use hegel::generators::Integer;
+    use pastey::paste;
 
-    #[test]
-    fn test_unchecked_pack() {
-        let input = array::from_fn(|i| i as u32);
-        let mut packed = [0; 320];
-        unsafe { BitPacking::unchecked_pack(10, &input, &mut packed) };
-        let mut output = [0; 1024];
-        unsafe { BitPacking::unchecked_unpack(10, &packed, &mut output) };
-        assert_eq!(input, output);
-    }
+    const BUFFER_SIZE: usize = 1024;
 
     #[test]
     fn test_unpack_single() {
@@ -301,43 +431,299 @@ mod test {
         }
     }
 
-    fn try_round_trip<T: BitPacking + Debug, const W: usize, const B: usize>() {
-        let mut values: [T; 1024] = [T::zero(); 1024];
-        for i in 0..1024 {
-            values[i] = T::from(i % (1 << (W % T::T))).unwrap();
+    fn initialized_output<T: Integer>(expected: &[T]) -> Vec<MaybeUninit<T>> {
+        expected
+            .iter()
+            .map(|&value| {
+                let initial = if value == T::MIN { T::MAX } else { T::MIN };
+                MaybeUninit::new(initial)
+            })
+            .collect()
+    }
+
+    fn assume_initialized<T: Copy>(output: &[MaybeUninit<T>]) -> Vec<T> {
+        output
+            .iter()
+            .map(|value| {
+                // SAFETY: every caller initializes each element before the unpack method.
+                unsafe { value.assume_init() }
+            })
+            .collect()
+    }
+
+    fn assert_u32_unpack_indices(indices: &[usize]) {
+        const WIDTH: usize = 13;
+        const PACKED_LENGTH: usize = 1024 * WIDTH / u32::T;
+
+        let values = array::from_fn(|index| ((index as u32).wrapping_mul(17)) & 0x1fff);
+        let mut packed = [0; PACKED_LENGTH];
+        BitPacking::pack::<WIDTH, PACKED_LENGTH>(&values, &mut packed);
+        let expected = indices
+            .iter()
+            .map(|&index| values[index])
+            .collect::<Vec<_>>();
+
+        let mut output = initialized_output(&expected);
+        BitPacking::unpack_indices::<WIDTH, PACKED_LENGTH>(&packed, indices, &mut output);
+        assert_eq!(assume_initialized(&output), expected);
+
+        let mut output = initialized_output(&expected);
+        // SAFETY: `packed` contains exactly one packed FastLanes block.
+        unsafe {
+            BitPacking::unchecked_unpack_indices(WIDTH, &packed, indices, &mut output);
         }
+        assert_eq!(assume_initialized(&output), expected);
+    }
 
-        let mut packed = [T::zero(); B];
-        BitPacking::pack::<W, B>(&values, &mut packed);
+    #[test]
+    fn test_unpack_indices_empty() {
+        assert_u32_unpack_indices(&[]);
+    }
 
-        let mut unpacked = [T::zero(); 1024];
-        BitPacking::unpack::<W, B>(&packed, &mut unpacked);
+    #[test]
+    fn test_unpack_indices_preserves_order_and_duplicates() {
+        assert_u32_unpack_indices(&[1023, 0, 17, 17, 511, 17, 511]);
+    }
 
-        assert_eq!(&unpacked, &values);
+    #[test]
+    fn test_unpack_indices_full_block() {
+        assert_u32_unpack_indices(&(0..1024).collect::<Vec<_>>());
+    }
 
-        for i in 0..1024 {
-            assert_eq!(BitPacking::unpack_single::<W, B>(&packed, i), values[i]);
+    #[test]
+    #[should_panic(expected = "Output length must equal index length")]
+    fn test_unpack_indices_rejects_output_length_mismatch() {
+        let packed = [0_u32; 32];
+        let mut output = [MaybeUninit::uninit(); 1];
+        BitPacking::unpack_indices::<1, 32>(&packed, &[], &mut output);
+    }
+
+    #[test]
+    #[should_panic(expected = "Output length must equal index length")]
+    fn test_unchecked_unpack_indices_rejects_output_length_mismatch() {
+        let packed = [0_u32; 32];
+        let mut output = [MaybeUninit::uninit(); 1];
+        // SAFETY: the packed input has the required length. The mismatched output is a documented
+        // panic condition, not a safety requirement.
+        unsafe { BitPacking::unchecked_unpack_indices(1, &packed, &[], &mut output) };
+    }
+
+    #[test]
+    fn test_unpack_indices_zero_width_ignores_indices() {
+        let indices = [usize::MAX];
+        let mut output = [MaybeUninit::new(1_u32)];
+        BitPacking::unpack_indices::<0, 0>(&[], &indices, &mut output);
+        assert_eq!(assume_initialized(&output), [0]);
+
+        let mut output = [MaybeUninit::new(1_u32)];
+        // SAFETY: the zero-width packed representation contains no elements.
+        unsafe { BitPacking::unchecked_unpack_indices(0, &[], &indices, &mut output) };
+        assert_eq!(assume_initialized(&output), [0]);
+    }
+
+    fn assert_bitpack_roundtrip<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let input = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+
+        for width in 0..=T::T {
+            let mut packed_output = vec![T::one(); (BUFFER_SIZE * width) / T::T];
+            let mut unpacked_output = vec![T::one(); BUFFER_SIZE];
+            unsafe { T::unchecked_pack(width, &input, &mut packed_output) };
+            unsafe { T::unchecked_unpack(width, &packed_output, &mut unpacked_output) };
+
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let expected = input
+                .iter()
+                .copied()
+                .map(|value| value & mask)
+                .collect::<Vec<_>>();
+
             assert_eq!(
-                unsafe { BitPacking::unchecked_unpack_single(W, &packed, i) },
-                values[i]
+                expected,
+                unpacked_output,
+                "roundtrip failed for type={} width={width}",
+                core::any::type_name::<T>(),
             );
         }
     }
 
-    macro_rules! impl_try_round_trip {
-        ($T:ty, $W:expr) => {
-            paste! {
-                #[test]
-                fn [<test_round_trip_ $T _ $W>]() {
-                    const B: usize = 1024 * $W / <$T>::T;
-                    try_round_trip::<$T, $W, B>();
+    fn assert_bitpack_repack_roundtrip<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let packed_source = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+
+        for width in 0..=T::T {
+            let packed_length = (BUFFER_SIZE * width) / T::T;
+            let packed_input = &packed_source[..packed_length];
+            let mut unpacked_output = vec![T::one(); BUFFER_SIZE];
+            let mut repacked_output = vec![T::one(); packed_length];
+            unsafe {
+                T::unchecked_unpack(width, packed_input, &mut unpacked_output);
+                T::unchecked_pack(width, &unpacked_output, &mut repacked_output);
+            }
+
+            assert_eq!(
+                packed_input,
+                repacked_output,
+                "repack roundtrip failed for type={} width={width}",
+                core::any::type_name::<T>(),
+            );
+        }
+    }
+
+    fn assert_bitpack_unpack_single_matches_bulk<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let packed_source = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+        let index = tc.draw(
+            gs::integers::<usize>()
+                .min_value(0)
+                .max_value(BUFFER_SIZE - 1),
+        );
+
+        for width in 0..=T::T {
+            let packed_length = (BUFFER_SIZE * width) / T::T;
+            let packed_input = &packed_source[..packed_length];
+            let mut unpacked_output = vec![T::one(); BUFFER_SIZE];
+            unsafe { T::unchecked_unpack(width, packed_input, &mut unpacked_output) };
+
+            assert_eq!(
+                unsafe { T::unchecked_unpack_single(width, packed_input, index) },
+                unpacked_output[index],
+                "single unpack failed for type={} width={width} index={index}",
+                core::any::type_name::<T>(),
+            );
+        }
+    }
+
+    fn assert_bitpack_unpack_indices_matches_bulk<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let packed_source = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+        let indices = tc.draw(
+            gs::vecs(
+                gs::integers::<usize>()
+                    .min_value(0)
+                    .max_value(BUFFER_SIZE - 1),
+            )
+            .min_size(0)
+            .max_size(128),
+        );
+
+        for width in 0..=T::T {
+            let packed_length = (BUFFER_SIZE * width) / T::T;
+            let packed_input = &packed_source[..packed_length];
+            let mut unpacked = vec![T::zero(); BUFFER_SIZE];
+            // SAFETY: both buffers have the required lengths for `width`.
+            unsafe { T::unchecked_unpack(width, packed_input, &mut unpacked) };
+            let expected = indices
+                .iter()
+                .map(|&index| unpacked[index])
+                .collect::<Vec<_>>();
+            let mut output = initialized_output(&expected);
+
+            // SAFETY: `packed_input` contains exactly one packed FastLanes block.
+            unsafe {
+                T::unchecked_unpack_indices(width, packed_input, &indices, &mut output);
+            }
+
+            assert_eq!(
+                assume_initialized(&output),
+                expected,
+                "indexed unpack failed for type={} width={width} indices={indices:?}",
+                core::any::type_name::<T>(),
+            );
+        }
+    }
+
+    fn reference_pack<T>(width: usize, input: &[T]) -> Vec<T>
+    where
+        T: BitPacking,
+    {
+        let mut packed = vec![T::zero(); (BUFFER_SIZE * width) / T::T];
+
+        for lane in 0..T::LANES {
+            for row in 0..T::T {
+                let order = row / 8;
+                let sub_row = row % 8;
+                let input_idx = (FL_ORDER[order] * 16) + (sub_row * 128) + lane;
+
+                for bit in 0..width {
+                    if ((input[input_idx] >> bit) & T::one()) != T::zero() {
+                        let packed_bit = row * width + bit;
+                        let word = packed_bit / T::T;
+                        let word_bit = packed_bit % T::T;
+                        packed[word * T::LANES + lane] =
+                            packed[word * T::LANES + lane] | (T::one() << word_bit);
+                    }
                 }
+            }
+        }
+
+        packed
+    }
+
+    fn assert_bitpack_matches_reference<T>(tc: &TestCase)
+    where
+        T: BitPacking + Debug + Integer + 'static,
+    {
+        let input = tc.draw(
+            gs::vecs(gs::integers::<T>())
+                .min_size(BUFFER_SIZE)
+                .max_size(BUFFER_SIZE),
+        );
+
+        for width in 0..=T::T {
+            let mut packed = vec![T::one(); (BUFFER_SIZE * width) / T::T];
+            unsafe { T::unchecked_pack(width, &input, &mut packed) };
+
+            assert_eq!(packed, reference_pack(width, &input));
+        }
+    }
+
+    macro_rules! bitpack_property_tests {
+        ($property:ident, $test_cases:literal for $($type:ident),+ $(,)?) => {
+            paste! {
+                $(
+                    #[hegel::test(test_cases = $test_cases)]
+                    fn [<test_ $property _ $type>](tc: TestCase) {
+                        [<assert_ $property>]::<$type>(&tc);
+                    }
+                )+
             }
         };
     }
 
-    seq!(W in 0..=8 { impl_try_round_trip!(u8, W); });
-    seq!(W in 0..=16 { impl_try_round_trip!(u16, W); });
-    seq!(W in 0..=32 { impl_try_round_trip!(u32, W); });
-    seq!(W in 0..=64 { impl_try_round_trip!(u64, W); });
+    bitpack_property_tests!(bitpack_roundtrip, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_repack_roundtrip, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_unpack_single_matches_bulk, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_unpack_indices_matches_bulk, 10 for u8, u16, u32, u64);
+    bitpack_property_tests!(bitpack_matches_reference, 10 for u8, u16, u32, u64);
 }
