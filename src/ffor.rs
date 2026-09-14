@@ -116,9 +116,9 @@ mod test {
     use alloc::{format, string::ToString, vec};
     use core::fmt::Debug;
     use core::mem::size_of;
-    use hegel::TestCase;
     use hegel::generators as gs;
     use hegel::generators::Integer;
+    use hegel::{PrettyPrintable, TestCase};
     use pastey::paste;
 
     #[test]
@@ -197,6 +197,7 @@ mod test {
     where
         T: Debug
             + Integer
+            + PrettyPrintable
             + RuntimeForPack
             + Send
             + Sync
@@ -232,7 +233,14 @@ mod test {
 
     fn assert_unchecked_unfor_pack_matches_unfused<T>(tc: &TestCase)
     where
-        T: Debug + FoR + Integer + Send + Sync + num_traits::WrappingAdd + 'static,
+        T: Debug
+            + FoR
+            + Integer
+            + PrettyPrintable
+            + Send
+            + Sync
+            + num_traits::WrappingAdd
+            + 'static,
     {
         let packed_source: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let reference = tc.draw(gs::integers::<T>());

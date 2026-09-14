@@ -409,9 +409,9 @@ mod test {
 
     use super::*;
     use alloc::{format, string::ToString, vec, vec::Vec};
-    use hegel::TestCase;
     use hegel::generators as gs;
     use hegel::generators::Integer;
+    use hegel::{PrettyPrintable, TestCase};
     use pastey::paste;
 
     const BUFFER_SIZE: usize = 1024;
@@ -523,7 +523,7 @@ mod test {
 
     fn assert_bitpack_roundtrip<T>(tc: &TestCase)
     where
-        T: BitPacking + Debug + Integer + 'static,
+        T: BitPacking + Debug + Integer + PrettyPrintable + 'static,
     {
         let input = tc.draw(
             gs::vecs(gs::integers::<T>())
@@ -561,7 +561,7 @@ mod test {
 
     fn assert_bitpack_repack_roundtrip<T>(tc: &TestCase)
     where
-        T: BitPacking + Debug + Integer + 'static,
+        T: BitPacking + Debug + Integer + PrettyPrintable + 'static,
     {
         let packed_source = tc.draw(
             gs::vecs(gs::integers::<T>())
@@ -590,7 +590,7 @@ mod test {
 
     fn assert_bitpack_unpack_single_matches_bulk<T>(tc: &TestCase)
     where
-        T: BitPacking + Debug + Integer + 'static,
+        T: BitPacking + Debug + Integer + PrettyPrintable + 'static,
     {
         let packed_source = tc.draw(
             gs::vecs(gs::integers::<T>())
@@ -620,7 +620,7 @@ mod test {
 
     fn assert_bitpack_unpack_indices_matches_bulk<T>(tc: &TestCase)
     where
-        T: BitPacking + Debug + Integer + 'static,
+        T: BitPacking + Debug + Integer + PrettyPrintable + 'static,
     {
         let packed_source = tc.draw(
             gs::vecs(gs::integers::<T>())
@@ -692,7 +692,7 @@ mod test {
 
     fn assert_bitpack_matches_reference<T>(tc: &TestCase)
     where
-        T: BitPacking + Debug + Integer + 'static,
+        T: BitPacking + Debug + Integer + PrettyPrintable + 'static,
     {
         let input = tc.draw(
             gs::vecs(gs::integers::<T>())

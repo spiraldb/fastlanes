@@ -159,9 +159,9 @@ mod tests {
     use alloc::{format, string::ToString, vec};
     use core::array;
     use core::fmt::Debug;
-    use hegel::TestCase;
     use hegel::generators as gs;
     use hegel::generators::Integer;
+    use hegel::{PrettyPrintable, TestCase};
     use pastey::paste;
 
     /// Reference bitmask in the same `FastLanes` (LSB-first, per-lane) order produced by
@@ -232,8 +232,20 @@ mod tests {
 
     fn assert_unpack_cmp_matches_reference<T, V>(tc: &TestCase)
     where
-        T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
-        V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
+        T: BitPacking
+            + BitPackingCompare
+            + Debug
+            + Integer
+            + PrettyPrintable
+            + Send
+            + Sync
+            + 'static,
+        V: Debug
+            + FastLanesComparable<Bitpacked = T>
+            + Integer
+            + PrettyPrintable
+            + PartialOrd
+            + 'static,
     {
         let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let other = tc.draw(gs::integers::<V>());
@@ -272,8 +284,20 @@ mod tests {
 
     fn assert_unpack_cmp_transposes_to_logical<T, V>(tc: &TestCase)
     where
-        T: BitPacking + BitPackingCompare + Debug + Integer + Send + Sync + 'static,
-        V: Debug + FastLanesComparable<Bitpacked = T> + Integer + PartialOrd + 'static,
+        T: BitPacking
+            + BitPackingCompare
+            + Debug
+            + Integer
+            + PrettyPrintable
+            + Send
+            + Sync
+            + 'static,
+        V: Debug
+            + FastLanesComparable<Bitpacked = T>
+            + Integer
+            + PrettyPrintable
+            + PartialOrd
+            + 'static,
     {
         let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let other = tc.draw(gs::integers::<V>());
