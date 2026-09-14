@@ -8,7 +8,7 @@ repository = "https://github.com/spiraldb/fastlanes"
 authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec", "encoding", "lightweight"]
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.94"
 exclude = [".github/*", "renovate.json", ".git/*"]
 
 [features]
