@@ -101,9 +101,9 @@ mod test {
     use alloc::{format, string::ToString, vec};
     use core::fmt::Debug;
     use core::mem::size_of;
-    use hegel::TestCase;
     use hegel::generators as gs;
     use hegel::generators::Integer;
+    use hegel::{PrettyPrintable, TestCase};
     use num_traits::WrappingSub;
     use pastey::paste;
 
@@ -186,7 +186,7 @@ mod test {
 
     fn assert_delta_matches_reference<T, const LANES: usize>(tc: &TestCase)
     where
-        T: Delta + Debug + Integer + Send + Sync + WrappingSub + 'static,
+        T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + WrappingSub + 'static,
     {
         let input: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
@@ -211,7 +211,7 @@ mod test {
 
     fn assert_delta_roundtrip<T, const LANES: usize>(tc: &TestCase)
     where
-        T: Delta + Debug + Integer + Send + Sync + 'static,
+        T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
     {
         let input: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
@@ -226,7 +226,7 @@ mod test {
 
     fn assert_undelta_pack_matches_unfused<T, const LANES: usize>(tc: &TestCase)
     where
-        T: RuntimeUndeltaPack + Debug + Integer + Send + Sync + 'static,
+        T: RuntimeUndeltaPack + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
     {
         let deltas: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
