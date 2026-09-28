@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/spiraldb/fastlanes/compare/v0.7.2...v0.7.3) - 2026-09-28
+
+### Other
+
+- Iterate directly over known range instead of `iter` ([#124](https://github.com/spiraldb/fastlanes/pull/124))
+- Lock file maintenance ([#205](https://github.com/spiraldb/fastlanes/pull/205))
+- Update cargo non-major dependencies ([#204](https://github.com/spiraldb/fastlanes/pull/204))
+- Update cargo non-major dependencies ([#200](https://github.com/spiraldb/fastlanes/pull/200))
+
 ## [0.7.2](https://github.com/spiraldb/fastlanes/compare/v0.7.1...v0.7.2) - 2026-09-02
 
 ### Other
