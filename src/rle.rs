@@ -78,10 +78,13 @@ impl<T: PartialEq + Copy> RLE for T {
     ) where
         I: Copy + Into<usize>,
     {
-        for (idx, output) in rle_idxs.iter().zip(output.iter_mut()) {
-            debug_assert!((*idx).into() < rle_vals.len());
-            // SAFETY: the caller guarantees every index is less than `rle_vals.len()`.
-            *output = unsafe { *rle_vals.get_unchecked((*idx).into()) };
+        for i in 0..1024 {
+            let rle_idx: usize = unsafe { *rle_idxs.get_unchecked(i) }.into();
+            debug_assert!(rle_idx < rle_vals.len());
+
+            // SAFETY: `i` is less than 1024, and the caller guarantees every index is
+            // less than `rle_vals.len()`.
+            unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(rle_idx) };
         }
     }
 }
