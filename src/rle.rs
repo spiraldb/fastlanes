@@ -39,7 +39,7 @@ pub trait RLE: Sized {
 }
 
 impl<T: PartialEq + Copy> RLE for T {
-    #[inline(never)]
+    #[cfg_attr(feature = "unchecked", inline(never))]
     unsafe fn encode_unchecked(
         input: &[Self; 1024],
         rle_vals: &mut [Self; 1024],
@@ -70,7 +70,7 @@ impl<T: PartialEq + Copy> RLE for T {
         rle_val_idx
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "unchecked", inline(never))]
     unsafe fn decode_unchecked<I>(
         rle_vals: &[Self],
         rle_idxs: &[I; 1024],

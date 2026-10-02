@@ -1,3 +1,4 @@
+#[cfg(feature = "unchecked")]
 use std::mem::MaybeUninit;
 use std::mem::size_of;
 
@@ -57,6 +58,7 @@ fn unpack_16_from_3_stack(bencher: Bencher) {
     });
 }
 
+#[cfg(feature = "unchecked")]
 #[divan::bench(sample_count = 10000)]
 fn unchecked_unpack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
@@ -91,8 +93,10 @@ fn unpack_single_16_from_3(bencher: Bencher) {
     });
 }
 
+#[cfg(feature = "unchecked")]
 const MAX_BENCHMARK_INDICES: usize = 192;
 
+#[cfg(feature = "unchecked")]
 fn benchmark_indices(num_indices: usize) -> [usize; MAX_BENCHMARK_INDICES] {
     assert!(num_indices <= MAX_BENCHMARK_INDICES);
     let mut indices = [0; MAX_BENCHMARK_INDICES];
@@ -104,6 +108,7 @@ fn benchmark_indices(num_indices: usize) -> [usize; MAX_BENCHMARK_INDICES] {
     indices
 }
 
+#[cfg(feature = "unchecked")]
 macro_rules! unpack_indices_benchmarks {
     ($module:ident, $type:ty, $width:expr, [$($num_indices:expr),+ $(,)?]) => {
         mod $module {
@@ -186,9 +191,13 @@ macro_rules! unpack_indices_benchmarks {
     };
 }
 
+#[cfg(feature = "unchecked")]
 unpack_indices_benchmarks!(unpack_indices_u8_width7, u8, 7, [1, 8, 16, 24]);
+#[cfg(feature = "unchecked")]
 unpack_indices_benchmarks!(unpack_indices_u16_width3, u16, 3, [1, 8, 32, 48]);
+#[cfg(feature = "unchecked")]
 unpack_indices_benchmarks!(unpack_indices_u32_width16, u32, 16, [1, 8, 64, 80]);
+#[cfg(feature = "unchecked")]
 unpack_indices_benchmarks!(unpack_indices_u64_width63, u64, 63, [1, 8, 160, 192]);
 
 #[divan::bench(sample_count = 10000)]

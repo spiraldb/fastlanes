@@ -73,7 +73,7 @@ jobs:
         env:
           RUSTFLAGS: "-C target-feature=+avx2"
         run: |
-          cargo codspeed build --profile bench --features runtime
+          cargo codspeed build --profile bench --features runtime,unchecked
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5

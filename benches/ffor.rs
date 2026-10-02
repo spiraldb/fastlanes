@@ -60,6 +60,7 @@ fn unfor_pack_16_from_3_stack(bencher: Bencher) {
     });
 }
 
+#[cfg(feature = "unchecked")]
 #[divan::bench(sample_count = 10000)]
 fn unchecked_unfor_pack_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
@@ -135,6 +136,7 @@ fn throughput_decompress(bencher: Bencher) {
     });
 }
 
+#[cfg(feature = "unchecked")]
 #[divan::bench(sample_count = 10000)]
 fn throughput_decompress_unchecked(bencher: Bencher) {
     const WIDTH: usize = 3;
@@ -196,6 +198,7 @@ fn unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     });
 }
 
+#[cfg(feature = "unchecked")]
 #[divan::bench(sample_count = 10000)]
 fn unchecked_unpack_then_add_reference_16_from_3_stack(bencher: Bencher) {
     const WIDTH: usize = 3;
@@ -256,6 +259,7 @@ fn throughput_decompress_separate_reference(bencher: Bencher) {
     });
 }
 
+#[cfg(feature = "unchecked")]
 #[divan::bench(sample_count = 10000)]
 fn throughput_decompress_unchecked_separate_reference(bencher: Bencher) {
     const WIDTH: usize = 3;
