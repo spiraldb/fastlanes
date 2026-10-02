@@ -39,6 +39,7 @@ impl FastLanes for u64 {}
 ///
 /// # Safety
 /// `slice.len()` must be at least `N`. This is checked only with `debug_assert!`.
+#[cfg(any(test, feature = "unchecked"))]
 #[inline]
 pub(crate) unsafe fn as_array_unchecked<T, const N: usize>(slice: &[T]) -> &[T; N] {
     debug_assert!(slice.len() >= N);
@@ -51,6 +52,7 @@ pub(crate) unsafe fn as_array_unchecked<T, const N: usize>(slice: &[T]) -> &[T; 
 ///
 /// # Safety
 /// `slice.len()` must be at least `N`. This is checked only with `debug_assert!`.
+#[cfg(any(test, feature = "unchecked"))]
 #[inline]
 pub(crate) unsafe fn as_array_mut_unchecked<T, const N: usize>(slice: &mut [T]) -> &mut [T; N] {
     debug_assert!(slice.len() >= N);

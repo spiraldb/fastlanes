@@ -1,9 +1,13 @@
 use const_for::const_for;
 use core::mem::MaybeUninit;
+#[cfg(any(test, feature = "unchecked"))]
 use core::mem::size_of;
+#[cfg(any(test, feature = "unchecked"))]
 use pastey::paste;
 
-use crate::{FL_ORDER, FastLanes, pack, seq_t, supported_bit_width, unpack};
+#[cfg(any(test, feature = "unchecked"))]
+use crate::seq_t;
+use crate::{FL_ORDER, FastLanes, pack, supported_bit_width, unpack};
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {
@@ -26,6 +30,7 @@ pub trait BitPacking: FastLanes {
     /// # Panics
     ///
     /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
+    #[cfg(any(test, feature = "unchecked"))]
     unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks 1024 elements from `W` bits each.
@@ -45,6 +50,7 @@ pub trait BitPacking: FastLanes {
     /// # Panics
     ///
     /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
+    #[cfg(any(test, feature = "unchecked"))]
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
@@ -68,6 +74,7 @@ pub trait BitPacking: FastLanes {
     ///
     /// Panics if `width` is greater than the (unpacked) bit-width of `Self` or, when `width` is
     /// not zero, `index` is not less than 1024.
+    #[cfg(any(test, feature = "unchecked"))]
     unsafe fn unchecked_unpack_single(width: usize, input: &[Self], index: usize) -> Self;
 
     /// Unpacks selected elements from a packed array of 1024 `W` bit elements.
@@ -97,6 +104,7 @@ pub trait BitPacking: FastLanes {
     ///
     /// Panics if `width` is greater than the unpacked bit width of `Self`, if the output length
     /// differs from the index length or, when `width` is not zero, an index is not less than 1024.
+    #[cfg(any(test, feature = "unchecked"))]
     unsafe fn unchecked_unpack_indices(
         width: usize,
         input: &[Self],
@@ -108,7 +116,7 @@ pub trait BitPacking: FastLanes {
 macro_rules! impl_packing {
     ($T:ty) => {
         impl BitPacking for $T {
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn pack<const W: usize, const B: usize>(
                 input: &[Self; 1024],
                 output: &mut [Self; B],
@@ -126,6 +134,7 @@ macro_rules! impl_packing {
                 }
             }
 
+            #[cfg(any(test, feature = "unchecked"))]
             unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(output.len(), packed_len, "Output buffer must be of size 1024 * W / T");
@@ -156,7 +165,7 @@ macro_rules! impl_packing {
                 }))
             }
 
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn unpack<const W: usize, const B: usize>(
                 input: &[Self; B],
                 output: &mut [Self; 1024],
@@ -174,6 +183,7 @@ macro_rules! impl_packing {
                 }
             }
 
+            #[cfg(any(test, feature = "unchecked"))]
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
@@ -275,6 +285,7 @@ macro_rules! impl_packing {
                 };
             }
 
+            #[cfg(any(test, feature = "unchecked"))]
             #[inline]
             unsafe fn unchecked_unpack_single(width: usize, packed: &[Self], index: usize) -> Self {
                 const T: usize = <$T>::T;
@@ -328,6 +339,7 @@ macro_rules! impl_packing {
                 }
             }
 
+            #[cfg(any(test, feature = "unchecked"))]
             unsafe fn unchecked_unpack_indices(
                 width: usize,
                 packed: &[Self],

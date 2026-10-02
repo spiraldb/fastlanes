@@ -1,4 +1,7 @@
-use crate::{BitPacking, FastLanes, pack, seq_t, supported_bit_width, unpack};
+#[cfg(any(test, feature = "unchecked"))]
+use crate::seq_t;
+use crate::{BitPacking, FastLanes, pack, supported_bit_width, unpack};
+#[cfg(any(test, feature = "unchecked"))]
 use pastey::paste;
 
 pub trait FoR: BitPacking {
@@ -25,6 +28,7 @@ pub trait FoR: BitPacking {
     ///
     /// # Panics
     /// Panics if `width` is greater than the bit-width of `Self`.
+    #[cfg(any(test, feature = "unchecked"))]
     unsafe fn unchecked_unfor_pack(
         width: usize,
         input: &[Self],
@@ -53,7 +57,7 @@ macro_rules! impl_for {
                 }
             }
 
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn unfor_pack<const W: usize, const B: usize>(
                 input: &[Self; B],
                 reference: Self,
@@ -71,6 +75,7 @@ macro_rules! impl_for {
                 }
             }
 
+           #[cfg(any(test, feature = "unchecked"))]
            unsafe fn unchecked_unfor_pack(width: usize, input: &[Self], reference: Self, output: &mut [Self]) {
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");

@@ -25,7 +25,7 @@ pub trait Delta: BitPacking {
 macro_rules! impl_delta {
     ($T:ty) => {
         impl Delta for $T {
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn delta<const LANES: usize>(
                 input: &[Self; 1024],
                 base: &[Self; LANES],
@@ -45,7 +45,7 @@ macro_rules! impl_delta {
                 }
             }
 
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn undelta<const LANES: usize>(
                 input: &[Self; 1024],
                 base: &[Self; LANES],
@@ -64,7 +64,7 @@ macro_rules! impl_delta {
                 }
             }
 
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn undelta_pack<const LANES: usize, const W: usize, const B: usize>(
                 input: &[Self; B],
                 base: &[Self; LANES],

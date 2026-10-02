@@ -17,6 +17,11 @@ default = []
 # dispatch. Without it, the dispatch is resolved at compile time from the enabled
 # `target_feature`s.
 runtime = ["dep:cpufeatures"]
+# Enables the `unchecked_*` functions that take the bit width at runtime. These
+# functions dispatch to a kernel for each width, thus the kernels are marked
+# `#[inline(never)]` to keep the dispatch small. Without this feature, the
+# compiler decides about inlining of the kernels.
+unchecked = []
 
 [dependencies]
 const_for = "0.1"
@@ -66,6 +71,7 @@ harness = false
 [[bench]]
 name = "bitpacking_cmp"
 harness = false
+required-features = ["unchecked"]
 
 [[bench]]
 name = "delta"

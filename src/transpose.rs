@@ -7,14 +7,14 @@ pub trait Transpose: FastLanes {
 }
 
 impl<T: FastLanes> Transpose for T {
-    #[inline(never)]
+    #[cfg_attr(feature = "unchecked", inline(never))]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         const_for!(i in 0..1024 => {
             output[i] = input[transpose(i)];
         });
     }
 
-    #[inline(never)]
+    #[cfg_attr(feature = "unchecked", inline(never))]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
         const_for!(i in 0..1024 => {
             output[transpose(i)] = input[i];

@@ -1,6 +1,8 @@
+#[cfg(any(test, feature = "unchecked"))]
 use crate::seq_t;
 use crate::unpack;
 use crate::{FastLanes, FastLanesComparable, supported_bit_width};
+#[cfg(any(test, feature = "unchecked"))]
 use pastey::paste;
 
 pub trait BitPackingCompare: FastLanes {
@@ -43,6 +45,7 @@ pub trait BitPackingCompare: FastLanes {
     ///
     /// # Panics
     /// Panics if `width` is greater than the bit-width of `Self`.
+    #[cfg(any(test, feature = "unchecked"))]
     unsafe fn unchecked_unpack_cmp<V, F>(
         width: usize,
         input: &[Self],
@@ -57,7 +60,7 @@ pub trait BitPackingCompare: FastLanes {
 macro_rules! impl_packing_compare {
     ($T:ty) => {
         impl BitPackingCompare for $T {
-            #[inline(never)]
+            #[cfg_attr(feature = "unchecked", inline(never))]
             fn unpack_cmp<const W: usize, const B: usize, V, F>(
                 input: &[Self; B],
                 output: &mut [u64; 16],
@@ -103,6 +106,7 @@ macro_rules! impl_packing_compare {
                 }
             }
 
+            #[cfg(any(test, feature = "unchecked"))]
             unsafe fn unchecked_unpack_cmp<V, F>(
                  width: usize,
                  input: &[Self],
