@@ -9,16 +9,26 @@ pub trait Transpose: FastLanes {
 impl<T: FastLanes> Transpose for T {
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        const_for!(i in 0..1024 => {
-            output[i] = input[transpose(i)];
-        });
+        crate::simd::vectorize(
+            #[inline(always)]
+            || {
+                const_for!(i in 0..1024 => {
+                    output[i] = input[transpose(i)];
+                });
+            },
+        );
     }
 
     #[inline(never)]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        const_for!(i in 0..1024 => {
-            output[transpose(i)] = input[i];
-        });
+        crate::simd::vectorize(
+            #[inline(always)]
+            || {
+                const_for!(i in 0..1024 => {
+                    output[transpose(i)] = input[i];
+                });
+            },
+        );
     }
 }
 

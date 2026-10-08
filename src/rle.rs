@@ -78,14 +78,19 @@ impl<T: PartialEq + Copy> RLE for T {
     ) where
         I: Copy + Into<usize>,
     {
-        for i in 0..1024 {
-            let rle_idx: usize = unsafe { *rle_idxs.get_unchecked(i) }.into();
-            debug_assert!(rle_idx < rle_vals.len());
+        crate::simd::vectorize(
+            #[inline(always)]
+            || {
+                for i in 0..1024 {
+                    let rle_idx: usize = unsafe { *rle_idxs.get_unchecked(i) }.into();
+                    debug_assert!(rle_idx < rle_vals.len());
 
-            // SAFETY: `i` is less than 1024, and the caller guarantees every index is
-            // less than `rle_vals.len()`.
-            unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(rle_idx) };
-        }
+                    // SAFETY: `i` is less than 1024, and the caller guarantees every index is
+                    // less than `rle_vals.len()`.
+                    unsafe { *output.get_unchecked_mut(i) = *rle_vals.get_unchecked(rle_idx) };
+                }
+            },
+        );
     }
 }
 

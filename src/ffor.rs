@@ -46,11 +46,13 @@ macro_rules! impl_for {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                for lane in 0..Self::LANES {
-                    pack!($T, W, output, lane, |$idx| {
-                        input[$idx].wrapping_sub(reference)
-                    });
-                }
+                crate::simd::vectorize(#[inline(always)] || {
+                    for lane in 0..Self::LANES {
+                        pack!($T, W, output, lane, |$idx| {
+                            input[$idx].wrapping_sub(reference)
+                        });
+                    }
+                });
             }
 
             #[inline(never)]
@@ -64,11 +66,13 @@ macro_rules! impl_for {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                for lane in 0..Self::LANES {
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        output[$idx] = $elem.wrapping_add(reference)
-                    });
-                }
+                crate::simd::vectorize(#[inline(always)] || {
+                    for lane in 0..Self::LANES {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            output[$idx] = $elem.wrapping_add(reference)
+                        });
+                    }
+                });
             }
 
            unsafe fn unchecked_unfor_pack(width: usize, input: &[Self], reference: Self, output: &mut [Self]) {

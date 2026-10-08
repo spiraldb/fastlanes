@@ -119,11 +119,13 @@ macro_rules! impl_packing {
                 }
 
 
-                for lane in 0..Self::LANES {
-                    pack!($T, W, output, lane, |$idx| {
-                        input[$idx]
-                    });
-                }
+                crate::simd::vectorize(#[inline(always)] || {
+                    for lane in 0..Self::LANES {
+                        pack!($T, W, output, lane, |$idx| {
+                            input[$idx]
+                        });
+                    }
+                });
             }
 
             unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
@@ -167,11 +169,13 @@ macro_rules! impl_packing {
                 }
 
 
-                for lane in 0..Self::LANES {
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        output[$idx] = $elem
-                    });
-                }
+                crate::simd::vectorize(#[inline(always)] || {
+                    for lane in 0..Self::LANES {
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            output[$idx] = $elem
+                        });
+                    }
+                });
             }
 
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {

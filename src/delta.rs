@@ -35,14 +35,19 @@ macro_rules! impl_delta {
                     assert!(LANES == Self::LANES);
                 }
 
-                for lane in 0..Self::LANES {
-                    let mut prev = base[lane];
-                    iterate!($T, lane, |$idx| {
-                        let next = input[$idx];
-                        output[$idx] = next.wrapping_sub(prev);
-                        prev = next;
-                    });
-                }
+                crate::simd::vectorize(
+                    #[inline(always)]
+                    || {
+                        for lane in 0..Self::LANES {
+                            let mut prev = base[lane];
+                            iterate!($T, lane, |$idx| {
+                                let next = input[$idx];
+                                output[$idx] = next.wrapping_sub(prev);
+                                prev = next;
+                            });
+                        }
+                    },
+                );
             }
 
             #[inline(never)]
@@ -54,14 +59,19 @@ macro_rules! impl_delta {
                 const {
                     assert!(LANES == Self::LANES);
                 }
-                for lane in 0..LANES {
-                    let mut prev = base[lane];
-                    iterate!($T, lane, |$idx| {
-                        let next = input[$idx].wrapping_add(prev);
-                        output[$idx] = next;
-                        prev = next;
-                    });
-                }
+                crate::simd::vectorize(
+                    #[inline(always)]
+                    || {
+                        for lane in 0..LANES {
+                            let mut prev = base[lane];
+                            iterate!($T, lane, |$idx| {
+                                let next = input[$idx].wrapping_add(prev);
+                                output[$idx] = next;
+                                prev = next;
+                            });
+                        }
+                    },
+                );
             }
 
             #[inline(never)]
@@ -76,14 +86,19 @@ macro_rules! impl_delta {
                     assert!(B == 1024 * W / Self::T);
                 }
 
-                for lane in 0..Self::LANES {
-                    let mut prev = base[lane];
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        let next = $elem.wrapping_add(prev);
-                        output[$idx] = next;
-                        prev = next;
-                    });
-                }
+                crate::simd::vectorize(
+                    #[inline(always)]
+                    || {
+                        for lane in 0..Self::LANES {
+                            let mut prev = base[lane];
+                            unpack!($T, W, input, lane, |$idx, $elem| {
+                                let next = $elem.wrapping_add(prev);
+                                output[$idx] = next;
+                                prev = next;
+                            });
+                        }
+                    },
+                );
             }
         }
     };

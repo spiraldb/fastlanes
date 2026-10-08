@@ -18,8 +18,8 @@
 //! # Choosing an implementation
 //!
 //! [`transpose_bits`] / [`untranspose_bits`] dispatch to the fastest available
-//! implementation. When the crate is built with the `runtime` feature this
-//! dispatch is performed at runtime via `no_std` CPU feature detection; otherwise
+//! implementation. When the crate is built with the `runtime` feature (the default)
+//! this dispatch is performed at runtime via `fearless_simd`'s CPU feature detection; otherwise
 //! it is resolved at compile time from the enabled `target_feature`s, falling back
 //! to the portable scalar implementation.
 //!

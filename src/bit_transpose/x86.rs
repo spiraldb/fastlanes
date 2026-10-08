@@ -25,25 +25,25 @@ use crate::bit_transpose::as_byte_array;
 use crate::bit_transpose::as_byte_array_mut;
 use crate::bit_transpose::group_perm::group_tables;
 
-#[cfg(feature = "runtime")]
-cpufeatures::new!(bmi2, "bmi2");
-#[cfg(feature = "runtime")]
-cpufeatures::new!(vbmi, "avx512f", "avx512bw", "avx512vbmi");
-
 /// Check if BMI2 is available (requires the `runtime` feature).
+///
+/// Uses `fearless_simd`'s runtime detection: BMI2 is part of its AVX2 (x86-64-v3) level.
 #[cfg(feature = "runtime")]
 #[inline]
 #[must_use]
 pub fn has_bmi2() -> bool {
-    bmi2::get()
+    fearless_simd::Level::new().as_avx2().is_some()
 }
 
 /// Check if AVX-512 VBMI (+ F + BW) is available (requires the `runtime` feature).
+///
+/// Uses `fearless_simd`'s runtime detection: VBMI, F and BW are part of its (Ice Lake class)
+/// AVX-512 level.
 #[cfg(feature = "runtime")]
 #[inline]
 #[must_use]
 pub fn has_vbmi() -> bool {
-    vbmi::get()
+    fearless_simd::Level::new().as_avx512().is_some()
 }
 
 /// Per-bit-position masks selecting one bit out of every byte of a `u64`.

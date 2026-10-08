@@ -21,17 +21,17 @@ jobs:
       - name: Rust Build
         run: |
             cargo build --all-features --all-targets
-            cargo build --all-targets
+            cargo build --no-default-features --all-targets
       - name: Rust Lint - Format
         run: cargo fmt --all --check
       - name: Rust Lint - Clippy
         run: |
             cargo clippy --all-features --all-targets
-            cargo clippy --all-targets
+            cargo clippy --no-default-features --all-targets
       - name: Rust Test
         run: |
             cargo test --workspace --all-features
-            cargo test --workspace
+            cargo test --workspace --no-default-features
 
   msrv:
     name: MSRV

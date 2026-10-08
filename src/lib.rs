@@ -13,6 +13,7 @@ mod delta;
 mod ffor;
 mod macros;
 mod rle;
+mod simd;
 mod transpose;
 
 pub use bit_transpose::*;

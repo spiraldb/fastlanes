@@ -90,17 +90,19 @@ macro_rules! impl_packing_compare {
                 let words: &mut [$T; <$T>::LANES] =
                     unsafe { &mut *output.as_mut_ptr().cast::<[$T; <$T>::LANES]>() };
 
-                for lane in 0..Self::LANES {
-                    let mut word: $T = 0;
-                    let mut bit: usize = 0;
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        let _ = $idx;
-                        word |= <$T>::from(f(V::as_unpacked($elem), other)) << bit;
-                        #[allow(unused_assignments)]
-                        { bit += 1; }
-                    });
-                    words[lane] = word;
-                }
+                crate::simd::vectorize(#[inline(always)] || {
+                    for lane in 0..Self::LANES {
+                        let mut word: $T = 0;
+                        let mut bit: usize = 0;
+                        unpack!($T, W, input, lane, |$idx, $elem| {
+                            let _ = $idx;
+                            word |= <$T>::from(f(V::as_unpacked($elem), other)) << bit;
+                            #[allow(unused_assignments)]
+                            { bit += 1; }
+                        });
+                        words[lane] = word;
+                    }
+                });
             }
 
             unsafe fn unchecked_unpack_cmp<V, F>(
