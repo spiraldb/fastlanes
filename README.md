@@ -43,12 +43,14 @@ fn pack_u16_into_u3() {
 
 ## Runtime SIMD dispatch
 
-The kernels are plain scalar Rust that LLVM auto-vectorizes. With the `runtime` feature (enabled by default),
-each kernel is additionally compiled for higher SIMD levels (AVX2 and AVX-512 on x86) and the best one for the
-running CPU is selected at runtime using [`fearless_simd`](https://crates.io/crates/fearless_simd)'s feature
-detection, so a portable build still uses wide vectors. The `runtime` feature requires `std`; with
-`default-features = false` the crate is `no_std` and the kernels use only the compile-time target features
-(e.g. set via `-C target-cpu=native`).
+The kernels are plain scalar Rust that LLVM auto-vectorizes for the compile-time target, which is the baseline.
+On x86 we recommend building with at least AVX2, e.g. `RUSTFLAGS='-C target-cpu=x86-64-v3'` (a default `x86_64`
+build only targets SSE2).
+
+With the `runtime` feature (enabled by default), each kernel is additionally compiled for AVX-512 and selected at
+runtime when the CPU supports it, using [`fearless_simd`](https://crates.io/crates/fearless_simd)'s feature
+detection. That keeps at most two copies of each kernel. The `runtime` feature requires `std`; with
+`default-features = false` the crate is `no_std` and the kernels use only the compile-time target features.
 
 ## Differences to original FastLanes
 
@@ -67,7 +69,7 @@ To validate the correctness of the generated assembly and ensure it is vectorize
 cargo asm --profile release --bench bitpacking --rust BitPacking
 ```
 
-The level-specific copies are the `vectorize_avx2` / `vectorize_avx512` instantiations.
+The AVX-512 copies are the `vectorize_avx512` instantiations.
 Note, it requires `cargo install cargo-show-asm`.
 
 ## Benchmarking

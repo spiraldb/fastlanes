@@ -14,8 +14,8 @@ exclude = [".github/*", "renovate.json", ".git/*"]
 [features]
 default = ["runtime"]
 # Enables runtime CPU feature detection (via `fearless_simd`, which requires `std`).
-# The auto-vectorized kernels are compiled for several SIMD levels (e.g. AVX2 and
-# AVX-512 on x86) and the best one for the running CPU is selected at runtime, as is
+# The auto-vectorized kernels are additionally compiled for AVX-512 on x86 and that
+# copy is selected at runtime when the CPU supports it, as is
 # the `transpose_bits`/`untranspose_bits` implementation. Without it, everything is
 # resolved at compile time from the enabled `target_feature`s.
 runtime = ["dep:fearless_simd"]
