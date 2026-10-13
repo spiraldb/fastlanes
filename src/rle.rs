@@ -48,13 +48,11 @@ impl<T: PartialEq + Copy> RLE for T {
         let mut pos_val = 0u16;
         let mut rle_val_idx = 0usize;
 
-        let mut prev_val = unsafe { *input.get_unchecked(0) };
-        unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = prev_val };
+        unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = input[0] };
         rle_val_idx += 1;
         unsafe { *rle_idxs.get_unchecked_mut(0) = pos_val };
 
-        for i in 1..1024 {
-            let cur_val = unsafe { *input.get_unchecked(i) };
+        for (i, &[prev_val, cur_val]) in input.array_windows::<2>().enumerate() {
             if cur_val != prev_val {
                 // SAFETY: `rle_val_idx` increments at most once per element, so it stays
                 // below 1024.
@@ -62,9 +60,8 @@ impl<T: PartialEq + Copy> RLE for T {
                 unsafe { *rle_vals.get_unchecked_mut(rle_val_idx) = cur_val };
                 rle_val_idx += 1;
                 pos_val += 1;
-                prev_val = cur_val;
             }
-            unsafe { *rle_idxs.get_unchecked_mut(i) = pos_val };
+            unsafe { *rle_idxs.get_unchecked_mut(i + 1) = pos_val };
         }
 
         rle_val_idx
