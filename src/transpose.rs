@@ -1,5 +1,4 @@
 use crate::{FL_ORDER, FastLanes};
-use const_for::const_for;
 
 pub trait Transpose: FastLanes {
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]);
@@ -9,16 +8,29 @@ pub trait Transpose: FastLanes {
 impl<T: FastLanes> Transpose for T {
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        const_for!(i in 0..1024 => {
-            output[i] = input[transpose(i)];
-        });
+        // Write the output in order and gather from the input, like `untranspose`.
+        for row in 0..8 {
+            for (order, &fl_order) in FL_ORDER.iter().enumerate() {
+                for lane in 0..16 {
+                    output[row * 128 + order * 16 + lane] = input[lane * 64 + fl_order * 8 + row];
+                }
+            }
+        }
     }
 
     #[inline(never)]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        const_for!(i in 0..1024 => {
-            output[transpose(i)] = input[i];
-        });
+        // Write the output in order and gather from the input, which vectorizes far better than
+        // scattering writes to `output[transpose(i)]`. `transpose` maps index
+        // `row * 128 + order * 16 + lane` to `lane * 64 + FL_ORDER[order] * 8 + row`, and
+        // `FL_ORDER` is its own inverse.
+        for lane in 0..16 {
+            for (fl_order, &order) in FL_ORDER.iter().enumerate() {
+                for row in 0..8 {
+                    output[lane * 64 + fl_order * 8 + row] = input[row * 128 + order * 16 + lane];
+                }
+            }
+        }
     }
 }
 

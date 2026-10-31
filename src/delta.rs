@@ -1,6 +1,8 @@
 #![allow(unused_assignments)]
 
-use crate::{BitPacking, FastLanes, iterate, supported_bit_width, unpack};
+use crate::{BitPacking, FastLanes, iterate, seq_t, supported_bit_width, unpack};
+use core::mem::size_of;
+use pastey::paste;
 
 pub trait Delta: BitPacking {
     fn delta<const LANES: usize>(
@@ -19,6 +21,26 @@ pub trait Delta: BitPacking {
         input: &[Self; B],
         base: &[Self; LANES],
         output: &mut [Self; 1024],
+    );
+
+    /// Fused unpack and undelta of 1024 elements packed into `W` bits each, where `W` is
+    /// runtime-known instead of compile-time known.
+    ///
+    /// The output is in the transposed order the deltas were computed in, like
+    /// [`Delta::undelta`].
+    ///
+    /// # Safety
+    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
+    /// is the packed width. The output slice must be of exactly length 1024.
+    /// These lengths are checked only with `debug_assert` (i.e., not checked on release builds).
+    ///
+    /// # Panics
+    /// Panics if `width` is greater than the bit-width of `Self`.
+    unsafe fn unchecked_undelta_pack<const LANES: usize>(
+        width: usize,
+        input: &[Self],
+        base: &[Self; LANES],
+        output: &mut [Self],
     );
 }
 
@@ -85,6 +107,42 @@ macro_rules! impl_delta {
                     });
                 }
             }
+
+            unsafe fn unchecked_undelta_pack<const LANES: usize>(
+                width: usize,
+                input: &[Self],
+                base: &[Self; LANES],
+                output: &mut [Self],
+            ) {
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            Self::undelta_pack::<LANES, W, B>(
+                                unsafe { crate::as_array_unchecked(input) },
+                                base,
+                                unsafe { crate::as_array_mut_unchecked(output) },
+                            )
+                        },)*
+                        // seq_t has exclusive upper bound
+                        Self::T => {
+                            const W: usize = <$T>::T;
+                            const B: usize = 1024;
+                            Self::undelta_pack::<LANES, W, B>(
+                                unsafe { crate::as_array_unchecked(input) },
+                                base,
+                                unsafe { crate::as_array_mut_unchecked(output) },
+                            )
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
+            }
         }
     };
 }
@@ -139,51 +197,6 @@ mod test {
         assert_eq!(transposed, undelta);
     }
 
-    trait RuntimeUndeltaPack: Delta {
-        fn undelta_pack_for_width<const LANES: usize>(
-            width: usize,
-            input: &[Self],
-            base: &[Self; LANES],
-            output: &mut [Self; 1024],
-        );
-    }
-
-    macro_rules! impl_runtime_undelta_pack {
-        ($T:ident) => {
-            impl RuntimeUndeltaPack for $T {
-                fn undelta_pack_for_width<const LANES: usize>(
-                    width: usize,
-                    input: &[Self],
-                    base: &[Self; LANES],
-                    output: &mut [Self; 1024],
-                ) {
-                    macro_rules! unpack_width {
-                        ($W:expr) => {{
-                            const B: usize = 1024 * $W / <$T>::T;
-                            // SAFETY: the caller allocates `input` for `width`, and this branch is
-                            // selected only when `width == W`.
-                            let input = unsafe { crate::as_array_unchecked::<$T, B>(input) };
-                            <$T>::undelta_pack::<LANES, $W, B>(input, base, output);
-                        }};
-                    }
-
-                    paste!(crate::seq_t!(W in $T {
-                        match width {
-                            #(W => unpack_width!(W),)*
-                            <$T>::T => unpack_width!({ <$T>::T }),
-                            _ => unreachable!("unsupported width {width}"),
-                        }
-                    }));
-                }
-            }
-        };
-    }
-
-    impl_runtime_undelta_pack!(u8);
-    impl_runtime_undelta_pack!(u16);
-    impl_runtime_undelta_pack!(u32);
-    impl_runtime_undelta_pack!(u64);
-
     fn assert_delta_matches_reference<T, const LANES: usize>(tc: &TestCase)
     where
         T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + WrappingSub + 'static,
@@ -226,7 +239,7 @@ mod test {
 
     fn assert_undelta_pack_matches_unfused<T, const LANES: usize>(tc: &TestCase)
     where
-        T: RuntimeUndeltaPack + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
+        T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
     {
         let deltas: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
         let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
@@ -242,7 +255,7 @@ mod test {
             T::undelta::<LANES>(&unpacked, &base, &mut expected);
 
             let mut actual = [T::max_value(); 1024];
-            T::undelta_pack_for_width(width, &packed, &base, &mut actual);
+            unsafe { T::unchecked_undelta_pack(width, &packed, &base, &mut actual) };
             assert_eq!(actual, expected);
         }
     }
