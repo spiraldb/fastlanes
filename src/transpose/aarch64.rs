@@ -16,13 +16,24 @@ use core::arch::aarch64::{
     vtrn2_u8, vtrn2_u16, vtrn2_u32, vtrn2q_u16, vtrn2q_u32, vtrn2q_u64,
 };
 use core::mem::size_of;
+use fearless_simd::Neon;
 
 /// [`Transpose::transpose`](crate::Transpose::transpose) with NEON.
+///
+/// The `Neon` token proves that the CPU supports NEON. Get it from
+/// [`Level`](fearless_simd::Level).
+#[inline]
+pub fn transpose_neon<T: FastLanes>(_neon: Neon, input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the token proves the CPU features.
+    unsafe { transpose_neon_unchecked(input, output) }
+}
+
+/// [`transpose_neon`] without the token.
 ///
 /// # Safety
 /// The CPU must support NEON, which every aarch64 CPU does.
 #[target_feature(enable = "neon")]
-pub unsafe fn transpose_neon<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+unsafe fn transpose_neon_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
     // SAFETY: both arrays hold 1024 elements of the width matched below, and the transpose only
     // moves elements, so reading them as unsigned integers of that width is exact. NEON is
@@ -39,12 +50,22 @@ pub unsafe fn transpose_neon<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1
 
 /// [`Transpose::untranspose`](crate::Transpose::untranspose) with NEON.
 ///
+/// The `Neon` token proves that the CPU supports NEON. Get it from
+/// [`Level`](fearless_simd::Level).
+#[inline]
+pub fn untranspose_neon<T: FastLanes>(_neon: Neon, input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the token proves the CPU features.
+    unsafe { untranspose_neon_unchecked(input, output) }
+}
+
+/// [`untranspose_neon`] without the token.
+///
 /// # Safety
 /// The CPU must support NEON, which every aarch64 CPU does.
 #[target_feature(enable = "neon")]
-pub unsafe fn untranspose_neon<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+unsafe fn untranspose_neon_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_neon`.
+    // SAFETY: as in `transpose_neon_unchecked`.
     unsafe {
         match size_of::<T>() {
             1 => untranspose_tiles::<U8x8Neon>(input.cast(), output.cast()),

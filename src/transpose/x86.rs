@@ -22,30 +22,24 @@ use core::arch::x86_64::{
     _mm256_unpacklo_epi32, _mm256_unpacklo_epi64,
 };
 use core::mem::size_of;
-
-#[cfg(feature = "runtime")]
-cpufeatures::new!(avx2, "avx2");
-
-/// Check if AVX2 is available, at runtime with the `runtime` feature and otherwise from the
-/// enabled target features.
-#[inline]
-pub(super) fn has_avx2() -> bool {
-    #[cfg(feature = "runtime")]
-    {
-        avx2::get()
-    }
-    #[cfg(not(feature = "runtime"))]
-    {
-        cfg!(target_feature = "avx2")
-    }
-}
+use fearless_simd::{Avx2, Sse2};
 
 /// [`Transpose::transpose`](crate::Transpose::transpose) with SSE2.
+///
+/// The `Sse2` token proves that the CPU supports SSE2. Get it from
+/// [`Level`](fearless_simd::Level).
+#[inline]
+pub fn transpose_sse2<T: FastLanes>(_sse2: Sse2, input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the token proves the CPU features.
+    unsafe { transpose_sse2_unchecked(input, output) }
+}
+
+/// [`transpose_sse2`] without the token.
 ///
 /// # Safety
 /// The CPU must support SSE2, which every x86-64 CPU does.
 #[target_feature(enable = "sse2")]
-pub unsafe fn transpose_sse2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+unsafe fn transpose_sse2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
     // SAFETY: both arrays hold 1024 elements of the width matched below, and the transpose only
     // moves elements, so reading them as unsigned integers of that width is exact. SSE2 is
@@ -62,12 +56,22 @@ pub unsafe fn transpose_sse2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1
 
 /// [`Transpose::untranspose`](crate::Transpose::untranspose) with SSE2.
 ///
+/// The `Sse2` token proves that the CPU supports SSE2. Get it from
+/// [`Level`](fearless_simd::Level).
+#[inline]
+pub fn untranspose_sse2<T: FastLanes>(_sse2: Sse2, input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the token proves the CPU features.
+    unsafe { untranspose_sse2_unchecked(input, output) }
+}
+
+/// [`untranspose_sse2`] without the token.
+///
 /// # Safety
 /// The CPU must support SSE2, which every x86-64 CPU does.
 #[target_feature(enable = "sse2")]
-pub unsafe fn untranspose_sse2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+unsafe fn untranspose_sse2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_sse2`.
+    // SAFETY: as in `transpose_sse2_unchecked`.
     unsafe {
         match size_of::<T>() {
             1 => untranspose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
@@ -80,12 +84,22 @@ pub unsafe fn untranspose_sse2<T: FastLanes>(input: &[T; 1024], output: &mut [T;
 
 /// [`Transpose::transpose`](crate::Transpose::transpose) with AVX2.
 ///
+/// The `Avx2` token proves that the CPU supports AVX2. Get it from
+/// [`Level`](fearless_simd::Level).
+#[inline]
+pub fn transpose_avx2<T: FastLanes>(_avx2: Avx2, input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the token proves the CPU features.
+    unsafe { transpose_avx2_unchecked(input, output) }
+}
+
+/// [`transpose_avx2`] without the token.
+///
 /// # Safety
 /// The CPU must support AVX2.
 #[target_feature(enable = "avx2")]
-pub unsafe fn transpose_avx2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+unsafe fn transpose_avx2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_sse2`, with AVX2 enabled on this function.
+    // SAFETY: as in `transpose_sse2_unchecked`, with AVX2 enabled on this function.
     unsafe {
         match size_of::<T>() {
             1 => transpose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
@@ -98,12 +112,22 @@ pub unsafe fn transpose_avx2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1
 
 /// [`Transpose::untranspose`](crate::Transpose::untranspose) with AVX2.
 ///
+/// The `Avx2` token proves that the CPU supports AVX2. Get it from
+/// [`Level`](fearless_simd::Level).
+#[inline]
+pub fn untranspose_avx2<T: FastLanes>(_avx2: Avx2, input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the token proves the CPU features.
+    unsafe { untranspose_avx2_unchecked(input, output) }
+}
+
+/// [`untranspose_avx2`] without the token.
+///
 /// # Safety
 /// The CPU must support AVX2.
 #[target_feature(enable = "avx2")]
-pub unsafe fn untranspose_avx2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+unsafe fn untranspose_avx2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_avx2`.
+    // SAFETY: as in `transpose_avx2_unchecked`.
     unsafe {
         match size_of::<T>() {
             1 => untranspose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
