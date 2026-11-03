@@ -9,6 +9,8 @@ pub trait Transpose: FastLanes {
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
+#[cfg(target_arch = "x86_64")]
+mod avx512;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod tiles;
 #[cfg(target_arch = "x86_64")]
@@ -16,6 +18,8 @@ mod x86;
 
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::{transpose_neon, untranspose_neon};
+#[cfg(target_arch = "x86_64")]
+pub use avx512::{transpose_avx512, untranspose_avx512};
 #[cfg(target_arch = "x86_64")]
 pub use x86::{transpose_avx2, transpose_sse2, untranspose_avx2, untranspose_sse2};
 
@@ -25,6 +29,9 @@ impl<T: FastLanes> Transpose for T {
         #[cfg(target_arch = "x86_64")]
         {
             let level = level();
+            if let Some(avx512) = level.as_avx512() {
+                return transpose_avx512(avx512, input, output);
+            }
             if let Some(avx2) = level.as_avx2() {
                 return transpose_avx2(avx2, input, output);
             }
@@ -46,6 +53,9 @@ impl<T: FastLanes> Transpose for T {
         #[cfg(target_arch = "x86_64")]
         {
             let level = level();
+            if let Some(avx512) = level.as_avx512() {
+                return untranspose_avx512(avx512, input, output);
+            }
             if let Some(avx2) = level.as_avx2() {
                 return untranspose_avx2(avx2, input, output);
             }
@@ -166,6 +176,13 @@ mod tests {
                                 &input,
                                 |i, o| transpose_avx2(avx2, i, o),
                                 |i, o| untranspose_avx2(avx2, i, o),
+                            );
+                        }
+                        if let Some(avx512) = level().as_avx512() {
+                            check_variant::<$T>(
+                                &input,
+                                |i, o| transpose_avx512(avx512, i, o),
+                                |i, o| untranspose_avx512(avx512, i, o),
                             );
                         }
                     }
