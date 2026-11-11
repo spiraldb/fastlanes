@@ -115,7 +115,11 @@ macro_rules! impl_delta {
                 output: &mut [Self],
             ) {
                 let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                debug_assert_eq!(
+                    input.len(),
+                    packed_len,
+                    "Input buffer must be of size 1024 * W / T"
+                );
                 debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
                 debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
