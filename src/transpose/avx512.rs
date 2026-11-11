@@ -247,10 +247,11 @@ const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -
 /// Give if elements of `size` bytes load and store split halves, in the direction `forward`.
 ///
 /// Split loads and stores each save a permute level but cost an insert or an extract. These are
-/// the fastest choices on Sapphire Rapids, Granite Rapids and Zen 5. Zen 4 runs 512-bit shuffles
-/// at half rate, so there `u32` and `u64` are about 25% slower than with AVX2.
+/// the fastest choices on Sapphire Rapids, Granite Rapids and Zen 5. For `u8`, no split saves a
+/// level.
 const fn splits(size: usize, forward: bool) -> (bool, bool) {
     match (size, forward) {
+        (1, _) => (false, false),
         (2, true) => (true, false),
         (2, false) | (4, _) => (true, true),
         _ => (false, true),
@@ -297,7 +298,13 @@ struct Kernel<E, const FORWARD: bool>(E);
 impl<E: Elem, const FORWARD: bool> Kernel<E, FORWARD> {
     const PLAN: Plan = {
         let (split_load, split_store) = splits(size_of::<E>(), FORWARD);
-        plan(size_of::<E>(), FORWARD, split_load, split_store)
+        let plan = plan(size_of::<E>(), FORWARD, split_load, split_store);
+
+        // `plan` splits only if a split saves a permute level, so `splits` must not ask for a
+        // split that does not.
+        assert!(plan.split_load == split_load && plan.split_store == split_store);
+
+        plan
     };
 
     /// Run the plan on 1024 elements.
