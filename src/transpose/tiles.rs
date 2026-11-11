@@ -27,6 +27,25 @@ pub(super) trait Tile {
     );
 }
 
+/// Transpose 1024 elements tile by tile, or untranspose them if `FORWARD` is false.
+///
+/// # Safety
+/// As for [`untranspose_tiles`].
+#[inline(always)]
+pub(super) unsafe fn walk<K: Tile, const FORWARD: bool>(
+    input: *const K::Elem,
+    output: *mut K::Elem,
+) {
+    // SAFETY: the caller guarantees the arrays and `K`.
+    unsafe {
+        if FORWARD {
+            transpose_tiles::<K>(input, output);
+        } else {
+            untranspose_tiles::<K>(input, output);
+        }
+    }
+}
+
 /// Untranspose 1024 elements tile by tile.
 ///
 /// `output[a * 64 + b * 8 + c] = input[c * 128 + FL_ORDER[b] * 16 + a]`: for each `b`, the 8 rows
@@ -36,7 +55,7 @@ pub(super) trait Tile {
 /// `input` and `output` must each point to 1024 elements, and the CPU must support the
 /// instructions of `K`.
 #[inline(always)]
-pub(super) unsafe fn untranspose_tiles<K: Tile>(input: *const K::Elem, output: *mut K::Elem) {
+unsafe fn untranspose_tiles<K: Tile>(input: *const K::Elem, output: *mut K::Elem) {
     for (b, &order) in FL_ORDER.iter().enumerate() {
         for a in (0..16).step_by(K::N) {
             for c in (0..8).step_by(K::N) {
@@ -59,7 +78,7 @@ pub(super) unsafe fn untranspose_tiles<K: Tile>(input: *const K::Elem, output: *
 /// # Safety
 /// As for [`untranspose_tiles`].
 #[inline(always)]
-pub(super) unsafe fn transpose_tiles<K: Tile>(input: *const K::Elem, output: *mut K::Elem) {
+unsafe fn transpose_tiles<K: Tile>(input: *const K::Elem, output: *mut K::Elem) {
     for (b, &order) in FL_ORDER.iter().enumerate() {
         for a in (0..16).step_by(K::N) {
             for c in (0..8).step_by(K::N) {

@@ -1,6 +1,4 @@
 use crate::{FL_ORDER, FastLanes};
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use fearless_simd::Level;
 
 pub trait Transpose: FastLanes {
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]);
@@ -19,62 +17,65 @@ pub use aarch64::{transpose_neon, untranspose_neon};
 #[cfg(target_arch = "x86_64")]
 pub use x86::{transpose_avx2, transpose_sse2, untranspose_avx2, untranspose_sse2};
 
+#[cfg(all(target_arch = "x86_64", feature = "runtime"))]
+cpufeatures::new!(cpuid_avx2, "avx2");
+
 impl<T: FastLanes> Transpose for T {
     #[inline(never)]
     fn transpose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        #[cfg(target_arch = "x86_64")]
-        {
-            let level = level();
-            if let Some(avx2) = level.as_avx2() {
-                return transpose_avx2(avx2, input, output);
-            }
-            if let Some(sse2) = level.as_sse2() {
-                return transpose_sse2(sse2, input, output);
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        if let Some(neon) = level().as_neon() {
-            return transpose_neon(neon, input, output);
-        }
-
-        transpose_scalar(input, output);
+        dispatch::<T, true>(input, output);
     }
 
     #[inline(never)]
     fn untranspose(input: &[Self; 1024], output: &mut [Self; 1024]) {
-        #[cfg(target_arch = "x86_64")]
-        {
-            let level = level();
-            if let Some(avx2) = level.as_avx2() {
-                return untranspose_avx2(avx2, input, output);
-            }
-            if let Some(sse2) = level.as_sse2() {
-                return untranspose_sse2(sse2, input, output);
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        if let Some(neon) = level().as_neon() {
-            return untranspose_neon(neon, input, output);
-        }
-
-        untranspose_scalar(input, output);
+        dispatch::<T, false>(input, output);
     }
 }
 
-/// Give the SIMD level for the dispatch: detected at runtime with the `runtime` feature, and
-/// otherwise from the enabled target features.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+/// Transpose with the fastest variant that the CPU supports, or untranspose if `FORWARD` is
+/// false.
 #[inline]
-fn level() -> Level {
+fn dispatch<T: FastLanes, const FORWARD: bool>(input: &[T; 1024], output: &mut [T; 1024]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if has_avx2() {
+            // SAFETY: the CPU supports AVX2.
+            unsafe { x86::avx2::<T, FORWARD>(input, output) }
+        } else {
+            // SAFETY: every x86-64 CPU supports SSE2.
+            unsafe { x86::sse2::<T, FORWARD>(input, output) }
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: every aarch64 CPU supports NEON.
+    unsafe {
+        aarch64::neon::<T, FORWARD>(input, output);
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        if FORWARD {
+            transpose_scalar(input, output);
+        } else {
+            untranspose_scalar(input, output);
+        }
+    }
+}
+
+/// Give if the CPU supports AVX2: detected at runtime with the `runtime` feature, and otherwise
+/// from the enabled target features.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn has_avx2() -> bool {
     #[cfg(feature = "runtime")]
     {
-        Level::new()
+        cpuid_avx2::get()
     }
+
     #[cfg(not(feature = "runtime"))]
     {
-        Level::baseline()
+        cfg!(target_feature = "avx2")
     }
 }
 
@@ -178,31 +179,32 @@ mod tests {
         check_variant::<T>(input, transpose_scalar, untranspose_scalar);
         check_variant::<T>(input, T::transpose, T::untranspose);
 
+        // SAFETY: every x86-64 CPU supports SSE2, and the AVX2 variant runs only if the CPU
+        // supports AVX2.
         #[cfg(target_arch = "x86_64")]
-        {
-            if let Some(sse2) = level().as_sse2() {
-                check_variant::<T>(
-                    input,
-                    |i, o| transpose_sse2(sse2, i, o),
-                    |i, o| untranspose_sse2(sse2, i, o),
-                );
-            }
+        unsafe {
+            check_variant::<T>(
+                input,
+                |i, o| transpose_sse2(i, o),
+                |i, o| untranspose_sse2(i, o),
+            );
 
-            if let Some(avx2) = level().as_avx2() {
+            if has_avx2() {
                 check_variant::<T>(
                     input,
-                    |i, o| transpose_avx2(avx2, i, o),
-                    |i, o| untranspose_avx2(avx2, i, o),
+                    |i, o| transpose_avx2(i, o),
+                    |i, o| untranspose_avx2(i, o),
                 );
             }
         }
 
+        // SAFETY: every aarch64 CPU supports NEON.
         #[cfg(target_arch = "aarch64")]
-        if let Some(neon) = level().as_neon() {
+        unsafe {
             check_variant::<T>(
                 input,
-                |i, o| transpose_neon(neon, i, o),
-                |i, o| untranspose_neon(neon, i, o),
+                |i, o| transpose_neon(i, o),
+                |i, o| untranspose_neon(i, o),
             );
         }
     }

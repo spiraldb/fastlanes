@@ -6,7 +6,7 @@
 // The tile kernels must inline into the `target_feature` functions to be compiled with them.
 #![allow(clippy::inline_always)]
 
-use super::tiles::{Tile, transpose_tiles, untranspose_tiles};
+use super::tiles::{Tile, walk};
 use crate::FastLanes;
 use core::arch::aarch64::{
     uint16x8_t, uint32x4_t, uint64x2_t, vld1_u8, vld1q_u16, vld1q_u32, vld1q_u64,
@@ -16,62 +16,46 @@ use core::arch::aarch64::{
     vtrn2_u8, vtrn2_u16, vtrn2_u32, vtrn2q_u16, vtrn2q_u32, vtrn2q_u64,
 };
 use core::mem::size_of;
-use fearless_simd::Neon;
 
 /// [`Transpose::transpose`](crate::Transpose::transpose) with NEON.
 ///
-/// The `Neon` token proves that the CPU supports NEON. Get it from
-/// [`Level`](fearless_simd::Level).
-#[inline]
-pub fn transpose_neon<T: FastLanes>(_neon: Neon, input: &[T; 1024], output: &mut [T; 1024]) {
-    // SAFETY: the token proves the CPU features.
-    unsafe { transpose_neon_unchecked(input, output) }
-}
-
-/// [`transpose_neon`] without the token.
-///
 /// # Safety
 /// The CPU must support NEON, which every aarch64 CPU does.
-#[target_feature(enable = "neon")]
-unsafe fn transpose_neon_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
-    let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: `FastLanes` is sealed, so `T` is the unsigned integer of the width matched below,
-    // and both arrays hold 1024 of them. NEON is enabled on this function.
-    unsafe {
-        match size_of::<T>() {
-            1 => transpose_tiles::<U8x8Neon>(input.cast(), output.cast()),
-            2 => transpose_tiles::<U16x8Neon>(input.cast(), output.cast()),
-            4 => transpose_tiles::<U32x4Neon>(input.cast(), output.cast()),
-            8 => transpose_tiles::<U64x2Neon>(input.cast(), output.cast()),
-            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
-        }
-    }
+#[inline]
+pub unsafe fn transpose_neon<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the caller guarantees NEON.
+    unsafe { neon::<T, true>(input, output) }
 }
 
 /// [`Transpose::untranspose`](crate::Transpose::untranspose) with NEON.
 ///
-/// The `Neon` token proves that the CPU supports NEON. Get it from
-/// [`Level`](fearless_simd::Level).
-#[inline]
-pub fn untranspose_neon<T: FastLanes>(_neon: Neon, input: &[T; 1024], output: &mut [T; 1024]) {
-    // SAFETY: the token proves the CPU features.
-    unsafe { untranspose_neon_unchecked(input, output) }
-}
-
-/// [`untranspose_neon`] without the token.
-///
 /// # Safety
 /// The CPU must support NEON, which every aarch64 CPU does.
+#[inline]
+pub unsafe fn untranspose_neon<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the caller guarantees NEON.
+    unsafe { neon::<T, false>(input, output) }
+}
+
+/// Transpose with NEON, or untranspose if `FORWARD` is false.
+///
+/// # Safety
+/// The CPU must support NEON.
 #[target_feature(enable = "neon")]
-unsafe fn untranspose_neon_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+pub(super) unsafe fn neon<T: FastLanes, const FORWARD: bool>(
+    input: &[T; 1024],
+    output: &mut [T; 1024],
+) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_neon_unchecked`.
+
+    // SAFETY: `FastLanes` is sealed, so `T` is the unsigned integer of the width matched below,
+    // and both arrays hold 1024 of them. NEON is enabled on this function.
     unsafe {
         match size_of::<T>() {
-            1 => untranspose_tiles::<U8x8Neon>(input.cast(), output.cast()),
-            2 => untranspose_tiles::<U16x8Neon>(input.cast(), output.cast()),
-            4 => untranspose_tiles::<U32x4Neon>(input.cast(), output.cast()),
-            8 => untranspose_tiles::<U64x2Neon>(input.cast(), output.cast()),
+            1 => walk::<U8x8Neon, FORWARD>(input.cast(), output.cast()),
+            2 => walk::<U16x8Neon, FORWARD>(input.cast(), output.cast()),
+            4 => walk::<U32x4Neon, FORWARD>(input.cast(), output.cast()),
+            8 => walk::<U64x2Neon, FORWARD>(input.cast(), output.cast()),
             _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }

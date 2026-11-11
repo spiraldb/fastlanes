@@ -12,7 +12,7 @@
 // The tile kernels must inline into the `target_feature` functions to be compiled with them.
 #![allow(clippy::inline_always)]
 
-use super::tiles::{Tile, transpose_tiles, untranspose_tiles};
+use super::tiles::{Tile, walk};
 use crate::FastLanes;
 use core::arch::x86_64::{
     __m128i, __m256i, _mm_loadl_epi64, _mm_loadu_si128, _mm_storel_epi64, _mm_storeu_si128,
@@ -22,120 +22,89 @@ use core::arch::x86_64::{
     _mm256_unpacklo_epi64,
 };
 use core::mem::size_of;
-use fearless_simd::{Avx2, Sse2};
 
 /// [`Transpose::transpose`](crate::Transpose::transpose) with SSE2.
 ///
-/// The `Sse2` token proves that the CPU supports SSE2. Get it from
-/// [`Level`](fearless_simd::Level).
-#[inline]
-pub fn transpose_sse2<T: FastLanes>(_sse2: Sse2, input: &[T; 1024], output: &mut [T; 1024]) {
-    // SAFETY: the token proves the CPU features.
-    unsafe { transpose_sse2_unchecked(input, output) }
-}
-
-/// [`transpose_sse2`] without the token.
-///
 /// # Safety
 /// The CPU must support SSE2, which every x86-64 CPU does.
-#[target_feature(enable = "sse2")]
-unsafe fn transpose_sse2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
-    let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: `FastLanes` is sealed, so `T` is the unsigned integer of the width matched below,
-    // and both arrays hold 1024 of them. SSE2 is enabled on this function.
-    unsafe {
-        match size_of::<T>() {
-            1 => transpose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
-            2 => transpose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
-            4 => transpose_tiles::<U32x4Sse2>(input.cast(), output.cast()),
-            8 => transpose_tiles::<U64x2Sse2>(input.cast(), output.cast()),
-            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
-        }
-    }
+#[inline]
+pub unsafe fn transpose_sse2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the caller guarantees SSE2.
+    unsafe { sse2::<T, true>(input, output) }
 }
 
 /// [`Transpose::untranspose`](crate::Transpose::untranspose) with SSE2.
 ///
-/// The `Sse2` token proves that the CPU supports SSE2. Get it from
-/// [`Level`](fearless_simd::Level).
-#[inline]
-pub fn untranspose_sse2<T: FastLanes>(_sse2: Sse2, input: &[T; 1024], output: &mut [T; 1024]) {
-    // SAFETY: the token proves the CPU features.
-    unsafe { untranspose_sse2_unchecked(input, output) }
-}
-
-/// [`untranspose_sse2`] without the token.
-///
 /// # Safety
 /// The CPU must support SSE2, which every x86-64 CPU does.
-#[target_feature(enable = "sse2")]
-unsafe fn untranspose_sse2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
-    let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_sse2_unchecked`.
-    unsafe {
-        match size_of::<T>() {
-            1 => untranspose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
-            2 => untranspose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
-            4 => untranspose_tiles::<U32x4Sse2>(input.cast(), output.cast()),
-            8 => untranspose_tiles::<U64x2Sse2>(input.cast(), output.cast()),
-            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
-        }
-    }
+#[inline]
+pub unsafe fn untranspose_sse2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the caller guarantees SSE2.
+    unsafe { sse2::<T, false>(input, output) }
 }
 
 /// [`Transpose::transpose`](crate::Transpose::transpose) with AVX2.
 ///
-/// The `Avx2` token proves that the CPU supports AVX2. Get it from
-/// [`Level`](fearless_simd::Level).
+/// # Safety
+/// The CPU must support AVX2.
 #[inline]
-pub fn transpose_avx2<T: FastLanes>(_avx2: Avx2, input: &[T; 1024], output: &mut [T; 1024]) {
-    // SAFETY: the token proves the CPU features.
-    unsafe { transpose_avx2_unchecked(input, output) }
+pub unsafe fn transpose_avx2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the caller guarantees AVX2.
+    unsafe { avx2::<T, true>(input, output) }
 }
 
-/// [`transpose_avx2`] without the token.
+/// [`Transpose::untranspose`](crate::Transpose::untranspose) with AVX2.
 ///
 /// # Safety
 /// The CPU must support AVX2.
-#[target_feature(enable = "avx2")]
-unsafe fn transpose_avx2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+#[inline]
+pub unsafe fn untranspose_avx2<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+    // SAFETY: the caller guarantees AVX2.
+    unsafe { avx2::<T, false>(input, output) }
+}
+
+/// Transpose with SSE2, or untranspose if `FORWARD` is false.
+///
+/// # Safety
+/// The CPU must support SSE2.
+#[target_feature(enable = "sse2")]
+pub(super) unsafe fn sse2<T: FastLanes, const FORWARD: bool>(
+    input: &[T; 1024],
+    output: &mut [T; 1024],
+) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_sse2_unchecked`, with AVX2 enabled on this function.
+
+    // SAFETY: `FastLanes` is sealed, so `T` is the unsigned integer of the width matched below,
+    // and both arrays hold 1024 of them. SSE2 is enabled on this function.
     unsafe {
         match size_of::<T>() {
-            1 => transpose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
-            2 => transpose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
-            4 => transpose_tiles::<U32x8Avx2>(input.cast(), output.cast()),
-            8 => transpose_tiles::<U64x4Avx2>(input.cast(), output.cast()),
+            1 => walk::<U8x8Sse2, FORWARD>(input.cast(), output.cast()),
+            2 => walk::<U16x8Sse2, FORWARD>(input.cast(), output.cast()),
+            4 => walk::<U32x4Sse2, FORWARD>(input.cast(), output.cast()),
+            8 => walk::<U64x2Sse2, FORWARD>(input.cast(), output.cast()),
             _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }
 
-/// [`Transpose::untranspose`](crate::Transpose::untranspose) with AVX2.
-///
-/// The `Avx2` token proves that the CPU supports AVX2. Get it from
-/// [`Level`](fearless_simd::Level).
-#[inline]
-pub fn untranspose_avx2<T: FastLanes>(_avx2: Avx2, input: &[T; 1024], output: &mut [T; 1024]) {
-    // SAFETY: the token proves the CPU features.
-    unsafe { untranspose_avx2_unchecked(input, output) }
-}
-
-/// [`untranspose_avx2`] without the token.
+/// Transpose with AVX2, or untranspose if `FORWARD` is false.
 ///
 /// # Safety
 /// The CPU must support AVX2.
 #[target_feature(enable = "avx2")]
-unsafe fn untranspose_avx2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
+pub(super) unsafe fn avx2<T: FastLanes, const FORWARD: bool>(
+    input: &[T; 1024],
+    output: &mut [T; 1024],
+) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: as in `transpose_avx2_unchecked`.
+
+    // SAFETY: as in `sse2`, with AVX2 enabled on this function.
     unsafe {
         match size_of::<T>() {
-            1 => untranspose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
-            2 => untranspose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
-            4 => untranspose_tiles::<U32x8Avx2>(input.cast(), output.cast()),
-            8 => untranspose_tiles::<U64x4Avx2>(input.cast(), output.cast()),
+            1 => walk::<U8x8Sse2, FORWARD>(input.cast(), output.cast()),
+            2 => walk::<U16x8Sse2, FORWARD>(input.cast(), output.cast()),
+            4 => walk::<U32x8Avx2, FORWARD>(input.cast(), output.cast()),
+            8 => walk::<U64x4Avx2, FORWARD>(input.cast(), output.cast()),
             _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
