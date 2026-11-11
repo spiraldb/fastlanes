@@ -13,9 +13,9 @@ exclude = [".github/*", "renovate.json", ".git/*"]
 
 [features]
 default = []
-# Enables runtime CPU feature detection for `transpose_bits`/`untranspose_bits`
-# dispatch. Without it, the dispatch is resolved at compile time from the enabled
-# `target_feature`s.
+# Enables runtime CPU feature detection for the `Transpose` and
+# `transpose_bits`/`untranspose_bits` dispatch. Without it, the dispatch is resolved
+# at compile time from the enabled `target_feature`s.
 runtime = ["dep:cpufeatures"]
 
 [dependencies]
