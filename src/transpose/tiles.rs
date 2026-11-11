@@ -36,6 +36,10 @@ pub(super) unsafe fn walk<K: Tile, const FORWARD: bool>(
     input: *const K::Elem,
     output: *mut K::Elem,
 ) {
+    // The walks step over 8 rows and 16 lanes in tiles of `N`, so `N` must divide 8. A larger
+    // tile would access elements after the end of the arrays.
+    const { assert!(K::N > 0 && 8 % K::N == 0, "the tile size must divide 8") };
+
     // SAFETY: the caller guarantees the arrays and `K`.
     unsafe {
         if FORWARD {
