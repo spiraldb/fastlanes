@@ -266,36 +266,29 @@ trait Elem {
     unsafe fn permute(a: __m512i, index: __m512i, b: __m512i) -> __m512i;
 }
 
-impl Elem for u8 {
-    #[inline(always)]
-    unsafe fn permute(a: __m512i, index: __m512i, b: __m512i) -> __m512i {
-        // SAFETY: the caller guarantees VBMI.
-        unsafe { _mm512_permutex2var_epi8(a, index, b) }
-    }
+/// Implement [`Elem`] for each type with its `vpermt2` intrinsic.
+macro_rules! impl_elem {
+    ($($T:ty => $permute:ident;)*) => {
+        $(
+            impl Elem for $T {
+                #[inline(always)]
+                unsafe fn permute(a: __m512i, index: __m512i, b: __m512i) -> __m512i {
+                    // SAFETY: the caller guarantees AVX-512 F, BW and VBMI.
+                    unsafe { $permute(a, index, b) }
+                }
+            }
+        )*
+    };
 }
 
-impl Elem for u16 {
-    #[inline(always)]
-    unsafe fn permute(a: __m512i, index: __m512i, b: __m512i) -> __m512i {
-        // SAFETY: the caller guarantees AVX-512 BW.
-        unsafe { _mm512_permutex2var_epi16(a, index, b) }
-    }
-}
+impl_elem! {
+    u8 => _mm512_permutex2var_epi8;
 
-impl Elem for u32 {
-    #[inline(always)]
-    unsafe fn permute(a: __m512i, index: __m512i, b: __m512i) -> __m512i {
-        // SAFETY: the caller guarantees AVX-512 F.
-        unsafe { _mm512_permutex2var_epi32(a, index, b) }
-    }
-}
+    u16 => _mm512_permutex2var_epi16;
 
-impl Elem for u64 {
-    #[inline(always)]
-    unsafe fn permute(a: __m512i, index: __m512i, b: __m512i) -> __m512i {
-        // SAFETY: the caller guarantees AVX-512 F.
-        unsafe { _mm512_permutex2var_epi64(a, index, b) }
-    }
+    u32 => _mm512_permutex2var_epi32;
+
+    u64 => _mm512_permutex2var_epi64;
 }
 
 /// A transpose of `E` in the direction `FORWARD`.
