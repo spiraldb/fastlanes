@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/spiraldb/fastlanes/compare/v0.7.2...v0.8.0) - 2026-11-11
+
+### Added
+
+- *(transpose)* SIMD transpose variants and runtime-width undelta_pack ([#216](https://github.com/spiraldb/fastlanes/pull/216))
+
+### Other
+
+- Add an AVX-512 variant of Transpose ([#218](https://github.com/spiraldb/fastlanes/pull/218))
+- Benchmark Transpose for every element width in both directions ([#217](https://github.com/spiraldb/fastlanes/pull/217))
+- Iterate directly over known range instead of `iter` ([#124](https://github.com/spiraldb/fastlanes/pull/124))
+- Lock file maintenance ([#205](https://github.com/spiraldb/fastlanes/pull/205))
+- Update cargo non-major dependencies ([#204](https://github.com/spiraldb/fastlanes/pull/204))
+- Update cargo non-major dependencies ([#200](https://github.com/spiraldb/fastlanes/pull/200))
+
 ## [0.7.2](https://github.com/spiraldb/fastlanes/compare/v0.7.1...v0.7.2) - 2026-09-02
 
 ### Other
