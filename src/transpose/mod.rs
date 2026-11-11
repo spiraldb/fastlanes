@@ -7,6 +7,8 @@ pub trait Transpose: FastLanes {
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
+#[cfg(target_arch = "x86_64")]
+mod avx512;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod tiles;
 #[cfg(target_arch = "x86_64")]
@@ -15,10 +17,14 @@ mod x86;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::{transpose_neon, untranspose_neon};
 #[cfg(target_arch = "x86_64")]
+pub use avx512::{transpose_avx512, untranspose_avx512};
+#[cfg(target_arch = "x86_64")]
 pub use x86::{transpose_avx2, transpose_sse2, untranspose_avx2, untranspose_sse2};
 
 #[cfg(all(target_arch = "x86_64", feature = "runtime"))]
 cpufeatures::new!(cpuid_avx2, "avx2");
+#[cfg(all(target_arch = "x86_64", feature = "runtime"))]
+cpufeatures::new!(cpuid_avx512, "avx512f", "avx512bw", "avx512vbmi");
 
 impl<T: FastLanes> Transpose for T {
     #[inline(never)]
@@ -38,7 +44,10 @@ impl<T: FastLanes> Transpose for T {
 fn dispatch<T: FastLanes, const FORWARD: bool>(input: &[T; 1024], output: &mut [T; 1024]) {
     #[cfg(target_arch = "x86_64")]
     {
-        if has_avx2() {
+        if has_avx512() {
+            // SAFETY: the CPU supports AVX-512 F, BW and VBMI.
+            unsafe { avx512::avx512::<T, FORWARD>(input, output) }
+        } else if has_avx2() {
             // SAFETY: the CPU supports AVX2.
             unsafe { x86::avx2::<T, FORWARD>(input, output) }
         } else {
@@ -60,6 +69,26 @@ fn dispatch<T: FastLanes, const FORWARD: bool>(input: &[T; 1024], output: &mut [
         } else {
             untranspose_scalar(input, output);
         }
+    }
+}
+
+/// Give if the CPU supports AVX-512 F, BW and VBMI: detected at runtime with the `runtime`
+/// feature, and otherwise from the enabled target features.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn has_avx512() -> bool {
+    #[cfg(feature = "runtime")]
+    {
+        cpuid_avx512::get()
+    }
+
+    #[cfg(not(feature = "runtime"))]
+    {
+        cfg!(all(
+            target_feature = "avx512f",
+            target_feature = "avx512bw",
+            target_feature = "avx512vbmi"
+        ))
     }
 }
 
@@ -179,8 +208,8 @@ mod tests {
         check_variant::<T>(input, transpose_scalar, untranspose_scalar);
         check_variant::<T>(input, T::transpose, T::untranspose);
 
-        // SAFETY: every x86-64 CPU supports SSE2, and the AVX2 variant runs only if the CPU
-        // supports AVX2.
+        // SAFETY: every x86-64 CPU supports SSE2, and the AVX2 and AVX-512 variants run only if
+        // the CPU supports them.
         #[cfg(target_arch = "x86_64")]
         unsafe {
             check_variant::<T>(
@@ -194,6 +223,14 @@ mod tests {
                     input,
                     |i, o| transpose_avx2(i, o),
                     |i, o| untranspose_avx2(i, o),
+                );
+            }
+
+            if has_avx512() {
+                check_variant::<T>(
+                    input,
+                    |i, o| transpose_avx512(i, o),
+                    |i, o| untranspose_avx512(i, o),
                 );
             }
         }
