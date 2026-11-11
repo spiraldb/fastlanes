@@ -378,6 +378,21 @@ mod tests {
         assert!(!zen4::is_zen4_family(0x0008_06F8));
     }
 
+    /// CI sets `FASTLANES_EXPECT_AVX512` when it runs the tests on a CPU or emulator with
+    /// AVX-512, so that the AVX-512 tests cannot pass because they did not run.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_expected_avx512() {
+        extern crate std;
+
+        if std::env::var_os("FASTLANES_EXPECT_AVX512").is_some() {
+            assert!(
+                has_avx512(),
+                "FASTLANES_EXPECT_AVX512 is set, but AVX-512 is not detected"
+            );
+        }
+    }
+
     #[test]
     fn test_transpose_indices_are_a_permutation() {
         let mut seen = [false; 1024];
