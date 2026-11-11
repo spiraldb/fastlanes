@@ -15,11 +15,11 @@
 use super::tiles::{Tile, transpose_tiles, untranspose_tiles};
 use crate::FastLanes;
 use core::arch::x86_64::{
-    __m128i, __m256i, _mm_castsi128_pd, _mm_loadl_epi64, _mm_loadu_si128, _mm_storeh_pd,
-    _mm_storel_epi64, _mm_storeu_si128, _mm_unpackhi_epi16, _mm_unpackhi_epi32, _mm_unpackhi_epi64,
-    _mm_unpacklo_epi8, _mm_unpacklo_epi16, _mm_unpacklo_epi32, _mm_unpacklo_epi64,
-    _mm256_loadu2_m128i, _mm256_storeu_si256, _mm256_unpackhi_epi32, _mm256_unpackhi_epi64,
-    _mm256_unpacklo_epi32, _mm256_unpacklo_epi64,
+    __m128i, __m256i, _mm_loadl_epi64, _mm_loadu_si128, _mm_storel_epi64, _mm_storeu_si128,
+    _mm_unpackhi_epi16, _mm_unpackhi_epi32, _mm_unpackhi_epi64, _mm_unpacklo_epi8,
+    _mm_unpacklo_epi16, _mm_unpacklo_epi32, _mm_unpacklo_epi64, _mm256_loadu2_m128i,
+    _mm256_storeu_si256, _mm256_unpackhi_epi32, _mm256_unpackhi_epi64, _mm256_unpacklo_epi32,
+    _mm256_unpacklo_epi64,
 };
 use core::mem::size_of;
 use fearless_simd::{Avx2, Sse2};
@@ -41,15 +41,15 @@ pub fn transpose_sse2<T: FastLanes>(_sse2: Sse2, input: &[T; 1024], output: &mut
 #[target_feature(enable = "sse2")]
 unsafe fn transpose_sse2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: both arrays hold 1024 elements of the width matched below, and the transpose only
-    // moves elements, so reading them as unsigned integers of that width is exact. SSE2 is
-    // enabled on this function.
+    // SAFETY: `FastLanes` is sealed, so `T` is the unsigned integer of the width matched below,
+    // and both arrays hold 1024 of them. SSE2 is enabled on this function.
     unsafe {
         match size_of::<T>() {
             1 => transpose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
             2 => transpose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
             4 => transpose_tiles::<U32x4Sse2>(input.cast(), output.cast()),
-            _ => transpose_tiles::<U64x2Sse2>(input.cast(), output.cast()),
+            8 => transpose_tiles::<U64x2Sse2>(input.cast(), output.cast()),
+            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }
@@ -77,7 +77,8 @@ unsafe fn untranspose_sse2_unchecked<T: FastLanes>(input: &[T; 1024], output: &m
             1 => untranspose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
             2 => untranspose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
             4 => untranspose_tiles::<U32x4Sse2>(input.cast(), output.cast()),
-            _ => untranspose_tiles::<U64x2Sse2>(input.cast(), output.cast()),
+            8 => untranspose_tiles::<U64x2Sse2>(input.cast(), output.cast()),
+            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }
@@ -105,7 +106,8 @@ unsafe fn transpose_avx2_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut
             1 => transpose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
             2 => transpose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
             4 => transpose_tiles::<U32x8Avx2>(input.cast(), output.cast()),
-            _ => transpose_tiles::<U64x4Avx2>(input.cast(), output.cast()),
+            8 => transpose_tiles::<U64x4Avx2>(input.cast(), output.cast()),
+            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }
@@ -133,7 +135,8 @@ unsafe fn untranspose_avx2_unchecked<T: FastLanes>(input: &[T; 1024], output: &m
             1 => untranspose_tiles::<U8x8Sse2>(input.cast(), output.cast()),
             2 => untranspose_tiles::<U16x8Sse2>(input.cast(), output.cast()),
             4 => untranspose_tiles::<U32x8Avx2>(input.cast(), output.cast()),
-            _ => untranspose_tiles::<U64x4Avx2>(input.cast(), output.cast()),
+            8 => untranspose_tiles::<U64x4Avx2>(input.cast(), output.cast()),
+            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }
@@ -167,10 +170,12 @@ impl Tile for U8x8Sse2 {
                 _mm_unpackhi_epi32(q1, q3),
             ];
             for (i, col) in cols.into_iter().enumerate() {
+                // `_mm_storel_epi64` has no alignment requirement. `_mm_storeh_pd` stores an
+                // `f64`, which must be 8-byte aligned, so it cannot store the high half.
                 _mm_storel_epi64(dst.add(2 * i * dst_stride).cast(), col);
-                _mm_storeh_pd(
+                _mm_storel_epi64(
                     dst.add((2 * i + 1) * dst_stride).cast(),
-                    _mm_castsi128_pd(col),
+                    _mm_unpackhi_epi64(col, col),
                 );
             }
         }

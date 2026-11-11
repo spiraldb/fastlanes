@@ -127,20 +127,84 @@ mod tests {
     use hegel::generators as gs;
     use pastey::paste;
 
+    /// A buffer with 64-byte alignment and one spare element.
+    #[repr(C, align(64))]
+    struct Aligned<T>([T; 1025]);
+
+    impl<T: FastLanes> Aligned<T> {
+        fn new() -> Self {
+            Self([T::zero(); 1025])
+        }
+
+        /// Give the 1024 elements that start at element `offset`.
+        fn at(&mut self, offset: usize) -> &mut [T; 1024] {
+            (&mut self.0[offset..offset + 1024]).try_into().unwrap()
+        }
+    }
+
     /// Check a transpose variant against [`transpose`], and its inverse.
+    ///
+    /// The buffers start at a 64-byte boundary, and then one element after it, so that the
+    /// kernels also get buffers with only the alignment of `T`.
     fn check_variant<T: FastLanes + Debug>(
         input: &[T; 1024],
         forward: impl Fn(&[T; 1024], &mut [T; 1024]),
         inverse: impl Fn(&[T; 1024], &mut [T; 1024]),
     ) {
-        let mut transposed = [T::zero(); 1024];
-        let mut untransposed = [T::zero(); 1024];
-        forward(input, &mut transposed);
-        inverse(&transposed, &mut untransposed);
-        for (i, value) in transposed.iter().enumerate() {
-            assert_eq!(*value, input[transpose(i)], "transposed index {i}");
+        for offset in 0..2 {
+            let (mut source, mut transposed, mut untransposed) =
+                (Aligned::new(), Aligned::new(), Aligned::new());
+            let source = source.at(offset);
+            *source = *input;
+
+            let transposed = transposed.at(offset);
+            forward(source, transposed);
+            for (i, value) in transposed.iter().enumerate() {
+                assert_eq!(
+                    *value,
+                    input[transpose(i)],
+                    "offset {offset}, transposed index {i}"
+                );
+            }
+
+            let untransposed = untransposed.at(offset);
+            inverse(transposed, untransposed);
+            assert_eq!(untransposed, input, "offset {offset}");
         }
-        assert_eq!(&untransposed, input);
+    }
+
+    /// Check every variant that the CPU supports.
+    fn check_variants<T: FastLanes + Debug>(input: &[T; 1024]) {
+        check_variant::<T>(input, transpose_scalar, untranspose_scalar);
+        check_variant::<T>(input, T::transpose, T::untranspose);
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if let Some(sse2) = level().as_sse2() {
+                check_variant::<T>(
+                    input,
+                    |i, o| transpose_sse2(sse2, i, o),
+                    |i, o| untranspose_sse2(sse2, i, o),
+                );
+            }
+
+            if let Some(avx2) = level().as_avx2() {
+                check_variant::<T>(
+                    input,
+                    |i, o| transpose_avx2(avx2, i, o),
+                    |i, o| untranspose_avx2(avx2, i, o),
+                );
+            }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        if let Some(neon) = level().as_neon() {
+            check_variant::<T>(
+                input,
+                |i, o| transpose_neon(neon, i, o),
+                |i, o| untranspose_neon(neon, i, o),
+            );
+        }
     }
 
     macro_rules! variants_match_permutation {
@@ -149,35 +213,16 @@ mod tests {
                 #[hegel::test]
                 fn [<test_transpose_variants_ $T>](tc: TestCase) {
                     let input: [$T; 1024] = tc.draw(gs::arrays(gs::integers::<$T>()));
-                    check_variant::<$T>(&input, transpose_scalar, untranspose_scalar);
-                    check_variant::<$T>(&input, $T::transpose, $T::untranspose);
+                    check_variants::<$T>(&input);
+                }
 
-                    #[cfg(target_arch = "x86_64")]
-                    {
-                        if let Some(sse2) = level().as_sse2() {
-                            check_variant::<$T>(
-                                &input,
-                                |i, o| transpose_sse2(sse2, i, o),
-                                |i, o| untranspose_sse2(sse2, i, o),
-                            );
-                        }
-                        if let Some(avx2) = level().as_avx2() {
-                            check_variant::<$T>(
-                                &input,
-                                |i, o| transpose_avx2(avx2, i, o),
-                                |i, o| untranspose_avx2(avx2, i, o),
-                            );
-                        }
-                    }
-
-                    #[cfg(target_arch = "aarch64")]
-                    if let Some(neon) = level().as_neon() {
-                        check_variant::<$T>(
-                            &input,
-                            |i, o| transpose_neon(neon, i, o),
-                            |i, o| untranspose_neon(neon, i, o),
-                        );
-                    }
+                /// A fixed input, so that Miri can run the test. Miri checks the alignment
+                /// of every access.
+                #[test]
+                fn [<test_transpose_variants_fixed_ $T>]() {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let input: [$T; 1024] = core::array::from_fn(|i| (i * 7 + 3) as $T);
+                    check_variants::<$T>(&input);
                 }
             }
         };
