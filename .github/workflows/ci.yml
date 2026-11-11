@@ -33,6 +33,32 @@ jobs:
             cargo test --workspace --all-features
             cargo test --workspace
 
+  test-avx512:
+    name: Test AVX-512 (Intel SDE)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
+
+      - name: Install Intel SDE
+        env:
+          SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
+          SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/sde.tar.xz" "$SDE_URL"
+          echo "$SDE_SHA256  $RUNNER_TEMP/sde.tar.xz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/sde"
+          tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
+          echo "$RUNNER_TEMP/sde" >> "$GITHUB_PATH"
+
+      # The runners have no AVX-512, so the tests run on an emulated Ice Lake CPU. The tests
+      # fail if FASTLANES_EXPECT_AVX512 is set and the dispatch does not detect AVX-512.
+      - name: Rust Test - Transpose on Ice Lake
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: sde64 -icl --
+          FASTLANES_EXPECT_AVX512: "1"
+        run: cargo test --features runtime --lib transpose
+
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
