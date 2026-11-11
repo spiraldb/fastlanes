@@ -82,20 +82,92 @@ const fn source_bit(forward: bool, bit: usize) -> usize {
     move_bit(!forward, bit)
 }
 
+/// The roles of the 10 index bits in a plan.
+#[derive(Clone, Copy)]
+struct Layout {
+    /// The direction: transpose if true, untranspose if false.
+    forward: bool,
+
+    /// The element size in bytes.
+    size: usize,
+
+    /// The number of lane layout, so a register holds `1 << lane_bits` elements.
+    lane_bits: usize,
+
+    /// The lane bit that selects the 256-bit half of a register.
+    half: usize,
+
+    /// The number of permute levels.
+    levels: usize,
+
+    /// The input bit that selects the loaded half.
+    load_bit: usize,
+
+    /// The output bit that selects the stored half.
+    store_bit: usize,
+
+    /// The input bits of the register number, from its low bit: first the `levels` bits that the
+    /// permutes move into the lanes, then the bits that stay.
+    reg: [usize; 10],
+
+    /// The input bit that the permutes move into the register number at each level.
+    incoming: [usize; MAX_LEVELS],
+}
+
+impl Layout {
+    /// Give the number of register-number layout.
+    const fn reg_bits(&self) -> usize {
+        10 - self.lane_bits
+    }
+
+    /// Give if register-number bit `bit` must move into the lanes.
+    const fn moves_out(&self, bit: usize) -> bool {
+        moves_out(self.forward, self.half, self.load_bit, self.store_bit, bit)
+    }
+}
+
+/// Give if input bit `bit`, which is a register-number bit after the load, must move into the
+/// lanes before the store.
+const fn moves_out(
+    forward: bool,
+    half: usize,
+    load_bit: usize,
+    store_bit: usize,
+    bit: usize,
+) -> bool {
+    let out = move_bit(forward, bit);
+    bit != load_bit && (out < half || out == store_bit)
+}
+
 /// Make a plan for elements of `size` bytes.
 ///
 /// With `split_load` false, a register loads 64 contiguous bytes, and with `split_store` false it
 /// stores 64 contiguous bytes. Otherwise the plan picks the halves that need the fewest permute
 /// levels.
-#[allow(clippy::too_many_lines)]
 const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -> Plan {
-    let width = 64 / size;
-    let lane_bits = width.trailing_zeros() as usize;
-    let half = lane_bits - 1;
-    let reg_bits = 10 - lane_bits;
+    let layout = order(halves(size, forward, split_load, split_store));
+    let (load, store) = addresses(&layout);
 
-    // Pick the input bit that selects the loaded half and the output bit that selects the
-    // stored half. Bit `half` selects the upper half of 64 contiguous bytes.
+    Plan {
+        levels: layout.levels,
+        regs: 1 << layout.reg_bits(),
+        split_load: layout.load_bit != layout.half,
+        split_store: layout.store_bit != layout.half,
+        load,
+        store,
+        index: index(&layout),
+    }
+}
+
+/// Pick the input bit that selects the loaded half and the output bit that selects the stored
+/// half, with the fewest permute levels.
+///
+/// Bit `half` selects the upper half of 64 contiguous bytes. The result has no register order
+/// yet: [`order`] sets `reg` and `incoming`.
+const fn halves(size: usize, forward: bool, split_load: bool, split_store: bool) -> Layout {
+    let lane_bits = (64 / size).trailing_zeros() as usize;
+    let half = lane_bits - 1;
+
     let mut best = (usize::MAX, half, half);
     let mut load_bit = half;
     while load_bit < 10 {
@@ -104,12 +176,12 @@ const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -
             let mut levels = 0;
             let mut bit = half;
             while bit < 10 {
-                let out = move_bit(forward, bit);
-                if bit != load_bit && (out < half || out == store_bit) {
+                if moves_out(forward, half, load_bit, store_bit, bit) {
                     levels += 1;
                 }
                 bit += 1;
             }
+
             if levels < best.0 {
                 best = (levels, load_bit, store_bit);
             }
@@ -117,50 +189,64 @@ const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -
         }
         load_bit = if split_load { load_bit + 1 } else { 10 };
     }
+
     let (levels, load_bit, store_bit) = best;
     assert!(levels <= MAX_LEVELS);
 
-    // The input bits of the register number: first the bits that the permutes move into the
-    // lanes, then the others. The permutes move in the bits that the stores need in the register
-    // number in their place.
-    let mut reg = [0; 10];
-    let mut incoming = [0; MAX_LEVELS];
-    let (mut outgoing_count, mut staying_count, mut incoming_count) = (0, 0, 0);
-    let mut bit = half;
+    Layout {
+        forward,
+        size,
+        lane_bits,
+        half,
+        levels,
+        load_bit,
+        store_bit,
+        reg: [0; 10],
+        incoming: [0; MAX_LEVELS],
+    }
+}
+
+/// Set the order of the register-number layout, and the bits that the permutes move in.
+///
+/// The permutes move in the bits that the stores need in the register number, in place of the
+/// bits that move out.
+const fn order(mut layout: Layout) -> Layout {
+    let (mut outgoing, mut staying, mut incoming) = (0, 0, 0);
+
+    let mut bit = layout.half;
     while bit < 10 {
-        let out = move_bit(forward, bit);
-        if bit != load_bit && (out < half || out == store_bit) {
-            reg[outgoing_count] = bit;
-            outgoing_count += 1;
+        if layout.moves_out(bit) {
+            layout.reg[outgoing] = bit;
+            outgoing += 1;
         }
         bit += 1;
     }
+
     let mut bit = 0;
     while bit < 10 {
-        let out = move_bit(forward, bit);
-        let in_reg = bit >= half && bit != load_bit;
-        let stored_in_reg = out >= half && out != store_bit;
+        let out = move_bit(layout.forward, bit);
+        let in_reg = bit >= layout.half && bit != layout.load_bit;
+        let stored_in_reg = out >= layout.half && out != layout.store_bit;
         if in_reg && stored_in_reg {
-            reg[levels + staying_count] = bit;
-            staying_count += 1;
+            layout.reg[layout.levels + staying] = bit;
+            staying += 1;
         } else if !in_reg && stored_in_reg {
-            incoming[incoming_count] = bit;
-            incoming_count += 1;
+            layout.incoming[incoming] = bit;
+            incoming += 1;
         }
         bit += 1;
     }
-    assert!(outgoing_count == levels && incoming_count == levels);
-    assert!(levels + staying_count == reg_bits);
 
-    let mut plan = Plan {
-        levels,
-        regs: 1 << reg_bits,
-        split_load: load_bit != half,
-        split_store: store_bit != half,
-        load: [[0; 2]; MAX_REGS],
-        store: [[0; 2]; MAX_REGS],
-        index: [[[0; 64]; 2]; MAX_LEVELS],
-    };
+    assert!(outgoing == layout.levels && incoming == layout.levels);
+    assert!(layout.levels + staying == layout.reg_bits());
+    layout
+}
+
+/// Give the `vpermt2` index vectors of each level.
+const fn index(layout: &Layout) -> [[[u8; 64]; 2]; MAX_LEVELS] {
+    let (lane_bits, half) = (layout.lane_bits, layout.half);
+    let width = 1 << lane_bits;
+    let mut index = [[[0; 64]; 2]; MAX_LEVELS];
 
     // The input bit of each lane bit, after the load.
     let mut lanes = [0; 6];
@@ -169,21 +255,21 @@ const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -
         lanes[m] = m;
         m += 1;
     }
-    lanes[half] = load_bit;
+    lanes[half] = layout.load_bit;
 
     let mut t = 0;
-    while t < levels {
-        let (in_bit, out_bit) = (incoming[t], reg[t]);
+    while t < layout.levels {
+        let (in_bit, out_bit) = (layout.incoming[t], layout.reg[t]);
 
         // After the last level, the lanes must be in the order of the output index.
         let mut next = lanes;
-        if t + 1 == levels {
+        if t + 1 == layout.levels {
             let mut m = 0;
             while m < half {
-                next[m] = source_bit(forward, m);
+                next[m] = source_bit(layout.forward, m);
                 m += 1;
             }
-            next[half] = source_bit(forward, store_bit);
+            next[half] = source_bit(layout.forward, layout.store_bit);
         } else {
             let mut m = 0;
             while m < lane_bits {
@@ -215,7 +301,7 @@ const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -
                 }
 
                 // The other bytes of the element stay zero.
-                plan.index[t][upper][lane * size] = from as u8;
+                index[t][upper][lane * layout.size] = from as u8;
                 lane += 1;
             }
             upper += 1;
@@ -225,23 +311,35 @@ const fn plan(size: usize, forward: bool, split_load: bool, split_store: bool) -
         t += 1;
     }
 
+    index
+}
+
+/// Give the element offsets of the two halves that each register loads and stores.
+const fn addresses(layout: &Layout) -> ([[usize; 2]; MAX_REGS], [[usize; 2]; MAX_REGS]) {
+    let (mut load, mut store) = ([[0; 2]; MAX_REGS], [[0; 2]; MAX_REGS]);
+
     let mut r = 0;
-    while r < plan.regs {
-        let (mut load, mut store) = (0, 0);
+    while r < 1 << layout.reg_bits() {
+        let (mut low_load, mut low_store) = (0, 0);
         let mut i = 0;
-        while i < reg_bits {
+        while i < layout.reg_bits() {
             let bit = (r >> i) & 1;
-            load |= bit << reg[i];
-            let stored = if i < levels { incoming[i] } else { reg[i] };
-            store |= bit << move_bit(forward, stored);
+            low_load |= bit << layout.reg[i];
+            let stored = if i < layout.levels {
+                layout.incoming[i]
+            } else {
+                layout.reg[i]
+            };
+            low_store |= bit << move_bit(layout.forward, stored);
             i += 1;
         }
-        plan.load[r] = [load, load | (1 << load_bit)];
-        plan.store[r] = [store, store | (1 << store_bit)];
+
+        load[r] = [low_load, low_load | (1 << layout.load_bit)];
+        store[r] = [low_store, low_store | (1 << layout.store_bit)];
         r += 1;
     }
 
-    plan
+    (load, store)
 }
 
 /// Give if elements of `size` bytes load and store split halves, in the direction `forward`.
