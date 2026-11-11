@@ -35,15 +35,15 @@ pub fn transpose_neon<T: FastLanes>(_neon: Neon, input: &[T; 1024], output: &mut
 #[target_feature(enable = "neon")]
 unsafe fn transpose_neon_unchecked<T: FastLanes>(input: &[T; 1024], output: &mut [T; 1024]) {
     let (input, output) = (input.as_ptr(), output.as_mut_ptr());
-    // SAFETY: both arrays hold 1024 elements of the width matched below, and the transpose only
-    // moves elements, so reading them as unsigned integers of that width is exact. NEON is
-    // enabled on this function.
+    // SAFETY: `FastLanes` is sealed, so `T` is the unsigned integer of the width matched below,
+    // and both arrays hold 1024 of them. NEON is enabled on this function.
     unsafe {
         match size_of::<T>() {
             1 => transpose_tiles::<U8x8Neon>(input.cast(), output.cast()),
             2 => transpose_tiles::<U16x8Neon>(input.cast(), output.cast()),
             4 => transpose_tiles::<U32x4Neon>(input.cast(), output.cast()),
-            _ => transpose_tiles::<U64x2Neon>(input.cast(), output.cast()),
+            8 => transpose_tiles::<U64x2Neon>(input.cast(), output.cast()),
+            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }
@@ -71,7 +71,8 @@ unsafe fn untranspose_neon_unchecked<T: FastLanes>(input: &[T; 1024], output: &m
             1 => untranspose_tiles::<U8x8Neon>(input.cast(), output.cast()),
             2 => untranspose_tiles::<U16x8Neon>(input.cast(), output.cast()),
             4 => untranspose_tiles::<U32x4Neon>(input.cast(), output.cast()),
-            _ => untranspose_tiles::<U64x2Neon>(input.cast(), output.cast()),
+            8 => untranspose_tiles::<U64x2Neon>(input.cast(), output.cast()),
+            _ => unreachable!("FastLanes is sealed to u8, u16, u32 and u64"),
         }
     }
 }

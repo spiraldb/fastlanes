@@ -25,9 +25,23 @@ pub use transpose::*;
 
 pub const FL_ORDER: [usize; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
-pub trait FastLanes: Sized + Unsigned + PrimInt {
+/// An unsigned integer type that the `FastLanes` kernels support.
+///
+/// The trait is sealed: only `u8`, `u16`, `u32` and `u64` implement it. The SIMD kernels read
+/// the elements as these integers, so other types must not implement it.
+pub trait FastLanes: Sized + Unsigned + PrimInt + sealed::Sealed {
     const T: usize = size_of::<Self>() * 8;
     const LANES: usize = 1024 / Self::T;
+}
+
+mod sealed {
+    /// Prevents implementations of [`FastLanes`](super::FastLanes) outside this crate.
+    pub trait Sealed {}
+
+    impl Sealed for u8 {}
+    impl Sealed for u16 {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
 }
 
 impl FastLanes for u8 {}
