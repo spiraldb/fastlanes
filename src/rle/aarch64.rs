@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: Copyright the Vortex contributors
-
 //! NEON `tbl` window-permute kernels for RLE decoding.
 
 use core::any::TypeId;
@@ -56,9 +53,8 @@ pub(super) unsafe fn decode<V: Copy, I: Copy + Into<usize> + 'static>(
     let dst = output.as_mut_ptr().cast::<u8>();
     let idx = rle_idxs.as_ptr();
     let index = TypeId::of::<I>();
-    // SAFETY: the caller guarantees NEON, and the indices are bounded per this function's
-    // contract; `I` is
-    // read as `u8` or `u16` only when it is that type.
+    // SAFETY: the caller bounds the indices; `I` is read as `u8` or `u16` only when it is
+    // that type.
     unsafe {
         if index == TypeId::of::<u8>() {
             match size_of::<V>() {
@@ -97,7 +93,7 @@ pub(super) unsafe fn decode_delta<V: Copy>(
     let len = rle_vals.len();
     let deltas = deltas.map_or(ptr::null(), |d| d.as_ptr());
     let dst = output.as_mut_ptr().cast::<u8>();
-    // SAFETY: every lane is bounded per this function's contract.
+    // SAFETY: the caller bounds every lane.
     unsafe {
         match size_of::<V>() {
             1 => delta_lanes::<1>(vals, len, bases.as_ptr(), deltas, dst),
@@ -116,8 +112,7 @@ pub(super) unsafe fn decode_delta<V: Copy>(
 /// `window` must be readable for `8 * S` bytes and `out` writable for `8 * S` bytes.
 #[inline]
 unsafe fn permute8<const S: usize>(window: *const u8, rel: uint8x8_t, out: *mut u8) {
-    // SAFETY: the caller guarantees `8 * S` readable and writable bytes; the loads and stores
-    // below touch exactly that many.
+    // SAFETY: the loads and stores touch exactly the `8 * S` bytes the caller guarantees.
     unsafe {
         match S {
             1 => vst1_u8(out, vtbl1_u8(vld1_u8(window), rel)),
@@ -221,9 +216,9 @@ unsafe fn delta_lanes<const S: usize>(
     out: *mut u8,
 ) {
     for lane in 0..U8_LANES {
-        // SAFETY: `bases` and `deltas` hold 128 bytes; every lane writes 8 values inside the
-        // chunk; the window is read only when it ends within `len` values, and the caller bounds
-        // every index the lane uses.
+        // SAFETY: `bases` and `deltas` hold 128 bytes; each lane writes 8 values inside the
+        // chunk; the window is read only when it ends within `len` values; the caller bounds the
+        // lane's indices.
         unsafe {
             let bits = if deltas.is_null() {
                 0
