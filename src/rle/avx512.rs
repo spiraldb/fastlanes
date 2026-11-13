@@ -1,10 +1,8 @@
 //! AVX-512 window-permute kernels for RLE decoding.
 //!
-//! One step decodes `W = 64 / S` outputs of `S` bytes: the indices of `W` consecutive outputs
-//! span at most `W` values, so the step is one masked load of the `W`-value window at the first
-//! index and one `vpermb` (`S = 1`), `vpermw` (`S = 2`) or `vpermd` (`S = 4`). Near the end of the
-//! values the window load is masked to the values that exist, so no padding past the values is
-//! needed.
+//! One step decodes `W = 64 / S` outputs of `S` bytes: one load of the `W`-value window at the
+//! step's first index and one `vpermb`, `vpermw` or `vpermd`. A window that would pass the end of
+//! the values is loaded masked, so the values need no padding.
 
 use core::any::TypeId;
 use core::arch::x86_64::__m512i;
@@ -59,8 +57,8 @@ pub(super) unsafe fn decode<V: Copy, I: Copy + Into<usize> + 'static>(
     let dst = output.as_mut_ptr().cast::<u8>();
     let idx = rle_idxs.as_ptr();
     let index = TypeId::of::<I>();
-    // SAFETY: the caller guarantees AVX-512, and the indices are bounded per this function's
-    // contract; `I` is read as `u8` or `u16` only when it is that type.
+    // SAFETY: the caller guarantees AVX-512 and bounds the indices; `I` is read as `u8` or
+    // `u16` only when it is that type.
     unsafe {
         if index == TypeId::of::<u8>() {
             match size_of::<V>() {
@@ -156,9 +154,8 @@ unsafe fn chunk<const S: usize, const U16: bool>(
     let w = 64 / S;
     let index_size = if U16 { 2 } else { 1 };
     for step in 0..1024 / w {
-        // SAFETY: `idx` holds 1024 indices, so each step's `w` are in bounds; `out` has room for
-        // every step; the window load reads only the values below `len`, and every offset that
-        // passes the check selects one of them, as every index is below `len`.
+        // SAFETY: each step's `w` indices and outputs are in bounds; the window load reads only
+        // values below `len`, and offsets that pass the check select only those.
         unsafe {
             let step_idx = idx.add(step * w * index_size);
             let step_out = out.add(step * w * S);
@@ -175,8 +172,7 @@ unsafe fn chunk<const S: usize, const U16: bool>(
                 continue;
             }
             let base = vals.add(first * S);
-            // Load the window whole when it lies within the values, which is every step but
-            // those near the end, and masked to the values that exist otherwise.
+            // Mask the load only when the window would pass the end of the values.
             let window = if first + w <= len {
                 _mm512_loadu_si512(base.cast())
             } else {
@@ -207,11 +203,10 @@ unsafe fn chunk<const S: usize, const U16: bool>(
 /// Decode one chunk from `u8` Delta indices with AVX-512. Returns `false`, writing nothing, for
 /// unsupported value widths.
 ///
-/// The 8 lanes `order * 16 + l` cover the 64 consecutive outputs `l * 64..l * 64 + 64`: lane
-/// `FL_ORDER[g] * 16 + l` covers the 8 at `l * 64 + g * 8`. For each such block, the lanes' delta
-/// bytes, in output order, form a 64-bit mask with one bit per output, and the index of each output
-/// is its lane's base plus the inclusive prefix sum of the mask bits within the lane. A step then
-/// decodes `64 / S` outputs of the block with one window permute, as in [`decode`].
+/// Lane `FL_ORDER[g] * 16 + l` covers the 8 outputs at `l * 64 + g * 8`, so 8 lanes cover a block
+/// of 64 consecutive outputs. Their delta bytes form a 64-bit mask with one bit per output, and
+/// an output's index is its lane's base plus the prefix sum of the mask within the lane. Each
+/// block then takes `S` window permutes, as in [`decode`].
 ///
 /// # Safety
 ///
@@ -238,8 +233,7 @@ pub(super) unsafe fn decode_delta<V: Copy>(
     true
 }
 
-/// For each half `h` of the 16 blocks, the source of byte `lb * 8 + g` when gathering block
-/// `h * 8 + lb` from 128 per-lane bytes: the byte of lane `FL_ORDER[g] * 16 + h * 8 + lb`.
+/// Permute indices for [`blocks`], for blocks 0-7 and 8-15.
 static BLOCK_GATHER: [[u8; 64]; 2] = {
     let mut idx = [[0u8; 64]; 2];
     let mut h = 0;
@@ -255,7 +249,7 @@ static BLOCK_GATHER: [[u8; 64]; 2] = {
     idx
 };
 
-/// Byte `j` selects byte `j / 8`: broadcasts each of the 8 low bytes over 8 bytes.
+/// Byte `j` selects byte `j / 8`, repeating each of the 8 low bytes 8 times.
 static SPREAD_BYTES: [u8; 64] = {
     let mut idx = [0u8; 64];
     let mut j = 0;
@@ -266,8 +260,8 @@ static SPREAD_BYTES: [u8; 64] = {
     idx
 };
 
-/// Rearrange 128 per-lane bytes into one `u64` per block of 64 outputs, with byte `g` of block
-/// `l` from lane `FL_ORDER[g] * 16 + l`.
+/// One `u64` per block of 64 outputs from 128 per-lane bytes: byte `g` of block `l` is the byte
+/// of lane `FL_ORDER[g] * 16 + l`.
 ///
 /// # Safety
 ///
@@ -276,8 +270,7 @@ static SPREAD_BYTES: [u8; 64] = {
 #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi")]
 unsafe fn blocks(lanes: *const u8) -> [u64; 16] {
     let mut blocks = [0u64; 16];
-    // SAFETY: `lanes` holds 128 bytes, the two loads read exactly those, and each store writes
-    // 8 of the 16 `u64`s.
+    // SAFETY: the loads read the 128 bytes of `lanes`, and each store writes 8 of the 16 `u64`s.
     unsafe {
         let lo = _mm512_loadu_si512(lanes.cast());
         let hi = _mm512_loadu_si512(lanes.add(64).cast());
@@ -306,7 +299,7 @@ unsafe fn scalar_lane<const S: usize>(vals: *const u8, base: usize, bits: u8, ou
     }
 }
 
-/// For a step of `w` outputs, byte `j` selects byte `j / w * w`: the first byte of its step.
+/// For steps of 64, 32 and 16 outputs: byte `j` selects the first byte of its step.
 static STEP_FIRST: [[u8; 64]; 3] = {
     let mut idx = [[0u8; 64]; 3];
     let mut i = 0;
@@ -369,12 +362,12 @@ unsafe fn delta_chunk<const S: usize>(
     let limit = _mm512_set1_epi8(((w - 1) as u8).cast_signed());
 
     for (l, (&base_block, &bits)) in base_blocks.iter().zip(&bit_blocks).enumerate() {
-        // SAFETY: every store stays within the block's 64 outputs; every window load reads only
-        // values below `len` (a step's first index is an index of the chunk, so below `len`);
-        // and a permute selects only offsets that the check below places within the window.
+        // SAFETY: stores stay within the block's 64 outputs; window loads read only values below
+        // `len`, as a step's first index is an index of the chunk; permutes select only offsets
+        // the check below places in the window.
         unsafe {
             let block_out = out.add(l * 64 * S);
-            // Byte `j` of `index`: the index of output `l * 64 + j` modulo 256.
+            // Byte `j`: the index of output `l * 64 + j`, modulo 256.
             let ones = _mm512_maskz_mov_epi8(bits, _mm512_set1_epi8(1));
             let mut prefix = _mm512_add_epi8(ones, _mm512_slli_epi64::<8>(ones));
             prefix = _mm512_add_epi8(prefix, _mm512_slli_epi64::<16>(prefix));
@@ -386,9 +379,8 @@ unsafe fn delta_chunk<const S: usize>(
             let firsts = _mm512_permutexvar_epi8(step_first, index);
             let rel = _mm512_sub_epi8(index, firsts);
 
-            // An index past 255, or outside its step's window of `w` values, sends the block to
-            // the scalar gather. Neither happens for RLE indices. Without either, every byte of
-            // `index` is an exact index and `rel` its offset in its step's window.
+            // A block with an index past 255 or outside its step's window (never for RLE indices)
+            // takes the scalar gather. Otherwise `index` is exact and `rel` its window offsets.
             let wrapped = _mm512_cmplt_epu8_mask(index, lane_bases);
             let outside =
                 _mm512_cmplt_epu8_mask(index, firsts) | _mm512_cmpgt_epu8_mask(rel, limit);
