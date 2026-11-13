@@ -76,7 +76,7 @@ fn dispatch<T: FastLanes, const FORWARD: bool>(input: &[T; 1024], output: &mut [
 /// feature, and otherwise from the enabled target features.
 #[cfg(target_arch = "x86_64")]
 #[inline]
-fn has_avx512() -> bool {
+pub(crate) fn has_avx512() -> bool {
     #[cfg(feature = "runtime")]
     {
         cpuid_avx512::get()
@@ -99,7 +99,7 @@ fn has_avx512() -> bool {
 /// AVX-512.
 #[cfg(target_arch = "x86_64")]
 #[inline]
-fn avx512_is_slower(size: usize) -> bool {
+pub(crate) fn avx512_is_slower(size: usize) -> bool {
     size >= 4 && is_zen4()
 }
 
@@ -179,7 +179,7 @@ mod zen4 {
 /// from the enabled target features.
 #[cfg(target_arch = "x86_64")]
 #[inline]
-fn has_avx2() -> bool {
+pub(crate) fn has_avx2() -> bool {
     #[cfg(feature = "runtime")]
     {
         cpuid_avx2::get()
