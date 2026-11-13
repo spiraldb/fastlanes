@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/spiraldb/fastlanes/compare/v0.8.0...v0.8.1) - 2026-11-13
+
+### Other
+
+- Benchmark RLE decode over irregular runs and Delta-encoded indices ([#221](https://github.com/spiraldb/fastlanes/pull/221))
+
 ## [0.8.0](https://github.com/spiraldb/fastlanes/compare/v0.7.2...v0.8.0) - 2026-11-11
 
 ### Added
