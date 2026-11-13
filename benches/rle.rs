@@ -1,6 +1,6 @@
 use arrayref::array_ref;
 use divan::Bencher;
-use fastlanes::{Delta, RLE, Transpose};
+use fastlanes::RLE;
 use std::hint::black_box;
 
 mod shared;
@@ -214,14 +214,11 @@ fn rle_decode_delta_u32_irregular_runs(bencher: Bencher) {
     )
     .with_inputs(|| vec![[0u32; 1024]; IrregularRuns::CHUNKS])
     .bench_local_refs(|output| {
-        let mut transposed = [0u8; 1024];
-        let mut idxs = [0u8; 1024];
         for (chunk, out) in data.chunks.iter().zip(output.iter_mut()) {
-            // Unpack and undelta the indices, untranspose them, then gather.
-            u8::undelta_pack::<128, 1, 128>(&chunk.deltas, &chunk.bases, &mut transposed);
-            u8::untranspose(&transposed, &mut idxs);
-            // SAFETY: every index is below the chunk's run count.
-            unsafe { u32::decode_unchecked(&chunk.vals, &idxs, out) };
+            // SAFETY: every lane's last index is an index of the chunk, below its run count.
+            unsafe {
+                u32::decode_delta_unchecked(&chunk.vals, &chunk.bases, Some(&chunk.deltas), out);
+            }
         }
     });
 }
