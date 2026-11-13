@@ -192,42 +192,36 @@ where
                 .collect()
         })
         .collect();
-    let mut output = vec![[V::default(); 1024]; IrregularRuns::CHUNKS];
     with_counter!(
         bencher,
         IrregularRuns::CHUNKS * 1024 * std::mem::size_of::<V>()
     )
-    .bench_local(|| {
+    .with_inputs(|| vec![[V::default(); 1024]; IrregularRuns::CHUNKS])
+    .bench_local_refs(|output| {
         for ((chunk, vals), out) in data.chunks.iter().zip(&vals).zip(output.iter_mut()) {
             // SAFETY: every index is below the chunk's run count.
-            unsafe { V::decode_unchecked(black_box(vals), black_box(&chunk.idxs), out) };
+            unsafe { V::decode_unchecked(vals, &chunk.idxs, out) };
         }
-        black_box(&output);
     });
 }
 
 #[divan::bench]
 fn rle_decode_delta_u32_irregular_runs(bencher: Bencher) {
     let data = IrregularRuns::new();
-    let mut output = vec![[0u32; 1024]; IrregularRuns::CHUNKS];
     with_counter!(
         bencher,
         IrregularRuns::CHUNKS * 1024 * std::mem::size_of::<u32>()
     )
-    .bench_local(|| {
+    .with_inputs(|| vec![[0u32; 1024]; IrregularRuns::CHUNKS])
+    .bench_local_refs(|output| {
         let mut transposed = [0u8; 1024];
         let mut idxs = [0u8; 1024];
         for (chunk, out) in data.chunks.iter().zip(output.iter_mut()) {
             // Unpack and undelta the indices, untranspose them, then gather.
-            u8::undelta_pack::<128, 1, 128>(
-                black_box(&chunk.deltas),
-                black_box(&chunk.bases),
-                &mut transposed,
-            );
+            u8::undelta_pack::<128, 1, 128>(&chunk.deltas, &chunk.bases, &mut transposed);
             u8::untranspose(&transposed, &mut idxs);
             // SAFETY: every index is below the chunk's run count.
-            unsafe { u32::decode_unchecked(black_box(&chunk.vals), &idxs, out) };
+            unsafe { u32::decode_unchecked(&chunk.vals, &idxs, out) };
         }
-        black_box(&output);
     });
 }
