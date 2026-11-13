@@ -7,9 +7,9 @@
 //! window starting at the group's first index, which one vector shuffle produces.
 //! [`RLE::decode_unchecked`] uses this for indices in their original order.
 //! [`RLE::decode_delta_unchecked`] decodes `u8` indices stored as [`Delta`](crate::Delta) over
-//! 1-bit deltas without materializing them: each of the 128 `u8` lanes covers 8 consecutive
-//! outputs, its delta bits are one byte, and a lookup table turns that byte into the lane's
-//! permutation.
+//! 1-bit deltas without materializing them, fusing bit-unpacking, undelta and the gather: each of
+//! the 128 `u8` lanes covers 8 consecutive outputs, and its delta bits are one byte whose prefix
+//! sums are the lane's indices relative to its base.
 //!
 //! | Target     | 1-byte values     | 2-byte values      | 4-byte values          | 8-byte values |
 //! | ---------- | ----------------- | ------------------ | ---------------------- | ------------- |
@@ -19,19 +19,22 @@
 //! | otherwise  | scalar            | scalar             | scalar                 | scalar        |
 //!
 //! The AVX-512 kernels load each window masked to the values that exist, so they need no padding
-//! past the values. [`RLE::decode_delta_unchecked`] uses the AVX2 kernel on AVX-512 machines too:
-//! each `u8` lane covers only 8 outputs.
+//! past the values. For Delta indices, the AVX-512 kernel works on blocks of 64 consecutive
+//! outputs, the 8 lanes `order * 16 + l`: their delta bytes form one 64-bit mask, which it expands
+//! to bytes and prefix-sums with shifts, so a block's offsets cost a few instructions. The AVX2 and
+//! NEON kernels look up each lane's 8 offsets in a table instead.
 //!
 //! On x86, AVX-512 and AVX2 are detected at runtime with the `runtime` feature, and taken from the
 //! enabled `target_feature`s otherwise; AVX-512 is skipped for 4-byte values where its shuffles run
 //! at half rate (Zen 4), as for [`Transpose`](crate::Transpose). Each kernel is also public
 //! (`rle_decode_avx512`, `rle_decode_avx2`, `rle_decode_neon`, `rle_decode_scalar` and the
-//! `rle_decode_delta_*` variants) for callers that pick the kernel themselves. Eight-byte values stay scalar: the scalar gather already nearly
-//! saturates stores for them, and an AVX2 permute of a 64-byte window measured twice as slow.
+//! `rle_decode_delta_*` variants) for callers that pick the kernel themselves. Eight-byte values
+//! stay scalar: the scalar gather already nearly saturates stores for them, an AVX2 permute of a
+//! 64-byte window measured twice as slow, and an AVX-512 `vpermq` Delta kernel no faster.
 //! The vector kernels read `u8` and `u16` indices directly; other index types decode through the
-//! scalar gather. Groups whose indices spread by more than 7 (only possible in input that is not
-//! RLE indices), and groups whose window would run past the end of the values, fall back to a
-//! scalar gather.
+//! scalar gather. Steps whose indices do not fit one window (only possible in input that is not
+//! RLE indices) fall back to a scalar gather, as do, in the AVX2 and NEON kernels, groups whose
+//! window would run past the end of the values.
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
@@ -241,8 +244,13 @@ unsafe fn decode_delta<V: Copy>(
     // every lane's last index by `rle_vals.len()`.
     unsafe {
         #[cfg(target_arch = "x86_64")]
-        if has_avx2() {
-            return rle_decode_delta_avx2(rle_vals, bases, deltas, output);
+        {
+            if has_avx512() && !avx512_is_slower(size_of::<V>()) {
+                return rle_decode_delta_avx512(rle_vals, bases, deltas, output);
+            }
+            if has_avx2() {
+                return rle_decode_delta_avx2(rle_vals, bases, deltas, output);
+            }
         }
         #[cfg(target_arch = "aarch64")]
         return rle_decode_delta_neon(rle_vals, bases, deltas, output);
@@ -311,6 +319,29 @@ pub unsafe fn rle_decode_neon<V: Copy, I: Copy + Into<usize> + 'static>(
     unsafe {
         if !aarch64::decode(rle_vals, rle_idxs, output) {
             rle_decode_scalar(rle_vals, rle_idxs, output);
+        }
+    }
+}
+
+/// [`RLE::decode_delta_unchecked`] with AVX-512 (F, BW, VL, VBMI) kernels: 64, 32 or 16 outputs
+/// per step for 1-, 2- or 4-byte values, and the scalar gather otherwise.
+///
+/// # Safety
+///
+/// The CPU must support AVX-512 F, BW, VL and VBMI, and every lane's last index must be less
+/// than `rle_vals.len()`.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+pub unsafe fn rle_decode_delta_avx512<V: Copy>(
+    rle_vals: &[V],
+    bases: &[u8; 128],
+    deltas: Option<&[u8; 128]>,
+    output: &mut [V; 1024],
+) {
+    // SAFETY: the caller guarantees the features and bounds every lane.
+    unsafe {
+        if !avx512::decode_delta(rle_vals, bases, deltas, output) {
+            rle_decode_delta_scalar(rle_vals, bases, deltas, output);
         }
     }
 }
@@ -389,15 +420,21 @@ pub unsafe fn rle_decode_delta_scalar<V: Copy>(
     deltas: Option<&[u8; U8_LANES]>,
     output: &mut [V; 1024],
 ) {
-    for lane in 0..U8_LANES {
-        let bits = deltas.map_or(0, |d| d[lane]);
-        let first = usize::from(bases[lane]) + usize::from(bits & 1);
-        let start = u8_lane_start(lane);
-        for (row, &rel) in DELTA_LUT[usize::from(bits)].iter().enumerate() {
-            let index = first + usize::from(rel);
-            debug_assert!(index < rle_vals.len());
-            // SAFETY: `index` is at most the lane's last index, which the caller bounds.
-            output[start + row] = unsafe { *rle_vals.get_unchecked(index) };
+    let out = output.as_mut_ptr();
+    // Walk the lanes in output order, so the stores are sequential: the 8 lanes `order * 16 + l`
+    // cover outputs `l * 64..l * 64 + 64`, lane `FL_ORDER[g] * 16 + l` the 8 at `l * 64 + g * 8`.
+    for l in 0..16 {
+        for (g, &order) in FL_ORDER.iter().enumerate() {
+            let lane = order * 16 + l;
+            let bits = deltas.map_or(0, |d| d[lane]);
+            let mut index = usize::from(bases[lane]);
+            for row in 0..8 {
+                index += usize::from((bits >> row) & 1);
+                debug_assert!(index < rle_vals.len());
+                // SAFETY: `index` is at most the lane's last index, which the caller bounds, and
+                // the output position is below 1024.
+                unsafe { *out.add(l * 64 + g * 8 + row) = *rle_vals.get_unchecked(index) };
+            }
         }
     }
 }
@@ -685,6 +722,42 @@ mod test {
         (bases, packed, deltas.iter().all(|&d| d == 0))
     }
 
+    /// Check every Delta kernel this CPU supports, not only the one the dispatch picks, against
+    /// `expected`.
+    fn check_delta_kernels<V>(
+        vals: &[V],
+        bases: &[u8; 128],
+        deltas: Option<&[u8; 128]>,
+        expected: &[V; 1024],
+    ) where
+        V: Copy + PartialEq + core::fmt::Debug,
+    {
+        type Kernel<V> = unsafe fn(&[V], &[u8; 128], Option<&[u8; 128]>, &mut [V; 1024]);
+        let mut kernels: Vec<(&str, Kernel<V>)> = vec![
+            ("dispatch", V::decode_delta_unchecked),
+            ("scalar", rle_decode_delta_scalar),
+        ];
+        #[cfg(target_arch = "x86_64")]
+        {
+            if crate::transpose::has_avx512() {
+                kernels.push(("AVX-512", rle_decode_delta_avx512));
+            }
+            if crate::transpose::has_avx2() {
+                kernels.push(("AVX2", rle_decode_delta_avx2));
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        kernels.push(("NEON", rle_decode_delta_neon));
+
+        for (name, kernel) in kernels {
+            let mut actual = [vals[0]; 1024];
+            // SAFETY: the callers size `vals` past every lane's last index, and each vector
+            // kernel runs only where its features are detected.
+            unsafe { kernel(vals, bases, deltas, &mut actual) };
+            assert_eq!(&actual, expected, "{name}");
+        }
+    }
+
     fn check_decode_delta<V>(indices: &[usize; 1024], extra: usize)
     where
         V: Copy + PartialEq + core::fmt::Debug + TryFrom<u64>,
@@ -694,21 +767,9 @@ mod test {
         let vals = values::<V>(max + 1 + extra);
         let expected = indices.map(|i| vals[i]);
 
-        let mut actual = [vals[0]; 1024];
-        // SAFETY: every lane's last index is an index of the chunk, below `vals.len()`.
-        unsafe { V::decode_delta_unchecked(&vals, &bases, Some(&packed), &mut actual) };
-        assert_eq!(actual, expected);
-
-        let mut actual = [vals[0]; 1024];
-        // SAFETY: as above.
-        unsafe { rle_decode_delta_scalar(&vals, &bases, Some(&packed), &mut actual) };
-        assert_eq!(actual, expected);
-
+        check_delta_kernels(&vals, &bases, Some(&packed), &expected);
         if all_zero {
-            let mut actual = [vals[0]; 1024];
-            // SAFETY: as above; with every delta zero, each lane's last index is its base.
-            unsafe { V::decode_delta_unchecked(&vals, &bases, None, &mut actual) };
-            assert_eq!(actual, expected);
+            check_delta_kernels(&vals, &bases, None, &expected);
         }
     }
 
@@ -734,5 +795,40 @@ mod test {
         check_decode_delta::<u16>(&indices, extra);
         check_decode_delta::<u32>(&indices, extra);
         check_decode_delta::<u64>(&indices, extra);
+    }
+
+    /// Arbitrary bases and delta bits, which RLE never produces (lanes out of order, windows wider
+    /// than a step, indices past 255), decode as the per-lane definition says.
+    #[hegel::test]
+    fn test_rle_decode_delta_any_lanes(tc: TestCase) {
+        let bases: [u8; 128] = core::array::from_fn(|_| tc.draw(gs::integers::<u8>()));
+        let deltas: [u8; 128] = core::array::from_fn(|_| tc.draw(gs::integers::<u8>()));
+        let extra = tc.draw(gs::integers::<usize>().max_value(8));
+        let mut indices = [0usize; 1024];
+        for lane in 0..128 {
+            let mut index = usize::from(bases[lane]);
+            for row in 0..8 {
+                index += usize::from((deltas[lane] >> row) & 1);
+                indices[u8_lane_start(lane) + row] = index;
+            }
+        }
+        let len = indices.iter().copied().max().expect("non-empty") + 1 + extra;
+        check_any_lanes::<u8>(len, &bases, &deltas, &indices);
+        check_any_lanes::<u16>(len, &bases, &deltas, &indices);
+        check_any_lanes::<u32>(len, &bases, &deltas, &indices);
+        check_any_lanes::<u64>(len, &bases, &deltas, &indices);
+    }
+
+    fn check_any_lanes<V>(
+        len: usize,
+        bases: &[u8; 128],
+        deltas: &[u8; 128],
+        indices: &[usize; 1024],
+    ) where
+        V: Copy + PartialEq + core::fmt::Debug + TryFrom<u64>,
+    {
+        let vals = values::<V>(len);
+        let expected = indices.map(|i| vals[i]);
+        check_delta_kernels(&vals, bases, Some(deltas), &expected);
     }
 }

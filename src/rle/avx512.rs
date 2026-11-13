@@ -8,29 +8,39 @@
 
 use core::any::TypeId;
 use core::arch::x86_64::__m512i;
+use core::arch::x86_64::_mm512_add_epi8;
 use core::arch::x86_64::_mm512_castsi256_si512;
 use core::arch::x86_64::_mm512_castsi512_si128;
 use core::arch::x86_64::_mm512_castsi512_si256;
 use core::arch::x86_64::_mm512_cmpgt_epu8_mask;
 use core::arch::x86_64::_mm512_cmpgt_epu16_mask;
+use core::arch::x86_64::_mm512_cmplt_epu8_mask;
 use core::arch::x86_64::_mm512_cvtepi16_epi8;
 use core::arch::x86_64::_mm512_cvtepu8_epi16;
 use core::arch::x86_64::_mm512_cvtepu8_epi32;
+use core::arch::x86_64::_mm512_extracti32x4_epi32;
+use core::arch::x86_64::_mm512_extracti64x4_epi64;
 use core::arch::x86_64::_mm512_inserti64x4;
 use core::arch::x86_64::_mm512_loadu_si512;
 use core::arch::x86_64::_mm512_maskz_loadu_epi8;
 use core::arch::x86_64::_mm512_maskz_loadu_epi16;
 use core::arch::x86_64::_mm512_maskz_loadu_epi32;
+use core::arch::x86_64::_mm512_maskz_mov_epi8;
+use core::arch::x86_64::_mm512_permutex2var_epi8;
 use core::arch::x86_64::_mm512_permutexvar_epi8;
 use core::arch::x86_64::_mm512_permutexvar_epi16;
 use core::arch::x86_64::_mm512_permutexvar_epi32;
 use core::arch::x86_64::_mm512_set1_epi8;
 use core::arch::x86_64::_mm512_set1_epi16;
+use core::arch::x86_64::_mm512_set1_epi64;
 use core::arch::x86_64::_mm512_setzero_si512;
+use core::arch::x86_64::_mm512_slli_epi64;
 use core::arch::x86_64::_mm512_storeu_si512;
 use core::arch::x86_64::_mm512_sub_epi8;
 use core::arch::x86_64::_mm512_sub_epi16;
 use core::ptr;
+
+use crate::FL_ORDER;
 
 /// Decode one chunk with AVX-512. Returns `false`, writing nothing, for unsupported value widths
 /// and for index types other than `u8` and `u16`.
@@ -190,6 +200,236 @@ unsafe fn chunk<const S: usize, const U16: bool>(
                 _ => unreachable!("unsupported value width {S}"),
             };
             _mm512_storeu_si512(step_out.cast(), v);
+        }
+    }
+}
+
+/// Decode one chunk from `u8` Delta indices with AVX-512. Returns `false`, writing nothing, for
+/// unsupported value widths.
+///
+/// The 8 lanes `order * 16 + l` cover the 64 consecutive outputs `l * 64..l * 64 + 64`: lane
+/// `FL_ORDER[g] * 16 + l` covers the 8 at `l * 64 + g * 8`. For each such block, the lanes' delta
+/// bytes, in output order, form a 64-bit mask with one bit per output, and the index of each output
+/// is its lane's base plus the inclusive prefix sum of the mask bits within the lane. A step then
+/// decodes `64 / S` outputs of the block with one window permute, as in [`decode`].
+///
+/// # Safety
+///
+/// The CPU must support AVX-512 F, BW, VL and VBMI, and every lane's last index must be less
+/// than `rle_vals.len()`.
+pub(super) unsafe fn decode_delta<V: Copy>(
+    rle_vals: &[V],
+    bases: &[u8; 128],
+    deltas: Option<&[u8; 128]>,
+    output: &mut [V; 1024],
+) -> bool {
+    let vals = rle_vals.as_ptr().cast::<u8>();
+    let len = rle_vals.len();
+    let out = output.as_mut_ptr().cast::<u8>();
+    // SAFETY: the caller guarantees AVX-512 and bounds every lane's last index.
+    unsafe {
+        match size_of::<V>() {
+            1 => delta_chunk::<1>(vals, len, bases, deltas, out),
+            2 => delta_chunk::<2>(vals, len, bases, deltas, out),
+            4 => delta_chunk::<4>(vals, len, bases, deltas, out),
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// For each half `h` of the 16 blocks, the source of byte `lb * 8 + g` when gathering block
+/// `h * 8 + lb` from 128 per-lane bytes: the byte of lane `FL_ORDER[g] * 16 + h * 8 + lb`.
+static BLOCK_GATHER: [[u8; 64]; 2] = {
+    let mut idx = [[0u8; 64]; 2];
+    let mut h = 0;
+    while h < 2 {
+        let mut j = 0;
+        while j < 64 {
+            let (lb, g) = (j / 8, j % 8);
+            idx[h][j] = (FL_ORDER[g] * 16 + h * 8 + lb) as u8;
+            j += 1;
+        }
+        h += 1;
+    }
+    idx
+};
+
+/// Byte `j` selects byte `j / 8`: broadcasts each of the 8 low bytes over 8 bytes.
+static SPREAD_BYTES: [u8; 64] = {
+    let mut idx = [0u8; 64];
+    let mut j = 0;
+    while j < 64 {
+        idx[j] = (j / 8) as u8;
+        j += 1;
+    }
+    idx
+};
+
+/// Rearrange 128 per-lane bytes into one `u64` per block of 64 outputs, with byte `g` of block
+/// `l` from lane `FL_ORDER[g] * 16 + l`.
+///
+/// # Safety
+///
+/// AVX-512 must be available, and `lanes` must point to 128 readable bytes.
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi")]
+unsafe fn blocks(lanes: *const u8) -> [u64; 16] {
+    let mut blocks = [0u64; 16];
+    // SAFETY: `lanes` holds 128 bytes, the two loads read exactly those, and each store writes
+    // 8 of the 16 `u64`s.
+    unsafe {
+        let lo = _mm512_loadu_si512(lanes.cast());
+        let hi = _mm512_loadu_si512(lanes.add(64).cast());
+        for (half, gather) in BLOCK_GATHER.iter().enumerate() {
+            let idx = _mm512_loadu_si512(gather.as_ptr().cast());
+            let v = _mm512_permutex2var_epi8(lo, idx, hi);
+            _mm512_storeu_si512(blocks.as_mut_ptr().add(half * 8).cast(), v);
+        }
+    }
+    blocks
+}
+
+/// Write the 8 outputs of one lane, one value at a time.
+///
+/// # Safety
+///
+/// `vals` must hold the lane's indices, from `base` to `base` plus the set bits of `bits`, and
+/// `out` must be writable for 8 values of `S` bytes.
+#[inline]
+unsafe fn scalar_lane<const S: usize>(vals: *const u8, base: usize, bits: u8, out: *mut u8) {
+    let mut index = base;
+    for row in 0..8 {
+        index += usize::from((bits >> row) & 1);
+        // SAFETY: the caller bounds the lane's indices and its 8 outputs.
+        unsafe { ptr::copy_nonoverlapping(vals.add(index * S), out.add(row * S), S) };
+    }
+}
+
+/// For a step of `w` outputs, byte `j` selects byte `j / w * w`: the first byte of its step.
+static STEP_FIRST: [[u8; 64]; 3] = {
+    let mut idx = [[0u8; 64]; 3];
+    let mut i = 0;
+    while i < 3 {
+        let w = 64 >> i;
+        let mut j = 0;
+        while j < 64 {
+            idx[i][j] = (j / w * w) as u8;
+            j += 1;
+        }
+        i += 1;
+    }
+    idx
+};
+
+/// The offsets of step `step`'s outputs, widened to `S`-byte permute indices.
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi")]
+fn step_offsets<const S: usize>(rel: __m512i, step: usize) -> __m512i {
+    match (S, step) {
+        (1, _) => rel,
+        (2, 0) => _mm512_cvtepu8_epi16(_mm512_castsi512_si256(rel)),
+        (2, _) => _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64::<1>(rel)),
+        (4, 0) => _mm512_cvtepu8_epi32(_mm512_castsi512_si128(rel)),
+        (4, 1) => _mm512_cvtepu8_epi32(_mm512_extracti32x4_epi32::<1>(rel)),
+        (4, 2) => _mm512_cvtepu8_epi32(_mm512_extracti32x4_epi32::<2>(rel)),
+        (4, _) => _mm512_cvtepu8_epi32(_mm512_extracti32x4_epi32::<3>(rel)),
+        _ => unreachable!("unsupported value width {S}"),
+    }
+}
+
+/// # Safety
+///
+/// AVX-512 must be available, `vals` must hold `len` values of `S` bytes, every lane's last index
+/// must be below `len`, and `out` must be writable for 1024 values.
+#[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vbmi")]
+unsafe fn delta_chunk<const S: usize>(
+    vals: *const u8,
+    len: usize,
+    bases: &[u8; 128],
+    deltas: Option<&[u8; 128]>,
+    out: *mut u8,
+) {
+    // Outputs per step; a block of 64 outputs takes `S` steps.
+    let w = 64 / S;
+    // SAFETY: `bases` and `deltas` hold 128 bytes each.
+    let (base_blocks, bit_blocks) = unsafe {
+        (
+            blocks(bases.as_ptr()),
+            deltas.map_or([0; 16], |d| blocks(d.as_ptr())),
+        )
+    };
+    // SAFETY: the tables hold 64 bytes each.
+    let (spread, step_first) = unsafe {
+        (
+            _mm512_loadu_si512(SPREAD_BYTES.as_ptr().cast()),
+            _mm512_loadu_si512(STEP_FIRST[S.trailing_zeros() as usize].as_ptr().cast()),
+        )
+    };
+    let limit = _mm512_set1_epi8(((w - 1) as u8).cast_signed());
+
+    for (l, (&base_block, &bits)) in base_blocks.iter().zip(&bit_blocks).enumerate() {
+        // SAFETY: every store stays within the block's 64 outputs; every window load reads only
+        // values below `len` (a step's first index is an index of the chunk, so below `len`);
+        // and a permute selects only offsets that the check below places within the window.
+        unsafe {
+            let block_out = out.add(l * 64 * S);
+            // Byte `j` of `index`: the index of output `l * 64 + j` modulo 256.
+            let ones = _mm512_maskz_mov_epi8(bits, _mm512_set1_epi8(1));
+            let mut prefix = _mm512_add_epi8(ones, _mm512_slli_epi64::<8>(ones));
+            prefix = _mm512_add_epi8(prefix, _mm512_slli_epi64::<16>(prefix));
+            prefix = _mm512_add_epi8(prefix, _mm512_slli_epi64::<32>(prefix));
+            let lane_bases =
+                _mm512_permutexvar_epi8(spread, _mm512_set1_epi64(base_block.cast_signed()));
+            let index = _mm512_add_epi8(lane_bases, prefix);
+            // Each output's offset from the first index of its step.
+            let firsts = _mm512_permutexvar_epi8(step_first, index);
+            let rel = _mm512_sub_epi8(index, firsts);
+
+            // An index past 255, or outside its step's window of `w` values, sends the block to
+            // the scalar gather. Neither happens for RLE indices. Without either, every byte of
+            // `index` is an exact index and `rel` its offset in its step's window.
+            let wrapped = _mm512_cmplt_epu8_mask(index, lane_bases);
+            let outside =
+                _mm512_cmplt_epu8_mask(index, firsts) | _mm512_cmpgt_epu8_mask(rel, limit);
+            if wrapped | outside != 0 {
+                for (g, &order) in FL_ORDER.iter().enumerate() {
+                    let lane = order * 16 + l;
+                    let bits = deltas.map_or(0, |d| d[lane]);
+                    scalar_lane::<S>(
+                        vals,
+                        usize::from(bases[lane]),
+                        bits,
+                        block_out.add(g * 8 * S),
+                    );
+                }
+                continue;
+            }
+
+            for step in 0..S {
+                let first_group = step * 8 / S;
+                let byte = |word: u64| ((word >> (8 * first_group)) & 0xFF) as usize;
+                let first = byte(base_block) + (byte(bits) & 1);
+                let base = vals.add(first * S);
+                let window = if first + w <= len {
+                    _mm512_loadu_si512(base.cast())
+                } else {
+                    let lanes = low_lanes(len - first);
+                    match S {
+                        1 => _mm512_maskz_loadu_epi8(lanes, base.cast()),
+                        2 => _mm512_maskz_loadu_epi16(lanes as u32, base.cast()),
+                        _ => _mm512_maskz_loadu_epi32(lanes as u16, base.cast()),
+                    }
+                };
+                let offsets = step_offsets::<S>(rel, step);
+                let v = match S {
+                    1 => _mm512_permutexvar_epi8(offsets, window),
+                    2 => _mm512_permutexvar_epi16(offsets, window),
+                    4 => _mm512_permutexvar_epi32(offsets, window),
+                    _ => unreachable!("unsupported value width {S}"),
+                };
+                _mm512_storeu_si512(block_out.add(step * w * S).cast(), v);
+            }
         }
     }
 }
