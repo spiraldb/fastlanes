@@ -1,0 +1,70 @@
+name: Code Size
+
+on:
+  push:
+    branches: [ "develop" ]
+  pull_request: { }
+  workflow_dispatch: { }
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: codesize-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codesize:
+    name: Code Size
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/codesize
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-rust
+
+      # Measure the release test binary: the tests call every kernel with concrete types, so it
+      # contains each kernel's machine code. `scripts/codesize.py` leaves out the test code itself.
+      - name: Measure head
+        run: |
+          exe=$(cargo test --release --features runtime --lib --no-run --message-format=json \
+            | jq -r 'select(.reason == "compiler-artifact" and .profile.test) | .executable // empty')
+          cp "$exe" "$RUNNER_TEMP/head.bin"
+
+      # If the base commit does not build, the report is posted without a comparison.
+      - name: Measure base
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          cd "$RUNNER_TEMP/base"
+          exe=$(cargo test --release --features runtime --lib --no-run --message-format=json \
+            | jq -r 'select(.reason == "compiler-artifact" and .profile.test) | .executable // empty')
+          cp "$exe" "$RUNNER_TEMP/base.bin"
+
+      - name: Write report
+        run: |
+          base=""
+          if [ -f "$RUNNER_TEMP/base.bin" ]; then base="$RUNNER_TEMP/base.bin"; fi
+          {
+            python3 scripts/codesize.py "$RUNNER_TEMP/head.bin" $base
+            echo
+            echo "<sub>Commit ${{ github.event.pull_request.head.sha || github.sha }}${base:+ compared with base ${{ github.event.pull_request.base.sha }}}.</sub>"
+          } > "$RUNNER_TEMP/report.md"
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # Create the report comment on the first run and edit it in place on every later run.
+      # Pull requests from forks get a read-only token, so they only get the job summary.
+      - name: Post or update PR comment
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: codesize
+          path: ${{ runner.temp }}/report.md
