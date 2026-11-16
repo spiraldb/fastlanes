@@ -156,6 +156,15 @@ impl_delta!(u16);
 impl_delta!(u32);
 impl_delta!(u64);
 
+/// Counts the zero deltas, i.e. the elements equal to the element before them in their lane.
+///
+/// Demo for the code size report: an `#[inline]` function that only the tests call.
+#[inline]
+#[must_use]
+pub fn count_zero_deltas<T: FastLanes>(deltas: &[T; 1024]) -> usize {
+    deltas.iter().filter(|delta| delta.is_zero()).count()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -168,6 +177,14 @@ mod test {
     use hegel::{PrettyPrintable, TestCase};
     use num_traits::WrappingSub;
     use pastey::paste;
+
+    #[test]
+    fn test_count_zero_deltas() {
+        let mut deltas = [0u32; 1024];
+        assert_eq!(super::count_zero_deltas(&deltas), 1024);
+        deltas[7] = 3;
+        assert_eq!(super::count_zero_deltas(&deltas), 1023);
+    }
 
     #[test]
     fn test_delta() {
