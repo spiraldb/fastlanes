@@ -9,7 +9,7 @@ authors = ["SpiralDB <hello@spiraldb.com>"]
 keywords = ["fastlanes", "compression", "codec", "encoding", "lightweight"]
 edition = "2024"
 rust-version = "1.91"
-exclude = [".github/*", "renovate.json", ".git/*"]
+exclude = [".github/*", "renovate.json", ".git/*", "codesize/*", "scripts/*"]
 
 [features]
 default = []

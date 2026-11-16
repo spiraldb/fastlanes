@@ -1,0 +1,30 @@
+# Code-size harness for the CI code-size report (see `scripts/codesize.py`).
+#
+# A cdylib that exports one wrapper per public `fastlanes` kernel and element type. Linking it
+# instantiates every kernel and drops anything unreachable, so the code left in the library is the
+# code a user who calls every kernel would ship. It is not part of the published crate.
+[package]
+name = "fastlanes-codesize"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[features]
+runtime = ["fastlanes/runtime"]
+
+[dependencies]
+fastlanes = { path = ".." }
+pastey = "0.2"
+seq-macro = "0.3"
+
+[profile.release]
+codegen-units = 1
+panic = "abort"
+debug = false
+
+# Keep this crate out of any parent workspace.
+[workspace]

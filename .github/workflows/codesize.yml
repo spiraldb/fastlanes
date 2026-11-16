@@ -1,0 +1,79 @@
+name: Code Size
+
+on:
+  push:
+    branches: [ "develop" ]
+  pull_request: { }
+  workflow_dispatch: { }
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: codesize-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codesize:
+    name: Code Size
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/codesize
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-rust
+
+      - name: Measure head
+        run: |
+          cargo build --release --manifest-path codesize/Cargo.toml
+          python3 scripts/codesize.py collect "$CARGO_TARGET_DIR/release/libfastlanes_codesize.so" "$RUNNER_TEMP/head.json"
+
+      # Build the base commit's library with this commit's harness and script, so that a PR that
+      # changes the harness is still compared like for like. If the base does not build with the
+      # harness (e.g. a kernel was renamed), the report is posted without a comparison.
+      - name: Measure base
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          rm -rf "$RUNNER_TEMP/base/codesize"
+          cp -r codesize "$RUNNER_TEMP/base/codesize"
+          cargo build --release --manifest-path "$RUNNER_TEMP/base/codesize/Cargo.toml"
+          python3 scripts/codesize.py collect "$CARGO_TARGET_DIR/release/libfastlanes_codesize.so" "$RUNNER_TEMP/base.json"
+
+      - name: Write report
+        run: |
+          base=""
+          if [ -f "$RUNNER_TEMP/base.json" ]; then base="$RUNNER_TEMP/base.json"; fi
+          {
+            echo "<!-- fastlanes-codesize-report -->"
+            python3 scripts/codesize.py report "$RUNNER_TEMP/head.json" $base
+            echo
+            echo "<sub>Commit ${{ github.event.pull_request.head.sha || github.sha }}${base:+ compared with base ${{ github.event.pull_request.base.sha }}}.</sub>"
+          } > "$RUNNER_TEMP/report.md"
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # Create the report comment on the first run and edit it in place on every later run.
+      # Pull requests from forks get a read-only token, so they only get the job summary.
+      - name: Post or update PR comment
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          comment_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- fastlanes-codesize-report -->"))) | .id' \
+            | head -n 1)
+          body=$(jq -Rs '{body: .}' < "$RUNNER_TEMP/report.md")
+          if [ -n "$comment_id" ]; then
+            echo "$body" | gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" --input - --silent
+          else
+            echo "$body" | gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input - --silent
+          fi
