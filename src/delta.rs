@@ -245,10 +245,16 @@ macro_rules! impl_delta {
                 }
                 let (lane, row) = delta_lane_row::<Self>(index);
                 let mut value = base;
-                for row in 0..=row {
-                    let delta = Self::unpack_single::<W, B>(input, delta_index::<Self>(lane, row));
-                    value = value.wrapping_add(delta);
-                }
+                // Unpacking the lane in order reads its bits sequentially, which is cheaper than
+                // locating each delta's bits on its own; the rows past `row` are skipped.
+                let mut current = 0;
+                unpack!($T, W, input, lane, |$idx, $elem| {
+                    let _ = $idx;
+                    if current <= row {
+                        value = value.wrapping_add($elem);
+                    }
+                    current += 1;
+                });
                 value
             }
 
