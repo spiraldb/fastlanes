@@ -137,12 +137,11 @@ fn packed_u32_deltas() -> ([u32; 1024 * 11 / 32], [u32; 32]) {
 #[divan::bench]
 fn undelta_u32_single(bencher: Bencher) {
     const W: usize = 11;
-    const B: usize = 1024 * W / <u32 as FastLanes>::T;
     let (packed, base) = packed_u32_deltas();
     let index = fastlanes::delta_index::<u32>(0, 31);
 
     bencher.bench_local(|| {
-        u32::undelta_pack_single::<W, B>(black_box(&packed), black_box(base[0]), black_box(index))
+        u32::undelta_pack_single(W, black_box(&packed), black_box(base[0]), black_box(index))
     });
 }
 

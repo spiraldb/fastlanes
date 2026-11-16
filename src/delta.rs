@@ -88,35 +88,17 @@ pub trait Delta: BitPacking {
     /// Panics if `index` is not less than 1024.
     fn undelta_single(input: &[Self; 1024], base: Self, index: usize) -> Self;
 
-    /// Element `index` of [`Delta::undelta_pack`]'s output, unpacking only the deltas of its lane
-    /// up to its row: at most `T` of the 1024.
+    /// Element `index` of the output of [`Delta::unchecked_undelta_pack`] at width `width`,
+    /// unpacking only the deltas of its lane up to its row: at most `T` of the 1024.
     ///
-    /// `base` is the base of the element's lane, as for [`Delta::undelta_single`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `index` is not less than 1024.
-    fn undelta_pack_single<const W: usize, const B: usize>(
-        input: &[Self; B],
-        base: Self,
-        index: usize,
-    ) -> Self;
-
-    /// [`Delta::undelta_pack_single`] for a width `W` known only at runtime.
-    ///
-    /// # Safety
-    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
-    /// is the packed width. This length is checked only with `debug_assert`.
+    /// `base` is the base of the element's lane, as for [`Delta::undelta_single`]. The width is
+    /// known only at runtime, so one copy of this function serves every width.
     ///
     /// # Panics
-    /// Panics if `width` is greater than the bit-width of `Self`, or if `index` is not less than
-    /// 1024.
-    unsafe fn unchecked_undelta_pack_single(
-        width: usize,
-        input: &[Self],
-        base: Self,
-        index: usize,
-    ) -> Self;
+    ///
+    /// Panics if `width` is greater than the bit-width of `Self`, if `input` is not of length
+    /// `1024 * width / T`, or if `index` is not less than 1024.
+    fn undelta_pack_single(width: usize, input: &[Self], base: Self, index: usize) -> Self;
 }
 
 macro_rules! impl_delta {
@@ -233,68 +215,36 @@ macro_rules! impl_delta {
                 value
             }
 
-            #[inline]
-            fn undelta_pack_single<const W: usize, const B: usize>(
-                input: &[Self; B],
-                base: Self,
-                index: usize,
-            ) -> Self {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-                let (lane, row) = delta_lane_row::<Self>(index);
-                let mut value = base;
-                // Unpacking the lane in order reads its bits sequentially, which is cheaper than
-                // locating each delta's bits on its own; the rows past `row` are skipped.
-                let mut current = 0;
-                unpack!($T, W, input, lane, |$idx, $elem| {
-                    let _ = $idx;
-                    if current <= row {
-                        value = value.wrapping_add($elem);
-                    }
-                    current += 1;
-                });
-                value
-            }
-
-            unsafe fn unchecked_undelta_pack_single(
+            fn undelta_pack_single(
                 width: usize,
                 input: &[Self],
                 base: Self,
                 index: usize,
             ) -> Self {
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(
+                assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+                assert_eq!(
                     input.len(),
-                    packed_len,
+                    1024 * width / Self::T,
                     "Input buffer must be of size 1024 * W / T"
                 );
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
-
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / <$T>::T;
-                            Self::undelta_pack_single::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                base,
-                                index,
-                            )
-                        },)*
-                        // seq_t has exclusive upper bound
-                        Self::T => {
-                            const W: usize = <$T>::T;
-                            const B: usize = 1024;
-                            Self::undelta_pack_single::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                base,
-                                index,
-                            )
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
+                let (lane, row) = delta_lane_row::<Self>(index);
+                if width == 0 {
+                    return base;
+                }
+                let mask: Self = if width == Self::T { Self::MAX } else { (1 << width) - 1 };
+                // A lane's deltas are packed `width` bits each, low bits first, into its words
+                // `input[LANES * word + lane]`, as `unpack!` reads them.
+                let mut value = base;
+                for row in 0..=row {
+                    let bit = row * width;
+                    let (word, shift) = (bit / Self::T, bit % Self::T);
+                    let mut delta = input[Self::LANES * word + lane] >> shift;
+                    if shift + width > Self::T {
+                        delta |= input[Self::LANES * (word + 1) + lane] << (Self::T - shift);
                     }
-                }))
+                    value = value.wrapping_add(delta & mask);
+                }
+                value
             }
         }
     };
@@ -456,8 +406,7 @@ mod test {
             unsafe { T::unchecked_undelta_pack(width, &packed, &base, &mut expected) };
             for (index, &expected) in expected.iter().enumerate() {
                 let lane_base = base[delta_lane_row::<T>(index).0];
-                let actual =
-                    unsafe { T::unchecked_undelta_pack_single(width, &packed, lane_base, index) };
+                let actual = T::undelta_pack_single(width, &packed, lane_base, index);
                 assert_eq!(actual, expected, "width {width}, index {index}");
             }
         }
