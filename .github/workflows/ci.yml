@@ -10,28 +10,72 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  # Cancel superseded runs of the same PR; never cancel runs on develop.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build:
-    name: Build
+  fmt:
+    name: Rust Lint - Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/setup-rust
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - run: cargo fmt --all --check
 
+  clippy:
+    name: Rust Lint - Clippy (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: all features
+            flags: --all-features
+          - name: default features
+            flags: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
+      - run: cargo clippy --all-targets ${{ matrix.flags }}
+
+  test:
+    name: Rust Build & Test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: all features
+            flags: --all-features
+          - name: default features
+            flags: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-rust
       - name: Rust Build
-        run: |
-            cargo build --all-features --all-targets
-            cargo build --all-targets
-      - name: Rust Lint - Format
-        run: cargo fmt --all --check
-      - name: Rust Lint - Clippy
-        run: |
-            cargo clippy --all-features --all-targets
-            cargo clippy --all-targets
+        run: cargo build --all-targets ${{ matrix.flags }}
       - name: Rust Test
+        run: cargo test --workspace ${{ matrix.flags }}
+
+  # Keeps the "Build" check that branch protection may require: it passes only when
+  # every parallel lint, build and test job passed.
+  build:
+    name: Build
+    needs: [fmt, clippy, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-            cargo test --workspace --all-features
-            cargo test --workspace
+          echo "$RESULTS"
+          for r in $RESULTS; do [ "$r" = success ] || exit 1; done
 
   test-avx512:
     name: Test AVX-512 (Intel SDE)
@@ -84,16 +128,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Install the debug symbols in the background while the toolchain is set up.
+      - name: Start libc debug symbols install
+        run: |
+          (
+            if sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libc6-dbg
+            then status=0; else status=$?; fi
+            echo "$status" > "$RUNNER_TEMP/apt.status"
+          ) > "$RUNNER_TEMP/apt.log" 2>&1 &
+
       - uses: ./.github/actions/setup-rust
 
-      - name: Install libc debug symbols
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libc6-dbg
-
       - name: Install Codspeed
-        shell: bash
-        run: cargo install --force cargo-codspeed --locked
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: cargo-codspeed
+
+      - name: Wait for libc debug symbols
+        run: |
+          timeout 300 bash -c 'until [ -f "$RUNNER_TEMP/apt.status" ]; do sleep 1; done'
+          cat "$RUNNER_TEMP/apt.log"
+          exit "$(cat "$RUNNER_TEMP/apt.status")"
 
       - name: Build benchmarks
         env:
