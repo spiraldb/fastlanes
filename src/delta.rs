@@ -1,8 +1,42 @@
 #![allow(unused_assignments)]
 
-use crate::{BitPacking, FastLanes, iterate, seq_t, supported_bit_width, unpack};
+use crate::{BitPacking, FL_ORDER, FastLanes, iterate, seq_t, supported_bit_width, unpack};
 use core::mem::size_of;
 use pastey::paste;
+
+/// The lane and row of position `index` in a delta-encoded vector of `T`.
+///
+/// Delta encodes each lane against its own base, row by row, so the element at `index` of
+/// [`Delta::undelta`]'s output depends on its lane's base and that lane's deltas at rows `0..=row`,
+/// found at [`delta_index`]. Positions count in the transposed order the deltas were computed in;
+/// [`untranspose`](crate::untranspose) gives the position of an untransposed element.
+///
+/// # Panics
+///
+/// Panics if `index` is not less than 1024.
+#[inline]
+#[must_use]
+pub fn delta_lane_row<T: FastLanes>(index: usize) -> (usize, usize) {
+    assert!(index < 1024, "index {index} out of bounds");
+    let in_block = index % 128;
+    let lane = in_block % T::LANES;
+    let row = FL_ORDER[(in_block - lane) / 16] * 8 + index / 128;
+    (lane, row)
+}
+
+/// The position in a delta-encoded vector of `T` of row `row` of lane `lane`: the inverse of
+/// [`delta_lane_row`].
+///
+/// # Panics
+///
+/// Panics if `lane` is not less than `T::LANES` or `row` is not less than `T::T`.
+#[inline]
+#[must_use]
+pub fn delta_index<T: FastLanes>(lane: usize, row: usize) -> usize {
+    assert!(lane < T::LANES, "lane {lane} out of bounds");
+    assert!(row < T::T, "row {row} out of bounds");
+    FL_ORDER[row / 8] * 16 + (row % 8) * 128 + lane
+}
 
 pub trait Delta: BitPacking {
     fn delta<const LANES: usize>(
@@ -42,6 +76,47 @@ pub trait Delta: BitPacking {
         base: &[Self; LANES],
         output: &mut [Self],
     );
+
+    /// Element `index` of [`Delta::undelta`]'s output, reading only the deltas of its lane up to
+    /// its row: at most `T` of the 1024.
+    ///
+    /// `base` is the base of the element's lane, `base[delta_lane_row::<Self>(index).0]` in
+    /// [`Delta::undelta`]'s terms.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is not less than 1024.
+    fn undelta_single(input: &[Self; 1024], base: Self, index: usize) -> Self;
+
+    /// Element `index` of [`Delta::undelta_pack`]'s output, unpacking only the deltas of its lane
+    /// up to its row: at most `T` of the 1024.
+    ///
+    /// `base` is the base of the element's lane, as for [`Delta::undelta_single`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is not less than 1024.
+    fn undelta_pack_single<const W: usize, const B: usize>(
+        input: &[Self; B],
+        base: Self,
+        index: usize,
+    ) -> Self;
+
+    /// [`Delta::undelta_pack_single`] for a width `W` known only at runtime.
+    ///
+    /// # Safety
+    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
+    /// is the packed width. This length is checked only with `debug_assert`.
+    ///
+    /// # Panics
+    /// Panics if `width` is greater than the bit-width of `Self`, or if `index` is not less than
+    /// 1024.
+    unsafe fn unchecked_undelta_pack_single(
+        width: usize,
+        input: &[Self],
+        base: Self,
+        index: usize,
+    ) -> Self;
 }
 
 macro_rules! impl_delta {
@@ -141,6 +216,74 @@ macro_rules! impl_delta {
                                 unsafe { crate::as_array_unchecked(input) },
                                 base,
                                 unsafe { crate::as_array_mut_unchecked(output) },
+                            )
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
+            }
+
+            #[inline]
+            fn undelta_single(input: &[Self; 1024], base: Self, index: usize) -> Self {
+                let (lane, row) = delta_lane_row::<Self>(index);
+                let mut value = base;
+                for row in 0..=row {
+                    value = value.wrapping_add(input[delta_index::<Self>(lane, row)]);
+                }
+                value
+            }
+
+            #[inline]
+            fn undelta_pack_single<const W: usize, const B: usize>(
+                input: &[Self; B],
+                base: Self,
+                index: usize,
+            ) -> Self {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / Self::T);
+                }
+                let (lane, row) = delta_lane_row::<Self>(index);
+                let mut value = base;
+                for row in 0..=row {
+                    let delta = Self::unpack_single::<W, B>(input, delta_index::<Self>(lane, row));
+                    value = value.wrapping_add(delta);
+                }
+                value
+            }
+
+            unsafe fn unchecked_undelta_pack_single(
+                width: usize,
+                input: &[Self],
+                base: Self,
+                index: usize,
+            ) -> Self {
+                let packed_len = 128 * width / size_of::<Self>();
+                debug_assert_eq!(
+                    input.len(),
+                    packed_len,
+                    "Input buffer must be of size 1024 * W / T"
+                );
+                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            Self::undelta_pack_single::<W, B>(
+                                unsafe { crate::as_array_unchecked(input) },
+                                base,
+                                index,
+                            )
+                        },)*
+                        // seq_t has exclusive upper bound
+                        Self::T => {
+                            const W: usize = <$T>::T;
+                            const B: usize = 1024;
+                            Self::undelta_pack_single::<W, B>(
+                                unsafe { crate::as_array_unchecked(input) },
+                                base,
+                                index,
                             )
                         },
                         _ => unreachable!("Unsupported width: {}", width)
@@ -264,6 +407,80 @@ mod test {
         }
     }
 
+    fn assert_lane_row_inverts_index<T: FastLanes>() {
+        let mut seen = [false; 1024];
+        for lane in 0..T::LANES {
+            for row in 0..T::T {
+                let index = delta_index::<T>(lane, row);
+                assert!(!seen[index], "position {index} repeats");
+                seen[index] = true;
+                assert_eq!(delta_lane_row::<T>(index), (lane, row));
+            }
+        }
+    }
+
+    fn assert_undelta_single_matches_undelta<T, const LANES: usize>(tc: &TestCase)
+    where
+        T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
+    {
+        let deltas: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let mut expected = [T::max_value(); 1024];
+        T::undelta::<LANES>(&deltas, &base, &mut expected);
+
+        for (index, &expected) in expected.iter().enumerate() {
+            let lane_base = base[delta_lane_row::<T>(index).0];
+            assert_eq!(T::undelta_single(&deltas, lane_base, index), expected);
+        }
+    }
+
+    fn assert_undelta_pack_single_matches_undelta_pack<T, const LANES: usize>(tc: &TestCase)
+    where
+        T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
+    {
+        let deltas: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &deltas, &mut packed) };
+
+            let mut expected = [T::max_value(); 1024];
+            unsafe { T::unchecked_undelta_pack(width, &packed, &base, &mut expected) };
+            for (index, &expected) in expected.iter().enumerate() {
+                let lane_base = base[delta_lane_row::<T>(index).0];
+                let actual =
+                    unsafe { T::unchecked_undelta_pack_single(width, &packed, lane_base, index) };
+                assert_eq!(actual, expected, "width {width}, index {index}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_delta_lane_row_inverts_delta_index() {
+        assert_lane_row_inverts_index::<u8>();
+        assert_lane_row_inverts_index::<u16>();
+        assert_lane_row_inverts_index::<u32>();
+        assert_lane_row_inverts_index::<u64>();
+    }
+
+    #[test]
+    fn test_undelta_single_of_transposed_element() {
+        let values: [u32; 1024] = core::array::from_fn(|i| (i * 3 + i % 7) as u32);
+        let mut transposed = [0; 1024];
+        Transpose::transpose(&values, &mut transposed);
+        let base: [u32; 32] = core::array::from_fn(|lane| transposed[lane]);
+        let mut deltas = [0; 1024];
+        Delta::delta(&transposed, &base, &mut deltas);
+
+        for (i, &value) in values.iter().enumerate() {
+            let index = crate::untranspose(i);
+            let lane_base = base[delta_lane_row::<u32>(index).0];
+            assert_eq!(u32::undelta_single(&deltas, lane_base, index), value);
+        }
+    }
+
     macro_rules! delta_property_tests {
         ($T:ident, $lanes:expr) => {
             paste! {
@@ -280,6 +497,16 @@ mod test {
                 #[hegel::test(test_cases = 10)]
                 fn [<test_undelta_pack_matches_unfused_ $T>](tc: TestCase) {
                     assert_undelta_pack_matches_unfused::<$T, $lanes>(&tc);
+                }
+
+                #[hegel::test]
+                fn [<test_undelta_single_matches_undelta_ $T>](tc: TestCase) {
+                    assert_undelta_single_matches_undelta::<$T, $lanes>(&tc);
+                }
+
+                #[hegel::test(test_cases = 10)]
+                fn [<test_undelta_pack_single_matches_undelta_pack_ $T>](tc: TestCase) {
+                    assert_undelta_pack_single_matches_undelta_pack::<$T, $lanes>(&tc);
                 }
             }
         };
