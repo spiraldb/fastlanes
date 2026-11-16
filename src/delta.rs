@@ -38,6 +38,53 @@ pub fn delta_index<T: FastLanes>(lane: usize, row: usize) -> usize {
     FL_ORDER[row / 8] * 16 + (row % 8) * 128 + lane
 }
 
+/// `EVEN_DIGITS[width]` has the bits of the even-numbered `width`-bit digits of a `u64` set: bits
+/// `0..width`, `2 * width..3 * width`, and so on.
+const EVEN_DIGITS: [u64; 64] = {
+    let mut even = [0; 64];
+    let mut width = 1;
+    while width < 64 {
+        let mut bit = 0;
+        while bit < 64 {
+            even[width] |= (u64::MAX >> (64 - width)) << bit;
+            bit += 2 * width;
+        }
+        width += 1;
+    }
+    even
+};
+
+/// `REM_64[width]` is `64 % width`. Dividing takes about as long as adding a lane's deltas does.
+const REM_64: [u8; 64] = {
+    let mut rem = [0; 64];
+    let mut width = 1;
+    while width < 64 {
+        rem[width] = (64 % width) as u8;
+        width += 1;
+    }
+    rem
+};
+
+/// The sum, modulo `2^64`, of the slots of `2 * width` bits that `slots` is made of, where
+/// `width` is in `1..64`. No slot may start at or above bit 64.
+fn sum_slots(slots: u128, width: usize) -> u64 {
+    let mut slot = 2 * width;
+    if slot >= 64 {
+        return slots as u64;
+    }
+    // The slots that end at or below bit `whole`, and the one slot that starts there if any.
+    let whole = 64 - usize::from(REM_64[slot]);
+    let high = (slots >> whole) as u64;
+    let mut low = slots as u64 & (u64::MAX >> (64 - whole));
+    // Adding each odd-numbered slot to the even-numbered one below it makes slots twice as wide
+    // that hold the same total, until one slot holds all of it.
+    while slot < 64 {
+        low = (low & EVEN_DIGITS[slot]) + ((low >> slot) & EVEN_DIGITS[slot]);
+        slot *= 2;
+    }
+    low.wrapping_add(high)
+}
+
 pub trait Delta: BitPacking {
     fn delta<const LANES: usize>(
         input: &[Self; 1024],
@@ -221,6 +268,9 @@ macro_rules! impl_delta {
                 base: Self,
                 index: usize,
             ) -> Self {
+                // The words of a lane that hold 64 bits of its packed deltas.
+                const WORDS: usize = 64 / <$T>::T;
+
                 assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
                 assert_eq!(
                     input.len(),
@@ -231,20 +281,77 @@ macro_rules! impl_delta {
                 if width == 0 {
                     return base;
                 }
-                let mask: Self = if width == Self::T { Self::MAX } else { (1 << width) - 1 };
                 // A lane's deltas are packed `width` bits each, low bits first, into its words
                 // `input[LANES * word + lane]`, as `unpack!` reads them.
                 let mut value = base;
-                for row in 0..=row {
-                    let bit = row * width;
-                    let (word, shift) = (bit / Self::T, bit % Self::T);
-                    let mut delta = input[Self::LANES * word + lane] >> shift;
-                    if shift + width > Self::T {
-                        delta |= input[Self::LANES * (word + 1) + lane] << (Self::T - shift);
+                if width == Self::T {
+                    for row in 0..=row {
+                        value = value.wrapping_add(input[Self::LANES * row + lane]);
                     }
-                    value = value.wrapping_add(delta & mask);
+                    return value;
                 }
-                value
+
+                // Deltas wider than 32 bits fill a 64-bit chunk with at most one pair, so adding
+                // them one at a time is as fast.
+                if width > 32 {
+                    let mask: Self = (1 << width) - 1;
+                    for row in 0..=row {
+                        let bit = row * width;
+                        let (word, shift) = (bit / Self::T, bit % Self::T);
+                        let mut delta = input[Self::LANES * word + lane] >> shift;
+                        if shift + width > Self::T {
+                            delta |= input[Self::LANES * (word + 1) + lane] << (Self::T - shift);
+                        }
+                        value = value.wrapping_add(delta & mask);
+                    }
+                    return value;
+                }
+
+                // Add the deltas 64 bits of the lane at a time, rather than one at a time. A
+                // chunk of 64 bits starts with `head` bits that end a delta (all of it, when
+                // `head` is `width`), which go to `ends`. The deltas above those start at bit 0
+                // once shifted down, so adding the odd-numbered ones to the even-numbered ones
+                // leaves a sum of two deltas in each slot of `2 * width` bits. The slots of all
+                // the chunks add up in `slots`, and `sum_slots` adds the slots to one another.
+                //
+                // A slot does not overflow: a chunk adds less than `2 << width` to it, and the
+                // at most `T * width / 64 <= width` chunks of the lane add less than
+                // `2 * width << width <= 1 << (2 * width)`. A slot cut short by the top of the
+                // chunk carries on into the high half of `slots`.
+                let even = EVEN_DIGITS[width];
+                let mask = u64::MAX >> (64 - width);
+                // A chunk starts `64 % width` bits further into a delta than the one before it.
+                let step = usize::from(REM_64[width]);
+                let mut ends = 0u64;
+                let mut slots = 0u128;
+                let mut head = width;
+                let mut add = |chunk: u64| {
+                    ends = ends.wrapping_add((chunk << (width - head)) & mask);
+                    let deltas = chunk >> head;
+                    slots += u128::from((deltas & even) + ((deltas >> width) & even));
+                    head = if head > step { head - step } else { head + width - step };
+                };
+
+                let bits = (row + 1) * width;
+                let mut word = lane;
+                for _ in 0..bits / 64 {
+                    let mut chunk = 0;
+                    for part in 0..WORDS {
+                        chunk |= u64::from(input[word]) << (part * Self::T);
+                        word += Self::LANES;
+                    }
+                    add(chunk);
+                }
+                let rest = bits % 64;
+                if rest != 0 {
+                    let mut chunk = 0;
+                    for part in 0..rest.div_ceil(Self::T) {
+                        chunk |= u64::from(input[word]) << (part * Self::T);
+                        word += Self::LANES;
+                    }
+                    add(chunk & ((1 << rest) - 1));
+                }
+                value.wrapping_add(ends.wrapping_add(sum_slots(slots, width)) as Self)
             }
         }
     };
@@ -390,26 +497,34 @@ mod test {
         }
     }
 
-    fn assert_undelta_pack_single_matches_undelta_pack<T, const LANES: usize>(tc: &TestCase)
-    where
-        T: Delta + Debug + Integer + PrettyPrintable + Send + Sync + 'static,
+    fn assert_undelta_pack_single_matches_undelta_pack<T, const LANES: usize>(
+        deltas: &[T; 1024],
+        base: &[T; LANES],
+    ) where
+        T: Delta + Debug,
     {
-        let deltas: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
-        let base: [T; LANES] = tc.draw(gs::arrays(gs::integers::<T>()));
-
         for width in 0..=T::T {
             let packed_len = 1024 * width / T::T;
             let mut packed = vec![T::max_value(); packed_len];
-            unsafe { T::unchecked_pack(width, &deltas, &mut packed) };
+            unsafe { T::unchecked_pack(width, deltas, &mut packed) };
 
             let mut expected = [T::max_value(); 1024];
-            unsafe { T::unchecked_undelta_pack(width, &packed, &base, &mut expected) };
+            unsafe { T::unchecked_undelta_pack(width, &packed, base, &mut expected) };
             for (index, &expected) in expected.iter().enumerate() {
                 let lane_base = base[delta_lane_row::<T>(index).0];
                 let actual = T::undelta_pack_single(width, &packed, lane_base, index);
                 assert_eq!(actual, expected, "width {width}, index {index}");
             }
         }
+    }
+
+    /// The largest deltas are the ones that could overflow the sums `undelta_pack_single` keeps.
+    #[test]
+    fn test_undelta_pack_single_of_largest_deltas() {
+        assert_undelta_pack_single_matches_undelta_pack(&[u8::MAX; 1024], &[1; 128]);
+        assert_undelta_pack_single_matches_undelta_pack(&[u16::MAX; 1024], &[1; 64]);
+        assert_undelta_pack_single_matches_undelta_pack(&[u32::MAX; 1024], &[1; 32]);
+        assert_undelta_pack_single_matches_undelta_pack(&[u64::MAX; 1024], &[1; 16]);
     }
 
     #[test]
@@ -461,7 +576,9 @@ mod test {
 
                 #[hegel::test(test_cases = 10)]
                 fn [<test_undelta_pack_single_matches_undelta_pack_ $T>](tc: TestCase) {
-                    assert_undelta_pack_single_matches_undelta_pack::<$T, $lanes>(&tc);
+                    let deltas: [$T; 1024] = tc.draw(gs::arrays(gs::integers::<$T>()));
+                    let base: [$T; $lanes] = tc.draw(gs::arrays(gs::integers::<$T>()));
+                    assert_undelta_pack_single_matches_undelta_pack(&deltas, &base);
                 }
             }
         };
