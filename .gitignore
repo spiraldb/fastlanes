@@ -21,4 +21,3 @@ target/
 
 # Python bytecode
 __pycache__/
-/codesize/Cargo.lock

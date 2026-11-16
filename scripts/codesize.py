@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Per-module machine-code size of the `codesize/` harness library, as a markdown table.
+"""Per-module machine-code size of fastlanes, as a markdown table.
 
-Each code symbol counts towards the first `fastlanes::<module>` in its demangled name, or, for
-code inlined into a harness wrapper, the `<module>` in the wrapper's `codesize__<module>__...`
-name. Other code (`std`, ...) is not counted.
+Reads a release build of the library's test binary: the tests call every kernel with concrete
+types, so the binary holds each kernel's machine code. Each code symbol counts towards the first
+`fastlanes::<module>` in its demangled name. Test code (`::test(s)`, `hegel`, the test `main`)
+and code from other crates (`std`, ...) are not counted.
 
-Usage: codesize.py <head.so> [<base.so>]
+Usage: codesize.py <head-binary> [<base-binary>]
 """
 
 import re
@@ -13,7 +14,8 @@ import subprocess
 import sys
 from collections import Counter
 
-MODULE = re.compile(r"^codesize__([a-z0-9_]+?)__|\bfastlanes::(\w+)")
+MODULE = re.compile(r"\bfastlanes::(\w+)")
+TEST_CODE = re.compile(r"::tests?\b|\bhegel|^fastlanes::main$")
 
 
 def sizes(lib: str) -> Counter:
@@ -24,8 +26,10 @@ def sizes(lib: str) -> Counter:
     modules = Counter()
     for line in nm.splitlines():
         parts = line.split(maxsplit=3)  # <addr> <size> <type> <name>
-        if len(parts) == 4 and parts[2] in "tTwW" and (m := MODULE.search(parts[3])):
-            modules[m.group(1) or m.group(2)] += int(parts[1])
+        if len(parts) != 4 or parts[2] not in "tTwW" or TEST_CODE.search(parts[3]):
+            continue
+        if m := MODULE.search(parts[3]):
+            modules[m.group(1)] += int(parts[1])
     return modules
 
 
@@ -58,8 +62,8 @@ def main() -> None:
         total += f" {kib(base.total())} | {change(head.total(), base.total())} |"
     print(total)
     print(
-        "\n<sub>Machine code of every public kernel instantiated for `u8`/`u16`/`u32`/`u64` "
-        "(`codesize/` harness, release, `runtime` feature, x86_64).</sub>"
+        "\n<sub>Machine code per module in the release test binary, test code excluded "
+        "(`runtime` feature, x86_64).</sub>"
     )
 
 
