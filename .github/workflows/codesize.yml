@@ -29,7 +29,7 @@ jobs:
       - name: Measure head
         run: |
           cargo build --release --manifest-path codesize/Cargo.toml
-          python3 scripts/codesize.py collect "$CARGO_TARGET_DIR/release/libfastlanes_codesize.so" "$RUNNER_TEMP/head.json"
+          cp "$CARGO_TARGET_DIR/release/libfastlanes_codesize.so" "$RUNNER_TEMP/head.so"
 
       # Build the base commit's library with this commit's harness and script, so that a PR that
       # changes the harness is still compared like for like. If the base does not build with the
@@ -44,15 +44,15 @@ jobs:
           rm -rf "$RUNNER_TEMP/base/codesize"
           cp -r codesize "$RUNNER_TEMP/base/codesize"
           cargo build --release --manifest-path "$RUNNER_TEMP/base/codesize/Cargo.toml"
-          python3 scripts/codesize.py collect "$CARGO_TARGET_DIR/release/libfastlanes_codesize.so" "$RUNNER_TEMP/base.json"
+          cp "$CARGO_TARGET_DIR/release/libfastlanes_codesize.so" "$RUNNER_TEMP/base.so"
 
       - name: Write report
         run: |
           base=""
-          if [ -f "$RUNNER_TEMP/base.json" ]; then base="$RUNNER_TEMP/base.json"; fi
+          if [ -f "$RUNNER_TEMP/base.so" ]; then base="$RUNNER_TEMP/base.so"; fi
           {
             echo "<!-- fastlanes-codesize-report -->"
-            python3 scripts/codesize.py report "$RUNNER_TEMP/head.json" $base
+            python3 scripts/codesize.py "$RUNNER_TEMP/head.so" $base
             echo
             echo "<sub>Commit ${{ github.event.pull_request.head.sha || github.sha }}${base:+ compared with base ${{ github.event.pull_request.base.sha }}}.</sub>"
           } > "$RUNNER_TEMP/report.md"
