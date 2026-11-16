@@ -24,8 +24,12 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-rust
 
+      # `rustup component add llvm-tools` does not ship llvm-dwarfdump, so use the system LLVM.
       - name: Install llvm-dwarfdump
-        run: rustup component add llvm-tools
+        run: |
+          if ! command -v llvm-dwarfdump && ! ls /usr/lib/llvm-*/bin/llvm-dwarfdump; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends llvm
+          fi
 
       - name: Measure
         env:

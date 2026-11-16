@@ -7,7 +7,7 @@ each copy inlined into another function, under its module path, so a library fun
 towards its `fastlanes::<module>` wherever its code ends up, even inlined into a test. Test code
 and other crates are not counted.
 
-Usage (needs `llvm-dwarfdump`, e.g. from `rustup component add llvm-tools`):
+Usage (needs `llvm-dwarfdump` from LLVM, e.g. `apt install llvm` or `brew install llvm`):
     scripts/codesize.py                # the working tree
     scripts/codesize.py --base develop # the working tree, compared with a git revision
 """
@@ -46,11 +46,12 @@ def build(repo: str) -> str:
 def dwarfdump() -> str:
     if path := shutil.which("llvm-dwarfdump"):
         return path
-    sysroot = subprocess.run(["rustc", "--print", "sysroot"], check=True, capture_output=True,
-                             text=True).stdout.strip()
-    if found := glob.glob(f"{sysroot}/lib/rustlib/*/bin/llvm-dwarfdump"):
-        return found[0]
-    sys.exit("llvm-dwarfdump not found: run `rustup component add llvm-tools`")
+    # Versioned (Debian/Ubuntu) and keg-only (Homebrew) LLVM installs.
+    for pattern in ("/usr/lib/llvm-*/bin/llvm-dwarfdump", "/usr/local/opt/llvm/bin/llvm-dwarfdump",
+                    "/opt/homebrew/opt/llvm/bin/llvm-dwarfdump"):
+        if found := sorted(glob.glob(pattern)):
+            return found[-1]
+    sys.exit("llvm-dwarfdump not found: install LLVM (`apt install llvm` or `brew install llvm`)")
 
 
 def parse(binary: str) -> dict:
