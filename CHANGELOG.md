@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/spiraldb/fastlanes/compare/v0.8.0...v0.8.1) - 2026-11-17
+
+### Other
+
+- Undelta a single element from its lane ([#226](https://github.com/spiraldb/fastlanes/pull/226))
+- Decode RLE with SIMD shuffles and decode Delta-encoded RLE indices in one pass ([#222](https://github.com/spiraldb/fastlanes/pull/222))
+- pin toolchain to 1.100.0 ([#230](https://github.com/spiraldb/fastlanes/pull/230))
+- Remove redundant package.homepage from Cargo.toml ([#228](https://github.com/spiraldb/fastlanes/pull/228))
+- Add code size CI report ([#227](https://github.com/spiraldb/fastlanes/pull/227))
+- Benchmark RLE decode over irregular runs and Delta-encoded indices ([#221](https://github.com/spiraldb/fastlanes/pull/221))
+
 ## [0.8.0](https://github.com/spiraldb/fastlanes/compare/v0.7.2...v0.8.0) - 2026-11-11
 
 ### Added
