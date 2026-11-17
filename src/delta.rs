@@ -40,6 +40,7 @@ pub fn delta_index<T: FastLanes>(lane: usize, row: usize) -> usize {
 
 /// `EVEN_DIGITS[width]` has the bits of the even-numbered `width`-bit digits of a `u64` set: bits
 /// `0..width`, `2 * width..3 * width`, and so on.
+#[cfg(not(feature = "unroll"))]
 const EVEN_DIGITS: [u64; 64] = {
     let mut even = [0; 64];
     let mut width = 1;
@@ -55,6 +56,7 @@ const EVEN_DIGITS: [u64; 64] = {
 };
 
 /// `REM_64[width]` is `64 % width`. Dividing takes about as long as adding a lane's deltas does.
+#[cfg(not(feature = "unroll"))]
 const REM_64: [u8; 64] = {
     let mut rem = [0; 64];
     let mut width = 1;
@@ -67,6 +69,7 @@ const REM_64: [u8; 64] = {
 
 /// The sum, modulo `2^64`, of the slots of `2 * width` bits that `slots` is made of, where
 /// `width` is in `1..64`. No slot may start at or above bit 64.
+#[cfg(not(feature = "unroll"))]
 fn sum_slots(slots: u128, width: usize) -> u64 {
     let mut slot = 2 * width;
     if slot >= 64 {
@@ -138,8 +141,11 @@ pub trait Delta: BitPacking {
     /// Element `index` of the output of [`Delta::unchecked_undelta_pack`] at width `width`,
     /// unpacking only the deltas of its lane up to its row: at most `T` of the 1024.
     ///
-    /// `base` is the base of the element's lane, as for [`Delta::undelta_single`]. The width is
-    /// known only at runtime, so one copy of this function serves every width.
+    /// `base` is the base of the element's lane, as for [`Delta::undelta_single`].
+    ///
+    /// By default one small copy of this function serves every width. The `unroll` feature
+    /// instead compiles an unrolled copy for each width, which is faster, especially for wide
+    /// deltas, at the cost of much more code.
     ///
     /// # Panics
     ///
@@ -268,9 +274,6 @@ macro_rules! impl_delta {
                 base: Self,
                 index: usize,
             ) -> Self {
-                // The words of a lane that hold 64 bits of its packed deltas.
-                const WORDS: usize = 64 / <$T>::T;
-
                 assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
                 assert_eq!(
                     input.len(),
@@ -281,12 +284,95 @@ macro_rules! impl_delta {
                 if width == 0 {
                     return base;
                 }
-                // A lane's deltas are packed `width` bits each, low bits first, into its words
-                // `input[LANES * word + lane]`, as `unpack!` reads them.
+
+                paste!([<undelta_pack_single_ $T>](width, input, base, lane, row))
+            }
+        }
+    };
+}
+
+/// The per-type bodies of [`Delta::undelta_pack_single`] for `width` in `1..=T`, with `input` of
+/// length `1024 * width / T`.
+macro_rules! undelta_pack_single_impl {
+    ($T:ty) => {
+        paste! {
+            /// [`Delta::undelta_pack_single`] with an unrolled copy for each width: every shift
+            /// and mask is a constant, which is faster, especially for wide deltas, but takes one
+            /// copy of the code per width.
+            #[cfg(feature = "unroll")]
+            fn [<undelta_pack_single_ $T>](
+                width: usize,
+                input: &[$T],
+                base: $T,
+                lane: usize,
+                row: usize,
+            ) -> $T {
+                /// Undeltas the element at `row` of `lane` from deltas packed at `W` bits.
+                #[inline(always)]
+                fn unrolled<const W: usize, const B: usize>(
+                    input: &[$T; B],
+                    base: $T,
+                    lane: usize,
+                    row: usize,
+                ) -> $T {
+                    let mut value = base;
+                    let mut current = 0;
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        let _ = $idx;
+                        if current <= row {
+                            value = value.wrapping_add($elem);
+                        }
+                        current += 1;
+                    });
+                    value
+                }
+
+                paste!(seq_t!(W in $T {
+                    match width {
+                        #(W => {
+                            const B: usize = 1024 * W / <$T>::T;
+                            // SAFETY: the length of `input` was checked to be `1024 * W / T`.
+                            unrolled::<W, B>(
+                                unsafe { crate::as_array_unchecked(input) },
+                                base,
+                                lane,
+                                row,
+                            )
+                        },)*
+                        // seq_t has exclusive upper bound
+                        <$T>::T => {
+                            const W: usize = <$T>::T;
+                            const B: usize = 1024;
+                            // SAFETY: as above.
+                            unrolled::<W, B>(
+                                unsafe { crate::as_array_unchecked(input) },
+                                base,
+                                lane,
+                                row,
+                            )
+                        },
+                        _ => unreachable!("Unsupported width: {}", width)
+                    }
+                }))
+            }
+
+            /// [`Delta::undelta_pack_single`] with one copy for every width. It adds the lane's
+            /// packed deltas 64 bits at a time.
+            #[cfg(not(feature = "unroll"))]
+            fn [<undelta_pack_single_ $T>](
+                width: usize,
+                input: &[$T],
+                base: $T,
+                lane: usize,
+                row: usize,
+            ) -> $T {
+                // The words of a lane that hold 64 bits of its packed deltas.
+                const WORDS: usize = 64 / <$T>::T;
+
                 let mut value = base;
-                if width == Self::T {
+                if width == <$T>::T {
                     for row in 0..=row {
-                        value = value.wrapping_add(input[Self::LANES * row + lane]);
+                        value = value.wrapping_add(input[<$T>::LANES * row + lane]);
                     }
                     return value;
                 }
@@ -294,13 +380,13 @@ macro_rules! impl_delta {
                 // Deltas wider than 32 bits fill a 64-bit chunk with at most one pair, so adding
                 // them one at a time is as fast.
                 if width > 32 {
-                    let mask: Self = (1 << width) - 1;
+                    let mask: $T = (1 << width) - 1;
                     for row in 0..=row {
                         let bit = row * width;
-                        let (word, shift) = (bit / Self::T, bit % Self::T);
-                        let mut delta = input[Self::LANES * word + lane] >> shift;
-                        if shift + width > Self::T {
-                            delta |= input[Self::LANES * (word + 1) + lane] << (Self::T - shift);
+                        let (word, shift) = (bit / <$T>::T, bit % <$T>::T);
+                        let mut delta = input[<$T>::LANES * word + lane] >> shift;
+                        if shift + width > <$T>::T {
+                            delta |= input[<$T>::LANES * (word + 1) + lane] << (<$T>::T - shift);
                         }
                         value = value.wrapping_add(delta & mask);
                     }
@@ -337,25 +423,30 @@ macro_rules! impl_delta {
                 for _ in 0..bits / 64 {
                     let mut chunk = 0;
                     for part in 0..WORDS {
-                        chunk |= u64::from(input[word]) << (part * Self::T);
-                        word += Self::LANES;
+                        chunk |= u64::from(input[word]) << (part * <$T>::T);
+                        word += <$T>::LANES;
                     }
                     add(chunk);
                 }
                 let rest = bits % 64;
                 if rest != 0 {
                     let mut chunk = 0;
-                    for part in 0..rest.div_ceil(Self::T) {
-                        chunk |= u64::from(input[word]) << (part * Self::T);
-                        word += Self::LANES;
+                    for part in 0..rest.div_ceil(<$T>::T) {
+                        chunk |= u64::from(input[word]) << (part * <$T>::T);
+                        word += <$T>::LANES;
                     }
                     add(chunk & ((1 << rest) - 1));
                 }
-                value.wrapping_add(ends.wrapping_add(sum_slots(slots, width)) as Self)
+                value.wrapping_add(ends.wrapping_add(sum_slots(slots, width)) as $T)
             }
         }
     };
 }
+
+undelta_pack_single_impl!(u8);
+undelta_pack_single_impl!(u16);
+undelta_pack_single_impl!(u32);
+undelta_pack_single_impl!(u64);
 
 impl_delta!(u8);
 impl_delta!(u16);

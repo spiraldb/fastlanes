@@ -16,6 +16,10 @@ default = []
 # `transpose_bits`/`untranspose_bits` dispatch. Without it, the dispatch is resolved
 # at compile time from the enabled `target_feature`s.
 runtime = ["dep:cpufeatures"]
+# Compiles `Delta::undelta_pack_single` as an unrolled copy for each bit width, instead of one
+# small copy that serves every width. Faster, especially for wide deltas, but adds about 170 KiB of
+# machine code.
+unroll = []
 
 [dependencies]
 const_for = "0.1"
