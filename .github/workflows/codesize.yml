@@ -18,44 +18,24 @@ jobs:
   codesize:
     name: Code Size
     runs-on: ubuntu-latest
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target/codesize
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-rust
 
-      # Measure the release test binary: the tests call every kernel with concrete types, so it
-      # contains each kernel's machine code. `scripts/codesize.py` leaves out the test code itself.
-      - name: Measure head
+      # `rustup component add llvm-tools` does not ship llvm-dwarfdump, so use the system LLVM.
+      - name: Install llvm-dwarfdump
         run: |
-          exe=$(cargo test --release --features runtime --lib --no-run --message-format=json \
-            | jq -r 'select(.reason == "compiler-artifact" and .profile.test) | .executable // empty')
-          cp "$exe" "$RUNNER_TEMP/head.bin"
+          if ! command -v llvm-dwarfdump && ! ls /usr/lib/llvm-*/bin/llvm-dwarfdump; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends llvm
+          fi
 
-      # If the base commit does not build, the report is posted without a comparison.
-      - name: Measure base
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
+      - name: Measure
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
-          cd "$RUNNER_TEMP/base"
-          exe=$(cargo test --release --features runtime --lib --no-run --message-format=json \
-            | jq -r 'select(.reason == "compiler-artifact" and .profile.test) | .executable // empty')
-          cp "$exe" "$RUNNER_TEMP/base.bin"
-
-      - name: Write report
-        run: |
-          base=""
-          if [ -f "$RUNNER_TEMP/base.bin" ]; then base="$RUNNER_TEMP/base.bin"; fi
-          {
-            python3 scripts/codesize.py "$RUNNER_TEMP/head.bin" $base
-            echo
-            echo "<sub>Commit ${{ github.event.pull_request.head.sha || github.sha }}${base:+ compared with base ${{ github.event.pull_request.base.sha }}}.</sub>"
-          } > "$RUNNER_TEMP/report.md"
+          python3 scripts/codesize.py ${BASE_SHA:+--base "$BASE_SHA"} > "$RUNNER_TEMP/report.md"
           cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
 
       # Create the report comment on the first run and edit it in place on every later run.
