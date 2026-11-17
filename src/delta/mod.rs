@@ -23,10 +23,7 @@ mod single;
 #[must_use]
 pub fn delta_lane_row<T: FastLanes>(index: usize) -> (usize, usize) {
     assert!(index < 1024, "index {index} out of bounds");
-    let in_block = index % 128;
-    let lane = in_block % T::LANES;
-    let row = FL_ORDER[(in_block - lane) / 16] * 8 + index / 128;
-    (lane, row)
+    crate::lane_row::<T>(index)
 }
 
 /// The position in a delta-encoded vector of `T` of row `row` of lane `lane`: the inverse of

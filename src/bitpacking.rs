@@ -3,7 +3,7 @@ use core::mem::MaybeUninit;
 use core::mem::size_of;
 use pastey::paste;
 
-use crate::{FL_ORDER, FastLanes, pack, seq_t, supported_bit_width, unpack};
+use crate::{FastLanes, pack, seq_t, supported_bit_width, unpack};
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {
@@ -373,7 +373,7 @@ macro_rules! impl_packing {
 const fn lanes_by_index<T: FastLanes>() -> [u8; 1024] {
     let mut lanes = [0u8; 1024];
     const_for!(i in 0..1024 => {
-        lanes[i] = (i % T::LANES) as u8;
+        lanes[i] = crate::lane_row::<T>(i).0 as u8;
     });
     lanes
 }
@@ -382,17 +382,7 @@ const fn lanes_by_index<T: FastLanes>() -> [u8; 1024] {
 const fn rows_by_index<T: FastLanes>() -> [u8; 1024] {
     let mut rows = [0u8; 1024];
     const_for!(i in 0..1024 => {
-        // This is the inverse of the `index` function from the pack/unpack macros:
-        //     fn index(row: usize, lane: usize) -> usize {
-        //         let o = row / 8;
-        //         let s = row % 8;
-        //         (FL_ORDER[o] * 16) + (s * 128) + lane
-        //     }
-        let lane = i % T::LANES;
-        let s = i / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
-        let fl_order = (i - s * 128 - lane) / 16; // value of FL_ORDER[o]
-        let o = FL_ORDER[fl_order]; // because this transposition is invertible!
-        rows[i] = (o * 8 + s) as u8;
+        rows[i] = crate::lane_row::<T>(i).1 as u8;
     });
     rows
 }
@@ -408,6 +398,7 @@ mod test {
     use core::fmt::Debug;
 
     use super::*;
+    use crate::FL_ORDER;
     use alloc::{format, string::ToString, vec, vec::Vec};
     use hegel::generators as gs;
     use hegel::generators::Integer;
