@@ -25,6 +25,18 @@ pub use transpose::*;
 
 pub const FL_ORDER: [usize; 8] = [0, 4, 2, 6, 1, 5, 3, 7];
 
+/// The lane and row of position `index` (below 1024) in a vector of `T` laid out in the order the
+/// pack, unpack and delta kernels use: the inverse of their position of row `row` of lane `lane`,
+/// `FL_ORDER[row / 8] * 16 + (row % 8) * 128 + lane`.
+#[inline]
+pub(crate) const fn lane_row<T: FastLanes>(index: usize) -> (usize, usize) {
+    let lane = index % T::LANES;
+    let s = index / 128; // because `(FL_ORDER[o] * 16) + lane` is always < 128
+    let fl_order = (index - s * 128 - lane) / 16; // value of FL_ORDER[o]
+    let o = FL_ORDER[fl_order]; // because this transposition is invertible!
+    (lane, o * 8 + s)
+}
+
 /// An unsigned integer type that the `FastLanes` kernels support.
 ///
 /// The trait is sealed: only `u8`, `u16`, `u32` and `u64` implement it. The SIMD kernels read

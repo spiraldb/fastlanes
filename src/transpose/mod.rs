@@ -231,6 +231,20 @@ pub const fn transpose(idx: usize) -> usize {
     (lane * 64) + (FL_ORDER[order] * 8) + row
 }
 
+/// Return the index in a transposed `FastLanes` vector that holds element `idx` of the
+/// untransposed vector: the inverse of [`transpose`].
+#[allow(clippy::inline_always)]
+#[inline(always)]
+#[must_use]
+pub const fn untranspose(idx: usize) -> usize {
+    let lane = idx / 64;
+    // `FL_ORDER` is its own inverse.
+    let order = FL_ORDER[(idx / 8) % 8];
+    let row = idx % 8;
+
+    (row * 128) + (order * 16) + lane
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,6 +419,22 @@ mod tests {
         }
 
         assert!(seen.iter().all(|&present| present));
+    }
+
+    #[test]
+    fn test_untranspose_inverts_transpose() {
+        for index in 0..1024 {
+            assert_eq!(
+                untranspose(transpose(index)),
+                index,
+                "untranspose(transpose({index}))"
+            );
+            assert_eq!(
+                transpose(untranspose(index)),
+                index,
+                "transpose(untranspose({index}))"
+            );
+        }
     }
 
     #[test]

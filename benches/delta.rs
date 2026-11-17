@@ -116,3 +116,74 @@ fn delta_throughput_decompress(bencher: Bencher) {
         black_box(&values);
     });
 }
+
+/// Packed deltas of `$W` bits and their bases, for the single-element read benchmarks.
+macro_rules! packed_deltas {
+    ($T:ty, $W:literal) => {{
+        const W: usize = $W;
+        const B: usize = 1024 * W / <$T as FastLanes>::T;
+        const LANES: usize = <$T as FastLanes>::LANES;
+
+        let values: [$T; 1024] = std::array::from_fn(|i| (i * 1000 + i % 7) as $T);
+        let mut transposed = [0; 1024];
+        Transpose::transpose(&values, &mut transposed);
+        let base: [$T; LANES] = std::array::from_fn(|lane| transposed[lane]);
+        let mut deltas = [0; 1024];
+        Delta::delta(&transposed, &base, &mut deltas);
+        let mut packed = [0; B];
+        BitPacking::pack::<W, B>(&deltas, &mut packed);
+        (packed, base)
+    }};
+}
+
+/// Reads one element, from the last row of its lane, by undeltaing just that lane's prefix.
+#[divan::bench]
+fn undelta_u32_single(bencher: Bencher) {
+    const W: usize = 11;
+    let (packed, base) = packed_deltas!(u32, 11);
+    let index = fastlanes::delta_index::<u32>(0, 31);
+
+    bencher.bench_local(|| {
+        u32::undelta_pack_single(W, black_box(&packed), black_box(base[0]), black_box(index))
+    });
+}
+
+/// Reads the same element by undeltaing the whole vector.
+#[divan::bench]
+fn undelta_u32_full_then_index(bencher: Bencher) {
+    const W: usize = 11;
+    const B: usize = 1024 * W / <u32 as FastLanes>::T;
+    const LANES: usize = u32::LANES;
+    let (packed, base) = packed_deltas!(u32, 11);
+    let index = fastlanes::delta_index::<u32>(0, 31);
+
+    bencher.bench_local(|| {
+        let mut unpacked = [0; 1024];
+        Delta::undelta_pack::<LANES, W, B>(black_box(&packed), black_box(&base), &mut unpacked);
+        unpacked[black_box(index)]
+    });
+}
+
+/// [`undelta_u32_single`] for a lane of 64 rows, which packs into more words.
+#[divan::bench]
+fn undelta_u64_single(bencher: Bencher) {
+    const W: usize = 11;
+    let (packed, base) = packed_deltas!(u64, 11);
+    let index = fastlanes::delta_index::<u64>(0, 63);
+
+    bencher.bench_local(|| {
+        u64::undelta_pack_single(W, black_box(&packed), black_box(base[0]), black_box(index))
+    });
+}
+
+/// [`undelta_u32_single`] for deltas wide enough that most of them straddle two words.
+#[divan::bench]
+fn undelta_u32_single_wide(bencher: Bencher) {
+    const W: usize = 21;
+    let (packed, base) = packed_deltas!(u32, 21);
+    let index = fastlanes::delta_index::<u32>(0, 31);
+
+    bencher.bench_local(|| {
+        u32::undelta_pack_single(W, black_box(&packed), black_box(base[0]), black_box(index))
+    });
+}
