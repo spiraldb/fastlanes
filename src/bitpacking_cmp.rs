@@ -1,7 +1,20 @@
-use crate::seq_t;
-use crate::unpack;
 use crate::{FastLanes, FastLanesComparable, supported_bit_width};
+use crate::{unpack, width_dispatch};
 use pastey::paste;
+
+/// A comparison for [`BitPackingCompare::unchecked_unpack_cmp_op`], against packed values of the
+/// unsigned type `T`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CmpOp<T> {
+    /// `value == T`.
+    Eq(T),
+    /// `value < T`.
+    Lt(T),
+    /// `value > T`.
+    Gt(T),
+    /// `lower <= value && value <= upper`. Always false when `lower > upper`.
+    Between { lower: T, upper: T },
+}
 
 pub trait BitPackingCompare: FastLanes {
     /// A fused unpack (see `BitPacking::unpack`) and compare, packing the boolean results into a
@@ -52,45 +65,68 @@ pub trait BitPackingCompare: FastLanes {
     ) where
         V: FastLanesComparable<Bitpacked = Self>,
         F: Fn(V, V) -> bool;
+
+    /// [`BitPackingCompare::unchecked_unpack_cmp`] with one of a fixed set of comparisons, on
+    /// the packed (unsigned) values. This crate compiles the kernel of each comparison at each
+    /// width, so callers do not instantiate them: prefer this method when it can express the
+    /// comparison. Signed values that are known to be non-negative compare the same as their
+    /// packed values.
+    ///
+    /// # Safety
+    /// The input slice must be of length `1024 * W / T`, where `T` is the bit-width of Self and `W`
+    /// is the packed width. This length is checked only with `debug_assert`.
+    ///
+    /// # Panics
+    /// Panics if `width` is greater than the bit-width of `Self`.
+    unsafe fn unchecked_unpack_cmp_op(
+        width: usize,
+        input: &[Self],
+        output: &mut [u64; 16],
+        op: CmpOp<Self>,
+    );
 }
 
 macro_rules! impl_packing_compare {
-    ($T:ty) => {
-        impl BitPackingCompare for $T {
-            #[inline(never)]
-            fn unpack_cmp<const W: usize, const B: usize, V, F>(
-                input: &[Self; B],
+    ($T:ident) => {
+        paste! {
+            /// # Safety
+            /// `input` must hold `B == 1024 * W / T` elements.
+            #[inline(always)]
+            unsafe fn [<unpack_cmp_ $T>]<const W: usize, const B: usize, V, F>(
+                input: &[$T],
                 output: &mut [u64; 16],
                 f: F,
                 other: V,
             )
             where
-                V: FastLanesComparable<Bitpacked = Self>,
+                V: FastLanesComparable<Bitpacked = $T>,
                 F: Fn(V, V) -> bool
             {
                 const {
                     assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
+                    assert!(B == 1024 * W / <$T>::T);
                 }
+                // SAFETY: guaranteed by the caller.
+                let input: &[$T; B] = unsafe { crate::as_array_unchecked(input) };
 
-                // The output is 1024 bits laid out as `Self::LANES` words of `Self::T` bits each
-                // (which is always 128 bytes == `[u64; 16]`). Each lane owns one contiguous word
-                // holding that lane's `Self::T` comparison results, LSB-first: row `r` lands at bit
-                // `r`. Per-lane ownership means the accumulator stays in a register and the store is
-                // a single contiguous (vectorizable) write per lane -- no `[bool; 1024]`
-                // (or `[Self; 1024]`) materialization, no cross-lane shuffles.
+                // The output is 1024 bits laid out as `LANES` words of `T` bits each (which is
+                // always 128 bytes == `[u64; 16]`). Each lane owns one contiguous word holding that
+                // lane's `T` comparison results, LSB-first: row `r` lands at bit `r`. Per-lane
+                // ownership means the accumulator stays in a register and the store is a single
+                // contiguous (vectorizable) write per lane -- no `[bool; 1024]` (or `[T; 1024]`)
+                // materialization, no cross-lane shuffles.
                 //
-                // For `u64` (`Self::LANES == 16`) this LSB-first ordering coincides with the
-                // canonical FastLanes transpose; for narrower widths it is the per-width packing
-                // that [`crate::bit_transpose::untranspose_bits::<Self>`] inverts. Either way that
-                // is what [`untranspose_cmp_mask`] uses to recover logical row order.
+                // For `u64` (`LANES == 16`) this LSB-first ordering coincides with the canonical
+                // FastLanes transpose; for narrower widths it is the per-width packing that
+                // [`crate::bit_transpose::untranspose_bits::<T>`] inverts. Either way that is what
+                // [`untranspose_cmp_mask`] uses to recover logical row order.
                 //
-                // SAFETY: `[u64; 16]` and `[Self; LANES]` are both exactly 128 bytes, and `u64`'s
-                // alignment (8) is >= `Self`'s alignment, so the reinterpret is sound.
+                // SAFETY: `[u64; 16]` and `[T; LANES]` are both exactly 128 bytes, and `u64`'s
+                // alignment (8) is >= `T`'s alignment, so the reinterpret is sound.
                 let words: &mut [$T; <$T>::LANES] =
                     unsafe { &mut *output.as_mut_ptr().cast::<[$T; <$T>::LANES]>() };
 
-                for lane in 0..Self::LANES {
+                for lane in 0..<$T>::LANES {
                     let mut word: $T = 0;
                     let mut bit: usize = 0;
                     unpack!($T, W, input, lane, |$idx, $elem| {
@@ -103,45 +139,84 @@ macro_rules! impl_packing_compare {
                 }
             }
 
-            unsafe fn unchecked_unpack_cmp<V, F>(
-                 width: usize,
-                 input: &[Self],
-                 output: &mut [u64; 16],
-                 comparison: F,
-                 value: V,
-            )
-            where
-                V: FastLanesComparable<Bitpacked = Self>,
-                F: Fn(V, V) -> bool
-            {
-                let packed_len = 128 * width / size_of::<Self>();
-                debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
-                debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+            width_dispatch!(
+                $T,
+                [<unpack_cmp_width_ $T>],
+                [<unpack_cmp_ $T>]<V, F>(input: &[$T], output: &mut [u64; 16], f: F, other: V)
+                where
+                    V: FastLanesComparable<Bitpacked = $T>,
+                    F: Fn(V, V) -> bool
+            );
 
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / <$T>::T;
-                            Self::unpack_cmp::<W, B, V, F>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                output,
-                                comparison,
-                                value
-                            )
-                        },)*
-                        // seq_t has exclusive upper bound
-                        Self::T => {
-                           const W: usize = <$T>::T;
-                           Self::unpack_cmp::<W, 1024, V, F>(
-                               unsafe { crate::as_array_unchecked(input) },
-                               output,
-                               comparison,
-                               value
-                           )
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
+            impl BitPackingCompare for $T {
+                #[inline(never)]
+                fn unpack_cmp<const W: usize, const B: usize, V, F>(
+                    input: &[Self; B],
+                    output: &mut [u64; 16],
+                    f: F,
+                    other: V,
+                )
+                where
+                    V: FastLanesComparable<Bitpacked = Self>,
+                    F: Fn(V, V) -> bool
+                {
+                    // SAFETY: the length of `input` is that of the array.
+                    unsafe { [<unpack_cmp_ $T>]::<W, B, V, F>(input, output, f, other) }
+                }
+
+                unsafe fn unchecked_unpack_cmp<V, F>(
+                     width: usize,
+                     input: &[Self],
+                     output: &mut [u64; 16],
+                     comparison: F,
+                     value: V,
+                )
+                where
+                    V: FastLanesComparable<Bitpacked = Self>,
+                    F: Fn(V, V) -> bool
+                {
+                    let packed_len = 128 * width / size_of::<Self>();
+                    debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
+                    debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
+
+                    // SAFETY: forwarded to the caller.
+                    unsafe { [<unpack_cmp_width_ $T>]::dispatch(width, input, output, comparison, value) }
+                }
+
+                unsafe fn unchecked_unpack_cmp_op(
+                    width: usize,
+                    input: &[Self],
+                    output: &mut [u64; 16],
+                    op: CmpOp<Self>,
+                ) {
+                    // SAFETY: forwarded to the caller.
+                    unsafe {
+                        match op {
+                            CmpOp::Eq(value) => {
+                                Self::unchecked_unpack_cmp(width, input, output, |a: $T, b| a == b, value)
+                            }
+                            CmpOp::Lt(value) => {
+                                Self::unchecked_unpack_cmp(width, input, output, |a: $T, b| a < b, value)
+                            }
+                            CmpOp::Gt(value) => {
+                                Self::unchecked_unpack_cmp(width, input, output, |a: $T, b| a > b, value)
+                            }
+                            CmpOp::Between { lower, upper } if lower > upper => *output = [0; 16],
+                            // Values below `lower` wrap around past `upper - lower`, so one
+                            // unsigned compare checks both bounds.
+                            CmpOp::Between { lower, upper } => {
+                                let span = upper - lower;
+                                Self::unchecked_unpack_cmp(
+                                    width,
+                                    input,
+                                    output,
+                                    move |a: $T, lower| a.wrapping_sub(lower) <= span,
+                                    lower,
+                                )
+                            }
+                        }
                     }
-                }))
+                }
             }
         }
     };
@@ -341,6 +416,72 @@ mod tests {
             }
         }
     }
+
+    /// `reference(value, a, b)` for a [`CmpOp`] built from `a` and `b`.
+    type Reference<T> = fn(T, T, T) -> bool;
+
+    fn assert_unpack_cmp_op_matches_reference<T>(tc: &TestCase)
+    where
+        T: BitPacking
+            + BitPackingCompare
+            + FastLanesComparable<Bitpacked = T>
+            + Debug
+            + Integer
+            + PrettyPrintable
+            + Send
+            + Sync
+            + num_traits::WrappingSub
+            + 'static,
+    {
+        let values: [T; 1024] = tc.draw(gs::arrays(gs::integers::<T>()));
+        let a = tc.draw(gs::integers::<T>());
+        let b = tc.draw(gs::integers::<T>());
+
+        for width in 0..=T::T {
+            let packed_len = 1024 * width / T::T;
+            let mut packed = vec![T::max_value(); packed_len];
+            unsafe { T::unchecked_pack(width, &values, &mut packed) };
+            let mask = if width == 0 {
+                T::zero()
+            } else if width == T::T {
+                T::max_value()
+            } else {
+                (T::one() << width) - T::one()
+            };
+            let unpacked = values.map(|value| value & mask);
+
+            let cases: [(CmpOp<T>, Reference<T>); 4] = [
+                (CmpOp::Eq(a), |v, a, _| v == a),
+                (CmpOp::Lt(a), |v, a, _| v < a),
+                (CmpOp::Gt(a), |v, a, _| v > a),
+                (CmpOp::Between { lower: a, upper: b }, |v, a, b| {
+                    a <= v && v <= b
+                }),
+            ];
+            for (op, f) in cases {
+                let expected = reference_mask(&unpacked, |v: T, _| f(v, a, b), a);
+                let mut actual = [u64::MAX; 16];
+                unsafe { T::unchecked_unpack_cmp_op(width, &packed, &mut actual, op) };
+                assert_eq!(actual, expected, "width={width} op={op:?}");
+            }
+        }
+    }
+
+    macro_rules! cmp_op_property_tests {
+        ($T:ident) => {
+            paste! {
+                #[hegel::test(test_cases = 10)]
+                fn [<test_unpack_cmp_op_matches_reference_ $T>](tc: TestCase) {
+                    assert_unpack_cmp_op_matches_reference::<$T>(&tc);
+                }
+            }
+        };
+    }
+
+    cmp_op_property_tests!(u8);
+    cmp_op_property_tests!(u16);
+    cmp_op_property_tests!(u32);
+    cmp_op_property_tests!(u64);
 
     macro_rules! comparison_property_tests {
         ($T:ident, $V:ident) => {
