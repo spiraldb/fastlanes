@@ -1,4 +1,4 @@
-use crate::{BitPacking, FastLanes, pack, seq_t, supported_bit_width, unpack};
+use crate::{BitPacking, FastLanes, pack, supported_bit_width, unpack, width_dispatch};
 use pastey::paste;
 
 pub trait FoR: BitPacking {
@@ -34,23 +34,68 @@ pub trait FoR: BitPacking {
 }
 
 macro_rules! impl_for {
-    ($T:ty) => {
+    ($T:ident) => {
+        paste! {
+        /// # Safety
+        /// `input` must hold `1024` elements and `output` `B == 1024 * W / T`.
+        #[inline(always)]
+        unsafe fn [<for_pack_ $T>]<const W: usize, const B: usize>(
+            input: &[$T],
+            reference: $T,
+            output: &mut [$T],
+        ) {
+            const {
+                assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                assert!(B == 1024 * W / <$T>::T);
+            }
+            // SAFETY: guaranteed by the caller.
+            let input: &[$T; 1024] = unsafe { crate::as_array_unchecked(input) };
+            let output: &mut [$T; B] = unsafe { crate::as_array_mut_unchecked(output) };
+
+            for lane in 0..<$T>::LANES {
+                pack!($T, W, output, lane, |$idx| {
+                    input[$idx].wrapping_sub(reference)
+                });
+            }
+        }
+
+        /// # Safety
+        /// `input` must hold `B == 1024 * W / T` elements and `output` `1024`.
+        #[inline(always)]
+        unsafe fn [<unfor_pack_ $T>]<const W: usize, const B: usize>(
+            input: &[$T],
+            reference: $T,
+            output: &mut [$T],
+        ) {
+            const {
+                assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                assert!(B == 1024 * W / <$T>::T);
+            }
+            // SAFETY: guaranteed by the caller.
+            let input: &[$T; B] = unsafe { crate::as_array_unchecked(input) };
+            let output: &mut [$T; 1024] = unsafe { crate::as_array_mut_unchecked(output) };
+
+            for lane in 0..<$T>::LANES {
+                unpack!($T, W, input, lane, |$idx, $elem| {
+                    output[$idx] = $elem.wrapping_add(reference)
+                });
+            }
+        }
+
+        width_dispatch!(
+            $T,
+            [<unfor_pack_width_ $T>],
+            [<unfor_pack_ $T>](input: &[$T], reference: $T, output: &mut [$T])
+        );
+
         impl FoR for $T {
             fn for_pack<const W: usize, const B: usize>(
                 input: &[Self; 1024],
                 reference: Self,
                 output: &mut [Self; B],
             ) {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-
-                for lane in 0..Self::LANES {
-                    pack!($T, W, output, lane, |$idx| {
-                        input[$idx].wrapping_sub(reference)
-                    });
-                }
+                // SAFETY: the lengths are those of the arrays.
+                unsafe { [<for_pack_ $T>]::<W, B>(input, reference, output) }
             }
 
             #[inline(never)]
@@ -59,48 +104,20 @@ macro_rules! impl_for {
                 reference: Self,
                 output: &mut [Self; 1024],
             ) {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-
-                for lane in 0..Self::LANES {
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        output[$idx] = $elem.wrapping_add(reference)
-                    });
-                }
+                // SAFETY: the lengths are those of the arrays.
+                unsafe { [<unfor_pack_ $T>]::<W, B>(input, reference, output) }
             }
 
-           unsafe fn unchecked_unfor_pack(width: usize, input: &[Self], reference: Self, output: &mut [Self]) {
+            unsafe fn unchecked_unfor_pack(width: usize, input: &[Self], reference: Self, output: &mut [Self]) {
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
                 debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
                 debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / <$T>::T;
-                            Self::unfor_pack::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                reference,
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },)*
-                        // seq_t has exclusive upper bound
-                        Self::T => {
-                            const W: usize = <$T>::T;
-                            const B: usize = 1024;
-                            Self::unfor_pack::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                reference,
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
-                    }
-                }))
+                // SAFETY: forwarded to the caller.
+                unsafe { [<unfor_pack_width_ $T>]::dispatch(width, input, reference, output) }
             }
+        }
         }
     };
 }
