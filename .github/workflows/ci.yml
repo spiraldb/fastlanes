@@ -158,8 +158,7 @@ jobs:
       - name: Run benchmarks
         uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5
         env:
-          # CodSpeed 6 runs each benchmark in its own process by default. Keep all benchmarks in one
-          # process, as the other spiraldb and vortex-data repos do.
+          # Run all benchmarks in one process, as before CodSpeed 6.
           CODSPEED_PROCESS_ISOLATION: "false"
         with:
           run: cargo codspeed run
