@@ -141,9 +141,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
 
       - name: Install Codspeed
-        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
-        with:
-          tool: cargo-codspeed@6.1.0
+        uses: ./.github/actions/setup-codspeed
 
       - name: Wait for libc debug symbols
         run: |
@@ -159,6 +157,10 @@ jobs:
 
       - name: Run benchmarks
         uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5
+        env:
+          # CodSpeed 6 runs each benchmark in its own process by default. Keep all benchmarks in one
+          # process, as the other spiraldb and vortex-data repos do.
+          CODSPEED_PROCESS_ISOLATION: "false"
         with:
           run: cargo codspeed run
           token: ${{ secrets.CODSPEED_TOKEN }}
