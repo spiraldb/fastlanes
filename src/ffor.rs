@@ -89,6 +89,7 @@ macro_rules! impl_for {
         );
 
         impl FoR for $T {
+            #[inline(never)]
             fn for_pack<const W: usize, const B: usize>(
                 input: &[Self; 1024],
                 reference: Self,
