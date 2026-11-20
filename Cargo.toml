@@ -86,3 +86,6 @@ required-features = ["runtime"]
 [[bench]]
 name = "rle"
 harness = false
+
+[profile.bench]
+codegen-units = 1
