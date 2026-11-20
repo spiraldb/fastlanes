@@ -417,6 +417,9 @@ mod tests {
         }
     }
 
+    /// `reference(value, a, b)` for a [`CmpOp`] built from `a` and `b`.
+    type Reference<T> = fn(T, T, T) -> bool;
+
     fn assert_unpack_cmp_op_matches_reference<T>(tc: &TestCase)
     where
         T: BitPacking
@@ -447,7 +450,7 @@ mod tests {
             };
             let unpacked = values.map(|value| value & mask);
 
-            let cases: [(CmpOp<T>, fn(T, T, T) -> bool); 4] = [
+            let cases: [(CmpOp<T>, Reference<T>); 4] = [
                 (CmpOp::Eq(a), |v, a, _| v == a),
                 (CmpOp::Lt(a), |v, a, _| v < a),
                 (CmpOp::Gt(a), |v, a, _| v > a),
