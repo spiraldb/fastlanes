@@ -3,7 +3,7 @@ use core::mem::MaybeUninit;
 use core::mem::size_of;
 use pastey::paste;
 
-use crate::{FastLanes, pack, seq_t, supported_bit_width, unpack};
+use crate::{FastLanes, pack, seq_t, supported_bit_width, unpack, width_dispatch};
 
 /// `BitPack` into a compile-time known bit-width.
 pub trait BitPacking: FastLanes {
@@ -106,24 +106,91 @@ pub trait BitPacking: FastLanes {
 }
 
 macro_rules! impl_packing {
-    ($T:ty) => {
+    ($T:ident) => {
+        paste! {
+        /// # Safety
+        /// `input` must hold `1024` elements and `output` `B == 1024 * W / T`.
+        #[inline(always)]
+        unsafe fn [<pack_ $T>]<const W: usize, const B: usize>(input: &[$T], output: &mut [$T]) {
+            const {
+                assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                assert!(B == 1024 * W / <$T>::T);
+            }
+            // SAFETY: guaranteed by the caller.
+            let input: &[$T; 1024] = unsafe { crate::as_array_unchecked(input) };
+            let output: &mut [$T; B] = unsafe { crate::as_array_mut_unchecked(output) };
+
+            for lane in 0..<$T>::LANES {
+                pack!($T, W, output, lane, |$idx| {
+                    input[$idx]
+                });
+            }
+        }
+
+        width_dispatch!($T, [<pack_width_ $T>], [<pack_ $T>](input: &[$T], output: &mut [$T]));
+
+        /// # Safety
+        /// `input` must hold `B == 1024 * W / T` elements and `output` `1024`.
+        #[inline(always)]
+        unsafe fn [<unpack_ $T>]<const W: usize, const B: usize>(input: &[$T], output: &mut [$T]) {
+            const {
+                assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                assert!(B == 1024 * W / <$T>::T);
+            }
+            // SAFETY: guaranteed by the caller.
+            let input: &[$T; B] = unsafe { crate::as_array_unchecked(input) };
+            let output: &mut [$T; 1024] = unsafe { crate::as_array_mut_unchecked(output) };
+
+            for lane in 0..<$T>::LANES {
+                unpack!($T, W, input, lane, |$idx, $elem| {
+                    output[$idx] = $elem
+                });
+            }
+        }
+
+        width_dispatch!($T, [<unpack_width_ $T>], [<unpack_ $T>](input: &[$T], output: &mut [$T]));
+
+        /// # Safety
+        /// `packed` must hold `B == 1024 * W / T` elements.
+        #[inline(always)]
+        unsafe fn [<unpack_indices_ $T>]<const W: usize, const B: usize>(
+            packed: &[$T],
+            indices: &[usize],
+            output: &mut [MaybeUninit<$T>],
+        ) {
+            const {
+                assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                assert!(B == 1024 * W / <$T>::T);
+            }
+            // SAFETY: guaranteed by the caller.
+            let packed: &[$T; B] = unsafe { crate::as_array_unchecked(packed) };
+
+            assert!(indices.len() == output.len(), "Output length must equal index length");
+            if W == 0 {
+                for value in output {
+                    value.write(0 as $T);
+                }
+                return;
+            }
+            for (&index, value) in indices.iter().zip(output) {
+                value.write(<$T>::unpack_single::<W, B>(packed, index));
+            }
+        }
+
+        width_dispatch!(
+            $T,
+            [<unpack_indices_width_ $T>],
+            [<unpack_indices_ $T>](packed: &[$T], indices: &[usize], output: &mut [MaybeUninit<$T>])
+        );
+
         impl BitPacking for $T {
             #[inline(never)]
             fn pack<const W: usize, const B: usize>(
                 input: &[Self; 1024],
                 output: &mut [Self; B],
             ) {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-
-
-                for lane in 0..Self::LANES {
-                    pack!($T, W, output, lane, |$idx| {
-                        input[$idx]
-                    });
-                }
+                // SAFETY: the lengths are those of the arrays.
+                unsafe { [<pack_ $T>]::<W, B>(input, output) }
             }
 
             unsafe fn unchecked_pack(width: usize, input: &[Self], output: &mut [Self]) {
@@ -132,28 +199,8 @@ macro_rules! impl_packing {
                 debug_assert_eq!(input.len(), 1024, "Input buffer must be of size 1024");
                 debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / <$T>::T;
-                            Self::pack::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },)*
-                        // seq_t has exclusive upper bound
-                        Self::T => {
-                            // How large is the target buffer size?
-                            const W: usize = <$T>::T;
-                            const B: usize = 1024;
-                            Self::pack::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
-                    }
-                }))
+                // SAFETY: forwarded to the caller.
+                unsafe { [<pack_width_ $T>]::dispatch(width, input, output) }
             }
 
             #[inline(never)]
@@ -161,17 +208,8 @@ macro_rules! impl_packing {
                 input: &[Self; B],
                 output: &mut [Self; 1024],
             ) {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-
-
-                for lane in 0..Self::LANES {
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        output[$idx] = $elem
-                    });
-                }
+                // SAFETY: the lengths are those of the arrays.
+                unsafe { [<unpack_ $T>]::<W, B>(input, output) }
             }
 
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
@@ -180,27 +218,8 @@ macro_rules! impl_packing {
                 debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
                 debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / <$T>::T;
-                            Self::unpack::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },)*
-                        // seq_t has exclusive upper bound
-                        Self::T => {
-                            const W: usize = <$T>::T;
-                            const B: usize = 1024;
-                            Self::unpack::<W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
-                    }
-                }))
+                // SAFETY: forwarded to the caller.
+                unsafe { [<unpack_width_ $T>]::dispatch(width, input, output) }
             }
 
             /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
@@ -311,21 +330,8 @@ macro_rules! impl_packing {
                 indices: &[usize],
                 output: &mut [MaybeUninit<Self>],
             ) {
-                const {
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
-                }
-
-                assert!(indices.len() == output.len(), "Output length must equal index length");
-                if W == 0 {
-                    for value in output {
-                        value.write(0 as Self);
-                    }
-                    return;
-                }
-                for (&index, value) in indices.iter().zip(output) {
-                    value.write(<$T>::unpack_single::<W, B>(packed, index));
-                }
+                // SAFETY: the length of `packed` is that of the array.
+                unsafe { [<unpack_indices_ $T>]::<W, B>(packed, indices, output) }
             }
 
             unsafe fn unchecked_unpack_indices(
@@ -342,29 +348,10 @@ macro_rules! impl_packing {
                     debug_assert_eq!(packed.len(), packed_len, "Input buffer must be of size {}", packed_len);
                 }
 
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / T;
-                            return <$T>::unpack_indices::<W, B>(
-                                unsafe { crate::as_array_unchecked(packed) },
-                                indices,
-                                output,
-                            );
-                        },)*
-                        T => {
-                            const W: usize = T;
-                            const B: usize = 1024;
-                            return <$T>::unpack_indices::<W, B>(
-                                unsafe { crate::as_array_unchecked(packed) },
-                                indices,
-                                output,
-                            );
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
-                    }
-                }))
+                // SAFETY: forwarded to the caller.
+                unsafe { [<unpack_indices_width_ $T>]::dispatch(width, packed, indices, output) }
             }
+        }
         }
     };
 }

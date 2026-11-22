@@ -94,6 +94,103 @@ macro_rules! seq_t {
     ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body)};
 }
 
+/// Dispatches a runtime bit width to a kernel generic over the const width `W`.
+///
+/// `width_dispatch!(T, module, kernel<G..>(arg: Ty, ..) -> Ret where ..)` defines `module`, which
+/// holds one `#[inline(never)]` `run` function per width of `T`, each in its own `w<W>` submodule
+/// (`wfull` for `W == T`), and `module::dispatch(width, args..)`, which calls the one for `width`.
+/// `kernel` must be an `#[inline(always)] unsafe fn kernel<const W: usize, const B: usize, G..>`
+/// taking slices, where `B == 1024 * W / T` is the packed length.
+///
+/// rustc places a function in the codegen unit of the module that defines it, including every
+/// instance of a generic function. A kernel instantiated once per width from a single module puts
+/// every width into one codegen unit, which LLVM compiles on one thread. One module per width
+/// spreads them across codegen units. When a kernel is generic only over `W` and `B`, each `run` is
+/// an ordinary function, so it is compiled once, in this crate, rather than by its callers.
+///
+/// Single-element kernels such as [`BitPacking::unpack_single`] are left out: they are `#[inline]`
+/// so that callers inline them, which a per-width call would prevent.
+macro_rules! width_dispatch {
+    (
+        $T:ident, $module:ident,
+        $kernel:ident $(<$($g:ident),+>)? ($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)?
+        $(where $($bound:tt)+)?
+    ) => {
+        mod $module {
+            #[allow(unused_imports)]
+            use super::*;
+
+            $crate::seq_t_items!(W in $T {
+                pub(super) mod w~W {
+                    #[allow(unused_imports)]
+                    use super::*;
+
+                    /// # Safety
+                    /// The kernel's safety contract at width `W`.
+                    #[inline(never)]
+                    pub(in super::super) unsafe fn run $(<$($g),+>)? ($($arg: $ty),*) $(-> $ret)?
+                    $(where $($bound)+)?
+                    {
+                        const B: usize = 1024 * W / <$T>::T;
+                        // SAFETY: forwarded to the caller.
+                        unsafe { super::super::$kernel::<W, B $(, $($g),+)?>($($arg),*) }
+                    }
+                }
+            });
+
+            // `seq_t_items!` has an exclusive upper bound, so `W == T` gets its own module.
+            pub(super) mod wfull {
+                #[allow(unused_imports)]
+                use super::*;
+
+                /// # Safety
+                /// The kernel's safety contract at width `T`.
+                #[inline(never)]
+                pub(in super::super) unsafe fn run $(<$($g),+>)? ($($arg: $ty),*) $(-> $ret)?
+                $(where $($bound)+)?
+                {
+                    const W: usize = <$T>::T;
+                    // SAFETY: forwarded to the caller.
+                    unsafe { super::super::$kernel::<W, 1024 $(, $($g),+)?>($($arg),*) }
+                }
+            }
+
+            /// Calls the kernel at width `width`.
+            ///
+            /// # Safety
+            /// The kernel's safety contract at width `width`.
+            ///
+            /// # Panics
+            /// Panics if `width` is greater than the bit width of `T`.
+            #[inline(always)]
+            pub(super) unsafe fn dispatch $(<$($g),+>)? (width: usize, $($arg: $ty),*) $(-> $ret)?
+            $(where $($bound)+)?
+            {
+                // SAFETY: forwarded to the caller.
+                unsafe {
+                    $crate::seq_t!(W in $T {
+                        match width {
+                            #(W => w~W::run($($arg),*),)*
+                            <$T>::T => wfull::run($($arg),*),
+                            _ => unreachable!("Unsupported width: {}", width),
+                        }
+                    })
+                }
+            }
+        }
+    };
+}
+pub(crate) use width_dispatch;
+
+/// [`seq_t!`] for item position.
+macro_rules! seq_t_items {
+    ($ident:ident in u8 $body:tt) => {seq_macro::seq!($ident in 0..8 $body);};
+    ($ident:ident in u16 $body:tt) => {seq_macro::seq!($ident in 0..16 $body);};
+    ($ident:ident in u32 $body:tt) => {seq_macro::seq!($ident in 0..32 $body);};
+    ($ident:ident in u64 $body:tt) => {seq_macro::seq!($ident in 0..64 $body);};
+}
+pub(crate) use seq_t_items;
+
 const fn supported_bit_width(width: usize, type_width: usize) -> bool {
     match type_width {
         8 => width <= 8,

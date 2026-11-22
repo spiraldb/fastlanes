@@ -1,6 +1,8 @@
 #![allow(unused_assignments)]
 
-use crate::{BitPacking, FL_ORDER, FastLanes, iterate, seq_t, supported_bit_width, unpack};
+use crate::{
+    BitPacking, FL_ORDER, FastLanes, iterate, supported_bit_width, unpack, width_dispatch,
+};
 use core::mem::size_of;
 use pastey::paste;
 
@@ -106,6 +108,49 @@ pub trait Delta: BitPacking {
     fn undelta_pack_single(width: usize, input: &[Self], base: Self, index: usize) -> Self;
 }
 
+macro_rules! impl_undelta_pack {
+    ($T:ident) => {
+        paste! {
+            /// # Safety
+            /// `input` must hold `B == 1024 * W / T` elements and `output` `1024`.
+            #[inline(always)]
+            unsafe fn [<undelta_pack_ $T>]<const W: usize, const B: usize>(
+                input: &[$T],
+                base: &[$T; <$T>::LANES],
+                output: &mut [$T],
+            ) {
+                const {
+                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
+                    assert!(B == 1024 * W / <$T>::T);
+                }
+                // SAFETY: guaranteed by the caller.
+                let input: &[$T; B] = unsafe { crate::as_array_unchecked(input) };
+                let output: &mut [$T; 1024] = unsafe { crate::as_array_mut_unchecked(output) };
+
+                for lane in 0..<$T>::LANES {
+                    let mut prev = base[lane];
+                    unpack!($T, W, input, lane, |$idx, $elem| {
+                        let next = $elem.wrapping_add(prev);
+                        output[$idx] = next;
+                        prev = next;
+                    });
+                }
+            }
+
+            width_dispatch!(
+                $T,
+                [<undelta_pack_width_ $T>],
+                [<undelta_pack_ $T>](input: &[$T], base: &[$T; <$T>::LANES], output: &mut [$T])
+            );
+        }
+    };
+}
+
+impl_undelta_pack!(u8);
+impl_undelta_pack!(u16);
+impl_undelta_pack!(u32);
+impl_undelta_pack!(u64);
+
 macro_rules! impl_delta {
     ($T:ty) => {
         impl Delta for $T {
@@ -156,18 +201,11 @@ macro_rules! impl_delta {
             ) {
                 const {
                     assert!(LANES == Self::LANES);
-                    assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
-                    assert!(B == 1024 * W / Self::T);
                 }
-
-                for lane in 0..Self::LANES {
-                    let mut prev = base[lane];
-                    unpack!($T, W, input, lane, |$idx, $elem| {
-                        let next = $elem.wrapping_add(prev);
-                        output[$idx] = next;
-                        prev = next;
-                    });
-                }
+                // SAFETY: `LANES == Self::LANES`, asserted above.
+                let base = unsafe { &*base.as_ptr().cast::<[Self; <$T>::LANES]>() };
+                // SAFETY: the lengths are those of the arrays.
+                paste!(unsafe { [<undelta_pack_ $T>]::<W, B>(input, base, output) })
             }
 
             unsafe fn unchecked_undelta_pack<const LANES: usize>(
@@ -176,6 +214,9 @@ macro_rules! impl_delta {
                 base: &[Self; LANES],
                 output: &mut [Self],
             ) {
+                const {
+                    assert!(LANES == Self::LANES);
+                }
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(
                     input.len(),
@@ -185,29 +226,12 @@ macro_rules! impl_delta {
                 debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
                 debug_assert!(width <= Self::T, "Width must be less than or equal to {}", Self::T);
 
-                paste!(seq_t!(W in $T {
-                    match width {
-                        #(W => {
-                            const B: usize = 1024 * W / <$T>::T;
-                            Self::undelta_pack::<LANES, W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                base,
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },)*
-                        // seq_t has exclusive upper bound
-                        Self::T => {
-                            const W: usize = <$T>::T;
-                            const B: usize = 1024;
-                            Self::undelta_pack::<LANES, W, B>(
-                                unsafe { crate::as_array_unchecked(input) },
-                                base,
-                                unsafe { crate::as_array_mut_unchecked(output) },
-                            )
-                        },
-                        _ => unreachable!("Unsupported width: {}", width)
-                    }
-                }))
+                // SAFETY: `LANES == Self::LANES`, asserted above. The caller guarantees the
+                // lengths of `input` and `output`.
+                unsafe {
+                    let base = &*base.as_ptr().cast::<[Self; <$T>::LANES]>();
+                    paste!([<undelta_pack_width_ $T>]::dispatch(width, input, base, output))
+                }
             }
 
             #[inline]
