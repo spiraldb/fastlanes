@@ -148,6 +148,35 @@ macro_rules! impl_packing_compare {
                     F: Fn(V, V) -> bool
             );
 
+            /// Variant B/C kernel: one width, op matched inside (outside the loop).
+            #[cfg(any(cmp_variant = "b", cmp_variant = "c"))]
+            #[inline(always)]
+            unsafe fn [<unpack_cmp_op_ $T>]<const W: usize, const B: usize>(
+                input: &[$T],
+                output: &mut [u64; 16],
+                op: CmpOp<$T>,
+            ) {
+                unsafe {
+                    match op {
+                        CmpOp::Eq(v) => [<unpack_cmp_ $T>]::<W, B, _, _>(input, output, |a: $T, b: $T| a == b, v),
+                        CmpOp::Lt(v) => [<unpack_cmp_ $T>]::<W, B, _, _>(input, output, |a: $T, b: $T| a < b, v),
+                        CmpOp::Gt(v) => [<unpack_cmp_ $T>]::<W, B, _, _>(input, output, |a: $T, b: $T| a > b, v),
+                        CmpOp::Between { lower, upper } if lower > upper => *output = [0; 16],
+                        CmpOp::Between { lower, upper } => {
+                            let span = upper - lower;
+                            [<unpack_cmp_ $T>]::<W, B, _, _>(input, output, move |a: $T, l: $T| a.wrapping_sub(l) <= span, lower)
+                        }
+                    }
+                }
+            }
+
+            #[cfg(cmp_variant = "b")]
+            width_dispatch!(
+                $T,
+                [<unpack_cmp_op_width_ $T>],
+                [<unpack_cmp_op_ $T>](input: &[$T], output: &mut [u64; 16], op: CmpOp<$T>)
+            );
+
             impl BitPackingCompare for $T {
                 #[inline(never)]
                 fn unpack_cmp<const W: usize, const B: usize, V, F>(
@@ -189,7 +218,20 @@ macro_rules! impl_packing_compare {
                     output: &mut [u64; 16],
                     op: CmpOp<Self>,
                 ) {
+                    #[cfg(cmp_variant = "b")]
+                    return unsafe { [<unpack_cmp_op_width_ $T>]::dispatch(width, input, output, op) };
+                    #[cfg(cmp_variant = "c")]
+                    return unsafe {
+                        $crate::seq_t!(W in $T {
+                            match width {
+                                #(W => [<unpack_cmp_op_ $T>]::<W, { 1024 * W / <$T>::T }>(input, output, op),)*
+                                <$T>::T => [<unpack_cmp_op_ $T>]::<{ <$T>::T }, 1024>(input, output, op),
+                                _ => unreachable!("Unsupported width: {}", width),
+                            }
+                        })
+                    };
                     // SAFETY: forwarded to the caller.
+                    #[cfg(not(any(cmp_variant = "b", cmp_variant = "c")))]
                     unsafe {
                         match op {
                             CmpOp::Eq(value) => {

@@ -38,7 +38,7 @@ hegeltest = "0.47.0"
 [lints.rust]
 warnings = "deny"
 unsafe_op_in_unsafe_fn = "deny"
-unexpected_cfgs = { level = "deny", check-cfg = ['cfg(codspeed)'] }
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(codspeed)', 'cfg(cmp_variant, values("b", "c"))'] }
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
