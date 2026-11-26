@@ -31,6 +31,12 @@ pub trait BitPacking: FastLanes {
     /// Unpacks 1024 elements from `W` bits each.
     fn unpack<const W: usize, const B: usize>(input: &[Self; B], output: &mut [Self; 1024]);
 
+    /// Unpacks 1024 elements, initializing every slot in `output`.
+    fn unpack_uninit<const W: usize, const B: usize>(
+        input: &[Self; B],
+        output: &mut [MaybeUninit<Self>; 1024],
+    );
+
     /// Unpacks 1024 elements from `W` bits each, where `W` is runtime-known instead of compile-time
     /// known.
     ///
@@ -46,6 +52,22 @@ pub trait BitPacking: FastLanes {
     ///
     /// Panics if `width` is greater than the (unpacked) bit-width of `Self`.
     unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]);
+
+    /// Unpacks a block at a runtime bit width, initializing every slot in `output`.
+    ///
+    /// # Safety
+    ///
+    /// The input must contain exactly `1024 * width / Self::T` elements and the output must
+    /// contain exactly 1024 slots.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` exceeds the bit width of `Self`.
+    unsafe fn unchecked_unpack_uninit(
+        width: usize,
+        input: &[Self],
+        output: &mut [MaybeUninit<Self>],
+    );
 
     /// Unpacks a single element at the provided index from a packed array of 1024 `W` bit elements.
     ///
@@ -132,23 +154,23 @@ macro_rules! impl_packing {
         /// # Safety
         /// `input` must hold `B == 1024 * W / T` elements and `output` `1024`.
         #[inline(always)]
-        unsafe fn [<unpack_ $T>]<const W: usize, const B: usize>(input: &[$T], output: &mut [$T]) {
+        unsafe fn [<unpack_ $T>]<const W: usize, const B: usize>(input: &[$T], output: &mut [MaybeUninit<$T>]) {
             const {
                 assert!(supported_bit_width(W, 8 * core::mem::size_of::<$T>()));
                 assert!(B == 1024 * W / <$T>::T);
             }
             // SAFETY: guaranteed by the caller.
             let input: &[$T; B] = unsafe { crate::as_array_unchecked(input) };
-            let output: &mut [$T; 1024] = unsafe { crate::as_array_mut_unchecked(output) };
+            let output: &mut [MaybeUninit<$T>; 1024] = unsafe { crate::as_array_mut_unchecked(output) };
 
             for lane in 0..<$T>::LANES {
                 unpack!($T, W, input, lane, |$idx, $elem| {
-                    output[$idx] = $elem
+                    output[$idx].write($elem);
                 });
             }
         }
 
-        width_dispatch!($T, [<unpack_width_ $T>], [<unpack_ $T>](input: &[$T], output: &mut [$T]));
+        width_dispatch!($T, [<unpack_width_ $T>], [<unpack_ $T>](input: &[$T], output: &mut [MaybeUninit<$T>]));
 
         /// # Safety
         /// `packed` must hold `B == 1024 * W / T` elements.
@@ -203,16 +225,33 @@ macro_rules! impl_packing {
                 unsafe { [<pack_width_ $T>]::dispatch(width, input, output) }
             }
 
-            #[inline(never)]
+            #[inline]
             fn unpack<const W: usize, const B: usize>(
                 input: &[Self; B],
                 output: &mut [Self; 1024],
+            ) {
+                // SAFETY: MaybeUninit has the same layout and the kernel only writes valid integers.
+                let output = unsafe { &mut *output.as_mut_ptr().cast::<[MaybeUninit<Self>; 1024]>() };
+                Self::unpack_uninit::<W, B>(input, output);
+            }
+
+            #[inline(never)]
+            fn unpack_uninit<const W: usize, const B: usize>(
+                input: &[Self; B],
+                output: &mut [MaybeUninit<Self>; 1024],
             ) {
                 // SAFETY: the lengths are those of the arrays.
                 unsafe { [<unpack_ $T>]::<W, B>(input, output) }
             }
 
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
+                // SAFETY: MaybeUninit has the same layout and the kernel only writes valid integers.
+                let output = unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), output.len()) };
+                // SAFETY: the caller guarantees the packed input and output lengths.
+                unsafe { Self::unchecked_unpack_uninit(width, input, output) }
+            }
+
+            unsafe fn unchecked_unpack_uninit(width: usize, input: &[Self], output: &mut [MaybeUninit<Self>]) {
                 let packed_len = 128 * width / size_of::<Self>();
                 debug_assert_eq!(input.len(), packed_len, "Input buffer must be of size 1024 * W / T");
                 debug_assert_eq!(output.len(), 1024, "Output buffer must be of size 1024");
@@ -407,6 +446,33 @@ mod test {
                 values[i]
             );
         }
+    }
+
+    fn check_uninit_output<const WIDTH: usize, const B: usize>() {
+        let mask = u32::MAX.checked_shr((32 - WIDTH) as u32).unwrap_or(0);
+        let values = array::from_fn(|i| (i as u32).wrapping_mul(2_654_435_761) & mask);
+        let mut packed = [0; B];
+        u32::pack::<WIDTH, B>(&values, &mut packed);
+
+        let mut output = [MaybeUninit::uninit(); 1024];
+        u32::unpack_uninit::<WIDTH, B>(&packed, &mut output);
+        // SAFETY: unpack_uninit initialized every slot.
+        assert_eq!(output.map(|value| unsafe { value.assume_init() }), values);
+
+        let mut output = Vec::<u32>::with_capacity(1024);
+        // SAFETY: packed holds one block at WIDTH and the destination has exactly 1024 slots.
+        unsafe {
+            u32::unchecked_unpack_uninit(WIDTH, &packed, &mut output.spare_capacity_mut()[..1024]);
+            output.set_len(1024);
+        }
+        assert_eq!(output, values);
+    }
+
+    #[test]
+    fn unpack_into_spare_capacity() {
+        check_uninit_output::<0, 0>();
+        check_uninit_output::<9, 288>();
+        check_uninit_output::<32, 1024>();
     }
 
     fn initialized_output<T: Integer>(expected: &[T]) -> Vec<MaybeUninit<T>> {
