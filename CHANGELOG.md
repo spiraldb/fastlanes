@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3](https://github.com/spiraldb/fastlanes/compare/v0.8.2...v0.8.3) - 2026-11-27
+
+### Other
+
+- Unpack full bitpacked blocks into uninitialized output ([#239](https://github.com/spiraldb/fastlanes/pull/239))
+
 ## [0.8.2](https://github.com/spiraldb/fastlanes/compare/v0.8.1...v0.8.2) - 2026-11-23
 
 ### Other
