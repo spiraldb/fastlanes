@@ -244,6 +244,7 @@ macro_rules! impl_packing {
                 unsafe { [<unpack_ $T>]::<W, B>(input, output) }
             }
 
+            #[inline]
             unsafe fn unchecked_unpack(width: usize, input: &[Self], output: &mut [Self]) {
                 // SAFETY: MaybeUninit has the same layout and the kernel only writes valid integers.
                 let output = unsafe { core::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), output.len()) };
